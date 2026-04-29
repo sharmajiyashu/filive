@@ -3,7 +3,7 @@ import Container from "typedi";
 import { AuthenticationService } from "../../../services/common/AuthenticationService";
 import { ResponseWrapper } from '../../responseWrapper';
 import { validate } from '../../validators';
-import { sendOtpSchema, verifyOtpSchema, userLoginSchema, forgotPasswordSchema, resetPasswordSchema, verifyEmailSchema, resendOtpSchema } from '../../validators/auth';
+import { sendOtpSchema, verifyOtpSchema } from '../../validators/auth';
 
 export default (router: Router) => {
     const authService = Container.get(AuthenticationService);
