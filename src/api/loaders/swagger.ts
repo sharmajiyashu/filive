@@ -70,26 +70,32 @@ const adminSpecs = swaggerJsdoc(adminOptions);
 export default (app: Express) => {
   app.use(
     '/api-docs/app',
-    swaggerUi.serveFiles(appSpecs),
+    swaggerUi.serve,
     swaggerUi.setup(appSpecs, {
       customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
       customJs: [
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
       ],
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
     })
   );
 
   // Admin API Docs
   app.use(
     '/api-docs/admin',
-    swaggerUi.serveFiles(adminSpecs),
+    swaggerUi.serve,
     swaggerUi.setup(adminSpecs, {
       customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
       customJs: [
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
       ],
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
     })
   );
 
