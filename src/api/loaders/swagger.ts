@@ -71,15 +71,16 @@ export default (app: Express) => {
   app.use(
     '/api-docs/app',
     swaggerUi.serve,
-    swaggerUi.setup(appSpecs, {
+    swaggerUi.setup(undefined, {
+      swaggerOptions: {
+        url: '/api-docs/app.json',
+        persistAuthorization: true,
+      },
       customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
       customJs: [
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
       ],
-      swaggerOptions: {
-        persistAuthorization: true,
-      },
     })
   );
 
@@ -87,15 +88,16 @@ export default (app: Express) => {
   app.use(
     '/api-docs/admin',
     swaggerUi.serve,
-    swaggerUi.setup(adminSpecs, {
+    swaggerUi.setup(undefined, {
+      swaggerOptions: {
+        url: '/api-docs/admin.json',
+        persistAuthorization: true,
+      },
       customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
       customJs: [
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
         'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
       ],
-      swaggerOptions: {
-        persistAuthorization: true,
-      },
     })
   );
 
