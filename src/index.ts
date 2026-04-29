@@ -27,7 +27,7 @@ async function startServer() {
   return app.listen(config.port, () => {
     AppLogger.info(`👌 Server Listening on Port: ${config.port}
         **********************************
-                BOS API
+                Filive API
         **********************************
         DB Connection: MongoDB Atlas
         **********************************

@@ -7,12 +7,16 @@ const baseDefinition = {
   openapi: '3.0.0',
   info: {
     version: '1.0.0',
-    description: 'API documentation for the BOS backend service',
+    description: 'API documentation for the Filive backend service',
   },
   servers: [
     {
       url: `http://localhost:${config.port}/v1/api`,
-      description: 'Development server',
+      description: 'Local server',
+    },
+    {
+      url: 'https://filive.vercel.app/v1/api',
+      description: 'Production server',
     },
   ],
   components: {
@@ -36,7 +40,7 @@ const appOptions = {
     ...baseDefinition,
     info: {
       ...baseDefinition.info,
-      title: 'BOS App API Documentation',
+      title: 'Filive App API Documentation',
     },
   },
   apis: ['./src/api/routes/app/*.ts', './src/models/*.ts'],
@@ -47,7 +51,7 @@ const adminOptions = {
     ...baseDefinition,
     info: {
       ...baseDefinition.info,
-      title: 'BOS Admin API Documentation',
+      title: 'Filive Admin API Documentation',
     },
   },
   apis: ['./src/api/routes/admin/*.ts', './src/models/*.ts'],
