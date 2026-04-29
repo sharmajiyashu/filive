@@ -2,6 +2,7 @@ import { Express } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import config from '../../config';
+import path from 'path';
 
 const baseDefinition = {
   openapi: '3.0.0',
@@ -43,7 +44,10 @@ const appOptions = {
       title: 'Filive App API Documentation',
     },
   },
-  apis: ['./src/api/routes/app/*.ts', './src/models/*.ts'],
+  apis: [
+    path.join(__dirname, '../routes/app/*.{ts,js}'),
+    path.join(__dirname, '../../models/*.{ts,js}'),
+  ],
 };
 
 const adminOptions = {
@@ -54,18 +58,40 @@ const adminOptions = {
       title: 'Filive Admin API Documentation',
     },
   },
-  apis: ['./src/api/routes/admin/*.ts', './src/models/*.ts'],
+  apis: [
+    path.join(__dirname, '../routes/admin/*.{ts,js}'),
+    path.join(__dirname, '../../models/*.{ts,js}'),
+  ],
 };
 
 const appSpecs = swaggerJsdoc(appOptions);
 const adminSpecs = swaggerJsdoc(adminOptions);
 
 export default (app: Express) => {
-  // App API Docs
-  app.use('/api-docs/app', swaggerUi.serveFiles(appSpecs), swaggerUi.setup(appSpecs));
+  app.use(
+    '/api-docs/app',
+    swaggerUi.serveFiles(appSpecs),
+    swaggerUi.setup(appSpecs, {
+      customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
+      customJs: [
+        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
+      ],
+    })
+  );
 
   // Admin API Docs
-  app.use('/api-docs/admin', swaggerUi.serveFiles(adminSpecs), swaggerUi.setup(adminSpecs));
+  app.use(
+    '/api-docs/admin',
+    swaggerUi.serveFiles(adminSpecs),
+    swaggerUi.setup(adminSpecs, {
+      customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
+      customJs: [
+        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
+      ],
+    })
+  );
 
   app.get('/api-docs/app.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
