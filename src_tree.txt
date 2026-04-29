@@ -1,0 +1,258 @@
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     14:33                @types                                                               
+d-----        28/04/2026     14:33                api                                                                  
+d-----        28/04/2026     14:33                certs                                                                
+d-----        28/04/2026     14:33                config                                                               
+d-----        28/04/2026     14:33                constants                                                            
+d-----        28/04/2026     14:33                interfaces                                                           
+d-----        28/04/2026     15:45                models                                                               
+d-----        28/04/2026     14:33                seeders                                                              
+d-----        28/04/2026     14:33                services                                                             
+d-----        28/04/2026     14:33                utils                                                                
+-a----        28/04/2026     14:33           1070 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\@types
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     14:33                express                                                              
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\@types\express
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            190 index.d.ts                                                           
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     14:33                events                                                               
+d-----        28/04/2026     17:43                loaders                                                              
+d-----        28/04/2026     14:33                middleware                                                           
+d-----        28/04/2026     14:33                permission                                                           
+d-----        28/04/2026     14:33                responseWrapper                                                      
+d-----        28/04/2026     14:33                routes                                                               
+d-----        28/04/2026     15:53                validators                                                           
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\events
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            707 chat.ts                                                              
+-a----        28/04/2026     14:33            378 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\loaders
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            731 cloudinary.ts                                                        
+-a----        28/04/2026     14:33            681 db.ts                                                                
+-a----        28/04/2026     14:33            808 di.ts                                                                
+-a----        28/04/2026     14:33            270 diSocket.ts                                                          
+-a----        28/04/2026     17:43           2041 express.ts                                                           
+-a----        28/04/2026     14:33           1633 firebase.ts                                                          
+-a----        28/04/2026     14:33            797 index.ts                                                             
+-a----        28/04/2026     14:33            485 logger.ts                                                            
+-a----        28/04/2026     14:33            764 smtp.ts                                                              
+-a----        28/04/2026     14:33           1123 socket.ts                                                            
+-a----        28/04/2026     17:43           1103 swagger.ts                                                           
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\middleware
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33           1928 adminAuthMiddleware.ts                                               
+-a----        28/04/2026     14:33           2023 appAuthMiddleware.ts                                                 
+-a----        28/04/2026     14:33            621 errors.ts                                                            
+-a----        28/04/2026     14:33           1351 languageMiddleware.ts                                                
+-a----        28/04/2026     14:33           1547 socketAuthMiddleware.ts                                              
+-a----        28/04/2026     14:33           3334 upload.ts                                                            
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\permission
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     14:33                admin                                                                
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\permission\admin
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            120 index.ts                                                             
+-a----        28/04/2026     14:33            693 UserPermission.ts                                                    
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\responseWrapper
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            740 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\routes
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     15:47                admin                                                                
+d-----        28/04/2026     15:53                app                                                                  
+-a----        28/04/2026     15:47            607 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\routes\admin
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            889 auth.ts                                                              
+-a----        28/04/2026     15:47            156 index.ts                                                             
+-a----        28/04/2026     14:33           7200 user.ts                                                              
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\routes\app
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     17:43           6580 auth.ts                                                              
+-a----        28/04/2026     17:42            199 index.ts                                                             
+-a----        28/04/2026     17:47           3817 user.ts                                                              
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\api\validators
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     15:54           3336 auth.ts                                                              
+-a----        28/04/2026     14:33            441 email.ts                                                             
+-a----        28/04/2026     14:33            798 index.ts                                                             
+-a----        28/04/2026     15:54            275 user.ts                                                              
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\certs
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33           1128 ca.pem                                                               
+-a----        28/04/2026     14:33            503 README.md                                                            
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\config
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            172 constants.ts                                                         
+-a----        28/04/2026     14:33           2656 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\constants
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33             56 adminWhitelistRoutes.ts                                              
+-a----        28/04/2026     14:33            299 appWhitelistRoutes.ts                                                
+-a----        28/04/2026     14:33            508 enum.ts                                                              
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\interfaces
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            693 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\models
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            935 AdminRole.ts                                                         
+-a----        28/04/2026     14:33            743 Media.ts                                                             
+-a----        28/04/2026     15:45           1053 Payment.ts                                                           
+-a----        28/04/2026     15:45           1326 Product.ts                                                           
+-a----        28/04/2026     15:45            938 Report.ts                                                            
+-a----        28/04/2026     15:45           1595 Subcategory.ts                                                       
+-a----        28/04/2026     15:45            803 SubscriptionPlan.ts                                                  
+-a----        28/04/2026     15:51           3023 User.ts                                                              
+-a----        28/04/2026     15:45           1014 UserSubscription.ts                                                  
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\seeders
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33           1429 adminSeeder.ts                                                       
+-a----        28/04/2026     14:33            738 runSeeders.ts                                                        
+-a----        28/04/2026     14:33             95 SettingSeeder.ts                                                     
+-a----        28/04/2026     14:33           1286 superAdminRoleSeed.ts                                                
+-a----        28/04/2026     15:44           1751 UserSeeder.ts                                                        
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\services
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     17:50                admin                                                                
+d-----        28/04/2026     17:50                app                                                                  
+d-----        28/04/2026     14:33                common                                                               
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\services\common
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----        28/04/2026     14:33                emailService                                                         
+-a----        28/04/2026     15:51          10450 AuthenticationService.ts                                             
+-a----        28/04/2026     14:33           3000 CloudinaryService.ts                                                 
+-a----        28/04/2026     14:33           1725 FirebasePushService.ts                                               
+-a----        28/04/2026     14:33            948 MediaService.ts                                                      
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\services\common\emailService
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33           3409 index.ts                                                             
+
+
+    Directory: C:\Users\kkk\OneDrive\Desktop\projects\filive\src\utils
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----        28/04/2026     14:33            400 enableAllPermissions.ts                                              
+
+
