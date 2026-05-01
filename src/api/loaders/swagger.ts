@@ -68,38 +68,27 @@ const appSpecs = swaggerJsdoc(appOptions);
 const adminSpecs = swaggerJsdoc(adminOptions);
 
 export default (app: Express) => {
-  app.use(
-    '/api-docs/app',
-    swaggerUi.serve,
-    swaggerUi.setup(undefined, {
-      swaggerOptions: {
-        url: '/api-docs/app.json',
-        persistAuthorization: true,
-      },
-      customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
-      customJs: [
-        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
-      ],
-    })
-  );
+  const uiOptions = {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+    customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.min.css',
+    customJs: [
+      'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-standalone-preset.js',
+    ],
+  };
+
+  app.use('/api-docs/app', swaggerUi.serve);
+  app.get('/api-docs/app', (req, res) => {
+    res.send(swaggerUi.generateHTML(appSpecs, uiOptions));
+  });
 
   // Admin API Docs
-  app.use(
-    '/api-docs/admin',
-    swaggerUi.serve,
-    swaggerUi.setup(undefined, {
-      swaggerOptions: {
-        url: '/api-docs/admin.json',
-        persistAuthorization: true,
-      },
-      customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
-      customJs: [
-        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js',
-      ],
-    })
-  );
+  app.use('/api-docs/admin', swaggerUi.serve);
+  app.get('/api-docs/admin', (req, res) => {
+    res.send(swaggerUi.generateHTML(adminSpecs, uiOptions));
+  });
 
   app.get('/api-docs/app.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');

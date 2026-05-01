@@ -45,6 +45,37 @@ export default (router: Router) => {
    *       - bearerAuth: []
    *     requestBody:
    *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *               bio:
+   *                 type: string
+   *               email:
+   *                 type: string
+   *               dob:
+   *                 type: string
+   *                 format: date
+   *               gender:
+   *                 type: string
+   *                 enum: [Male, Female, Other]
+   *               location:
+   *                 type: object
+   *                 properties:
+   *                   lat:
+   *                     type: number
+   *                   lng:
+   *                     type: number
+   *                   address:
+   *                     type: string
+   *                   city:
+   *                     type: string
+   *                   state:
+   *                     type: string
+   *                   zipcode:
+   *                     type: string
    *         multipart/form-data:
    *           schema:
    *             type: object
@@ -52,6 +83,8 @@ export default (router: Router) => {
    *               name:
    *                 type: string
    *               bio:
+   *                 type: string
+   *               email:
    *                 type: string
    *               dob:
    *                 type: string
@@ -69,6 +102,7 @@ export default (router: Router) => {
    *         description: Unauthorized
    */
   router.post('/profile',
+    upload.single('image'),
     validate(updateProfileSchema, 'body'),
     async (req: any, res: Response) => {
       try {
