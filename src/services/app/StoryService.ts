@@ -15,7 +15,7 @@ export class StoryService {
     private mediaService: MediaService
   ) { }
 
-  public async createStory(userId: string, data: { content: string; tags?: any; mentions?: any; momentId?: string }, files?: Express.Multer.File[]) {
+  public async createStory(userId: string, data: { content: string; tags?: any }, files?: Express.Multer.File[]) {
     const mediaIds: mongoose.Types.ObjectId[] = [];
 
     if (files && files.length > 0) {
@@ -30,9 +30,7 @@ export class StoryService {
       userId,
       content: data.content,
       images: mediaIds,
-      tags: typeof data.tags === 'string' ? JSON.parse(data.tags) : data.tags,
-      mentions: typeof data.mentions === 'string' ? JSON.parse(data.mentions) : data.mentions,
-      momentId: data.momentId,
+      tags: typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : (data.tags ? [data.tags] : [])),
     });
     return story;
   }
@@ -41,7 +39,6 @@ export class StoryService {
     const stories = await Story.find()
       .populate('userId', 'name email profileImage')
       .populate('images')
-      .populate('mentions', 'name email')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);

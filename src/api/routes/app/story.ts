@@ -37,11 +37,6 @@ export default (router: Router) => {
    *               tags:
    *                 type: string
    *                 description: JSON string of tags array
-   *               mentions:
-   *                 type: string
-   *                 description: JSON string of user IDs array
-   *               momentId:
-   *                 type: string
    *     responses:
    *       201:
    *         description: Story created successfully
