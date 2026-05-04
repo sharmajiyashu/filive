@@ -1,0 +1,213 @@
+import { Router, Request, Response } from 'express';
+import Container from 'typedi';
+import { StoryService } from '../../../services/app/StoryService';
+import { ResponseWrapper } from '../../responseWrapper';
+import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+
+export default (router: Router) => {
+  const storyService = Container.get(StoryService);
+  const appRouter = Router();
+
+  router.use('/stories', appAuthMiddleware, appRouter);
+
+  /**
+   * @swagger
+   * /app/stories:
+   *   post:
+   *     summary: Create a new story
+   *     tags: [Stories]
+   *     security:
+   *       - BearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - content
+   *             properties:
+   *               content:
+   *                 type: string
+   *               images:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               tags:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               mentions:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               momentId:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Story created successfully
+   */
+  appRouter.post('/', async (req: any, res: Response) => {
+    try {
+      const userId = req.user._id; // Assuming req.user is populated by auth middleware
+      const story = await storyService.createStory(userId, req.body);
+      return ResponseWrapper.success(res, story, 'Story created successfully', 201);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/stories/explore:
+   *   get:
+   *     summary: Explore stories
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of stories
+   */
+  appRouter.get('/explore', async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const result = await storyService.getExploreStories(page, limit);
+      return ResponseWrapper.success(res, result, 'Stories fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/stories/{id}/like:
+   *   post:
+   *     summary: Like or unlike a story
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Story liked/unliked successfully
+   */
+  appRouter.post('/:id/like', async (req: any, res: Response) => {
+    try {
+      const userId = req.user._id;
+      const result = await storyService.likeStory(userId, req.params.id);
+      return ResponseWrapper.success(res, result, result.liked ? 'Story liked' : 'Story unliked');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/stories/{id}/comment:
+   *   post:
+   *     summary: Comment on a story
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - content
+   *             properties:
+   *               content:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Comment added successfully
+   */
+  appRouter.post('/:id/comment', async (req: any, res: Response) => {
+    try {
+      const userId = req.user._id;
+      const comment = await storyService.commentOnStory(userId, req.params.id, req.body.content);
+      return ResponseWrapper.success(res, comment, 'Comment added successfully', 201);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/stories/{id}/comments:
+   *   get:
+   *     summary: Get comments for a story
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of comments
+   */
+  appRouter.get('/:id/comments', async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const result = await storyService.getStoryComments(req.params.id as string, page, limit);
+      return ResponseWrapper.success(res, result, 'Comments fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/comments/{id}/like:
+   *   post:
+   *     summary: Like or unlike a comment
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Comment liked/unliked successfully
+   */
+  appRouter.post('/comments/:id/like', async (req: any, res: Response) => {
+    try {
+      const userId = req.user._id;
+      const result = await storyService.likeComment(userId, req.params.id);
+      return ResponseWrapper.success(res, result, result.liked ? 'Comment liked' : 'Comment unliked');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+};
