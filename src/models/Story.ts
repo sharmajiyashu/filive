@@ -1,0 +1,32 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IStory extends Document {
+  userId: mongoose.Types.ObjectId;
+  content: string;
+  images: mongoose.Types.ObjectId[];
+  tags: string[];
+  mentions: mongoose.Types.ObjectId[];
+  momentId?: mongoose.Types.ObjectId;
+  likesCount: number;
+  commentsCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const StorySchema: Schema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    content: { type: String, required: true },
+    images: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
+    tags: [{ type: String }],
+    mentions: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    momentId: { type: Schema.Types.ObjectId, ref: 'Moment' }, // Assuming Moment might exist later
+    likesCount: { type: Number, default: 0 },
+    commentsCount: { type: Number, default: 0 },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export default mongoose.model<IStory>('Story', StorySchema);
