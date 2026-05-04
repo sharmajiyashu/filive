@@ -13,4 +13,8 @@ export const updateProfileSchema = z.object({
     state: z.string().optional(),
     zipcode: z.string().optional(),
   }).optional(),
+  selfIntroduce: z.string().optional(),
+  height: z.string().optional(),
+  country: z.string().optional(),
+  maritalStatus: z.string().optional(),
 });
