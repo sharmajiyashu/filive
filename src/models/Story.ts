@@ -5,8 +5,6 @@ export interface IStory extends Document {
   content: string;
   images: mongoose.Types.ObjectId[];
   tags: string[];
-  mentions: mongoose.Types.ObjectId[];
-  momentId?: mongoose.Types.ObjectId;
   likesCount: number;
   commentsCount: number;
   createdAt: Date;
@@ -19,8 +17,6 @@ const StorySchema: Schema = new Schema(
     content: { type: String, required: true },
     images: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     tags: [{ type: String }],
-    mentions: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    momentId: { type: Schema.Types.ObjectId, ref: 'Moment' }, // Assuming Moment might exist later
     likesCount: { type: Number, default: 0 },
     commentsCount: { type: Number, default: 0 },
   },
