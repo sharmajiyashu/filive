@@ -61,6 +61,14 @@ export default (router: Router) => {
    *               gender:
    *                 type: string
    *                 enum: [Male, Female, Other]
+   *               selfIntroduce:
+   *                 type: string
+   *               height:
+   *                 type: string
+   *               country:
+   *                 type: string
+   *               maritalStatus:
+   *                 type: string
    *               location:
    *                 type: object
    *                 properties:
@@ -92,6 +100,14 @@ export default (router: Router) => {
    *               gender:
    *                 type: string
    *                 enum: [Male, Female, Other]
+   *               selfIntroduce:
+   *                 type: string
+   *               height:
+   *                 type: string
+   *               country:
+   *                 type: string
+   *               maritalStatus:
+   *                 type: string
    *               image:
    *                 type: string
    *                 format: binary

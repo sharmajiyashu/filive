@@ -33,7 +33,7 @@ export default (router: Router) => {
    */
   appRouter.post('/follow', async (req: any, res: Response) => {
     try {
-      const followerId = req.user._id;
+      const followerId = req.user.id;
       const follow = await socialService.sendFollowRequest(followerId, req.body.followingId);
       return ResponseWrapper.success(res, follow, 'Follow request sent', 201);
     } catch (error: any) {
@@ -68,7 +68,7 @@ export default (router: Router) => {
    */
   appRouter.post('/follow/respond', async (req: any, res: Response) => {
     try {
-      const userId = req.user._id;
+      const userId = req.user.id;
       const follow = await socialService.respondToFollowRequest(userId, req.body.followerId, req.body.status);
       return ResponseWrapper.success(res, follow, `Follow request ${req.body.status}`);
     } catch (error: any) {
@@ -99,7 +99,7 @@ export default (router: Router) => {
    */
   appRouter.post('/friend-request', async (req: any, res: Response) => {
     try {
-      const senderId = req.user._id;
+      const senderId = req.user.id;
       const request = await socialService.sendFriendRequest(senderId, req.body.receiverId);
       return ResponseWrapper.success(res, request, 'Friend request sent', 201);
     } catch (error: any) {
@@ -134,7 +134,7 @@ export default (router: Router) => {
    */
   appRouter.post('/friend-request/respond', async (req: any, res: Response) => {
     try {
-      const userId = req.user._id;
+      const userId = req.user.id;
       const request = await socialService.respondToFriendRequest(userId, req.body.senderId, req.body.status);
       return ResponseWrapper.success(res, request, `Friend request ${req.body.status}`);
     } catch (error: any) {
@@ -154,7 +154,7 @@ export default (router: Router) => {
    */
   appRouter.get('/followers', async (req: any, res: Response) => {
     try {
-      const followers = await socialService.getFollowers(req.user._id);
+      const followers = await socialService.getFollowers(req.user.id);
       return ResponseWrapper.success(res, followers, 'Followers fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -173,7 +173,7 @@ export default (router: Router) => {
    */
   appRouter.get('/following', async (req: any, res: Response) => {
     try {
-      const following = await socialService.getFollowing(req.user._id);
+      const following = await socialService.getFollowing(req.user.id);
       return ResponseWrapper.success(res, following, 'Following list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

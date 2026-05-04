@@ -3,6 +3,7 @@ import profile from './profile';
 import auth from './auth';
 import story from './story';
 import social from './social';
+import user from './user';
 
 
 export default (router: Router): Router => {
@@ -10,6 +11,6 @@ export default (router: Router): Router => {
   auth(router);
   story(router);
   social(router);
-
+  user(router);
   return router;
 };

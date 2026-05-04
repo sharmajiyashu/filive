@@ -2,13 +2,13 @@ import { Router, Request, Response } from 'express';
 import Container from 'typedi';
 import { StoryService } from '../../../services/app/StoryService';
 import { ResponseWrapper } from '../../responseWrapper';
-import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import upload from '../../middleware/upload';
 
 export default (router: Router) => {
   const storyService = Container.get(StoryService);
   const appRouter = Router();
 
-  router.use('/stories', appAuthMiddleware, appRouter);
+  router.use('/stories', appRouter);
 
   /**
    * @swagger
@@ -21,7 +21,7 @@ export default (router: Router) => {
    *     requestBody:
    *       required: true
    *       content:
-   *         application/json:
+   *         multipart/form-data:
    *           schema:
    *             type: object
    *             required:
@@ -33,24 +33,23 @@ export default (router: Router) => {
    *                 type: array
    *                 items:
    *                   type: string
+   *                   format: binary
    *               tags:
-   *                 type: array
-   *                 items:
-   *                   type: string
+   *                 type: string
+   *                 description: JSON string of tags array
    *               mentions:
-   *                 type: array
-   *                 items:
-   *                   type: string
+   *                 type: string
+   *                 description: JSON string of user IDs array
    *               momentId:
    *                 type: string
    *     responses:
    *       201:
    *         description: Story created successfully
    */
-  appRouter.post('/', async (req: any, res: Response) => {
+  appRouter.post('/', upload.array('images', 10), async (req: any, res: Response) => {
     try {
-      const userId = req.user._id; // Assuming req.user is populated by auth middleware
-      const story = await storyService.createStory(userId, req.body);
+      const userId = req.user.id; // Corrected from _id to id to match auth middleware
+      const story = await storyService.createStory(userId, req.body, req.files as Express.Multer.File[]);
       return ResponseWrapper.success(res, story, 'Story created successfully', 201);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -105,7 +104,7 @@ export default (router: Router) => {
    */
   appRouter.post('/:id/like', async (req: any, res: Response) => {
     try {
-      const userId = req.user._id;
+      const userId = req.user.id;
       const result = await storyService.likeStory(userId, req.params.id);
       return ResponseWrapper.success(res, result, result.liked ? 'Story liked' : 'Story unliked');
     } catch (error: any) {
@@ -142,7 +141,7 @@ export default (router: Router) => {
    */
   appRouter.post('/:id/comment', async (req: any, res: Response) => {
     try {
-      const userId = req.user._id;
+      const userId = req.user.id;
       const comment = await storyService.commentOnStory(userId, req.params.id, req.body.content);
       return ResponseWrapper.success(res, comment, 'Comment added successfully', 201);
     } catch (error: any) {
@@ -203,7 +202,7 @@ export default (router: Router) => {
    */
   appRouter.post('/comments/:id/like', async (req: any, res: Response) => {
     try {
-      const userId = req.user._id;
+      const userId = req.user.id;
       const result = await storyService.likeComment(userId, req.params.id);
       return ResponseWrapper.success(res, result, result.liked ? 'Comment liked' : 'Comment unliked');
     } catch (error: any) {

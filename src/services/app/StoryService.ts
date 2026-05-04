@@ -4,16 +4,34 @@ import Comment from '../../models/Comment';
 import Like from '../../models/Like';
 import User from '../../models/User';
 import mongoose from 'mongoose';
+import { CloudinaryService } from '../common/CloudinaryService';
+import { MediaService } from '../common/MediaService';
+import { MediaType } from '../../constants/enum';
 
 @Service()
 export class StoryService {
-  public async createStory(userId: string, data: { content: string; images?: string[]; tags?: string[]; mentions?: string[]; momentId?: string }) {
+  constructor(
+    private cloudinaryService: CloudinaryService,
+    private mediaService: MediaService
+  ) { }
+
+  public async createStory(userId: string, data: { content: string; tags?: any; mentions?: any; momentId?: string }, files?: Express.Multer.File[]) {
+    const mediaIds: mongoose.Types.ObjectId[] = [];
+
+    if (files && files.length > 0) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, files, 'stories');
+      for (const result of uploadResults) {
+        const media = await this.mediaService.createMedia(result);
+        mediaIds.push(media._id as mongoose.Types.ObjectId);
+      }
+    }
+
     const story = await Story.create({
       userId,
       content: data.content,
-      images: data.images,
-      tags: data.tags,
-      mentions: data.mentions,
+      images: mediaIds,
+      tags: typeof data.tags === 'string' ? JSON.parse(data.tags) : data.tags,
+      mentions: typeof data.mentions === 'string' ? JSON.parse(data.mentions) : data.mentions,
       momentId: data.momentId,
     });
     return story;

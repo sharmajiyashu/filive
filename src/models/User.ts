@@ -26,6 +26,10 @@ export interface IUser extends Document {
   isPremium: boolean;
   gender?: 'Male' | 'Female' | 'Other';
   dob?: Date;
+  selfIntroduce?: string;
+  height?: string;
+  country?: string;
+  maritalStatus?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,6 +67,10 @@ const UserSchema: Schema = new Schema(
     isPremium: { type: Boolean, default: false },
     gender: { type: String, enum: ['Male', 'Female', 'Other'] },
     dob: { type: Date },
+    selfIntroduce: { type: String },
+    height: { type: String },
+    country: { type: String },
+    maritalStatus: { type: String },
   },
   {
     timestamps: true,
