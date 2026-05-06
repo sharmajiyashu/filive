@@ -2,6 +2,7 @@ import { Service } from 'typedi';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import Story from '../../models/Story';
+import Like from '../../models/Like';
 import UserVisitor from '../../models/UserVisitor';
 import mongoose from 'mongoose';
 
@@ -27,7 +28,7 @@ export class UserService {
     };
   }
 
-  public async getUserDetail(userId: string, visitorId?: string) {
+  public async getUserDetail(userId: string, currentUserId?: string) {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error('Invalid user ID');
     }
@@ -41,18 +42,26 @@ export class UserService {
     }
 
     // Track visitor if it's not the user viewing their own profile
-    if (visitorId && visitorId !== userId) {
+    if (currentUserId && currentUserId !== userId) {
       await UserVisitor.create({
         userId: new mongoose.Types.ObjectId(userId),
-        visitorId: new mongoose.Types.ObjectId(visitorId)
+        visitorId: new mongoose.Types.ObjectId(currentUserId)
       });
     }
 
     const followers = await Follow.find({ followingId: userId, status: 'accepted' })
-      .populate('followerId', 'name email profileImage');
+      .populate({
+        path: 'followerId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      });
 
     const following = await Follow.find({ followerId: userId, status: 'accepted' })
-      .populate('followingId', 'name email profileImage');
+      .populate({
+        path: 'followingId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      });
 
     const stories = await Story.find({ userId: userId })
       .populate('images')
@@ -62,15 +71,34 @@ export class UserService {
     const visitorsCount = await UserVisitor.countDocuments({ userId });
     const uniqueVisitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
+    let storiesWithLikeStatus = stories;
+    if (currentUserId) {
+      const storyIds = stories.map(s => s._id);
+      const likes = await Like.find({
+        userId: currentUserId,
+        targetId: { $in: storyIds },
+        targetType: 'Story'
+      });
+      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+
+      storiesWithLikeStatus = stories.map(story => {
+        const storyObj = story.toObject();
+        return {
+          ...storyObj,
+          isLiked: likedStoryIds.has(story._id.toString())
+        };
+      }) as any;
+    }
+
     return {
       user,
       followersCount: followers.length,
       followingCount: following.length,
-      visitorsCount: uniqueVisitorsCount, // Returning unique visitors count as requested
+      visitorsCount: uniqueVisitorsCount,
       totalViews: visitorsCount,
       followers,
       following,
-      stories,
+      stories: storiesWithLikeStatus,
     };
   }
 }

@@ -78,6 +78,68 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/social/unfollow:
+   *   post:
+   *     summary: Unfollow a user
+   *     tags: [Social]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - followingId
+   *             properties:
+   *               followingId:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Unfollowed successfully
+   */
+  appRouter.post('/unfollow', async (req: any, res: Response) => {
+    try {
+      const followerId = req.user.id;
+      const result = await socialService.unfollow(followerId, req.body.followingId);
+      return ResponseWrapper.success(res, result, 'Unfollowed successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/social/remove-follower:
+   *   post:
+   *     summary: Remove a follower
+   *     tags: [Social]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - followerId
+   *             properties:
+   *               followerId:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Follower removed successfully
+   */
+  appRouter.post('/remove-follower', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await socialService.removeFollower(userId, req.body.followerId);
+      return ResponseWrapper.success(res, result, 'Follower removed successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/social/friend-request:
    *   post:
    *     summary: Send a friend request
@@ -174,6 +236,56 @@ export default (router: Router) => {
   appRouter.get('/following', async (req: any, res: Response) => {
     try {
       const following = await socialService.getFollowing(req.user.id);
+      return ResponseWrapper.success(res, following, 'Following list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/social/followers/{userId}:
+   *   get:
+   *     summary: Get followers list for a specific user
+   *     tags: [Social]
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: List of followers
+   */
+  appRouter.get('/followers/:userId', async (req: any, res: Response) => {
+    try {
+      const followers = await socialService.getFollowers(req.params.userId);
+      return ResponseWrapper.success(res, followers, 'Followers fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/social/following/{userId}:
+   *   get:
+   *     summary: Get following list for a specific user
+   *     tags: [Social]
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: List of followed users
+   */
+  appRouter.get('/following/:userId', async (req: any, res: Response) => {
+    try {
+      const following = await socialService.getFollowing(req.params.userId);
       return ResponseWrapper.success(res, following, 'Following list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

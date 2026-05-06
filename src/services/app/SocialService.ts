@@ -24,6 +24,18 @@ export class SocialService {
     return follow;
   }
 
+  public async unfollow(followerId: string, followingId: string) {
+    const result = await Follow.deleteOne({ followerId, followingId });
+    if (result.deletedCount === 0) throw new Error('You are not following this user');
+    return { success: true };
+  }
+
+  public async removeFollower(userId: string, followerId: string) {
+    const result = await Follow.deleteOne({ followerId, followingId: userId });
+    if (result.deletedCount === 0) throw new Error('User is not following you');
+    return { success: true };
+  }
+
   public async sendFriendRequest(senderId: string, receiverId: string) {
     if (senderId === receiverId) throw new Error('You cannot send a friend request to yourself');
 
@@ -50,10 +62,20 @@ export class SocialService {
   }
 
   public async getFollowers(userId: string) {
-    return await Follow.find({ followingId: userId, status: 'accepted' }).populate('followerId', 'name email profileImage');
+    return await Follow.find({ followingId: userId, status: 'accepted' })
+      .populate({
+        path: 'followerId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      });
   }
 
   public async getFollowing(userId: string) {
-    return await Follow.find({ followerId: userId, status: 'accepted' }).populate('followingId', 'name email profileImage');
+    return await Follow.find({ followerId: userId, status: 'accepted' })
+      .populate({
+        path: 'followingId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      });
   }
 }
