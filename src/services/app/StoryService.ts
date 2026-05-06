@@ -26,16 +26,31 @@ export class StoryService {
       }
     }
 
+    // Parse hashtags and mentions from content if not provided
+    const hashtags = data.content.match(/#[a-z0-9_]+/gi)?.map(tag => tag.slice(1)) || [];
+    const mentionNames = data.content.match(/@[a-z0-9_]+/gi)?.map(name => name.slice(1)) || [];
+
+    // Find user IDs for mentions
+    const mentions: mongoose.Types.ObjectId[] = [];
+    if (mentionNames.length > 0) {
+      const mentionedUsers = await User.find({ name: { $in: mentionNames } }).select('_id');
+      mentionedUsers.forEach(user => mentions.push(user._id as mongoose.Types.ObjectId));
+    }
+
+    const providedTags = typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : (data.tags ? [data.tags] : []));
+    const allTags = [...new Set([...hashtags, ...providedTags])];
+
     const story = await Story.create({
       userId,
       content: data.content,
       images: mediaIds,
-      tags: typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : (data.tags ? [data.tags] : [])),
+      tags: allTags,
+      mentions: mentions,
     });
     return story;
   }
 
-  public async getExploreStories(page: number = 1, limit: number = 10) {
+  public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10) {
     const stories = await Story.find()
       .populate('userId', 'name email profileImage')
       .populate('images')
@@ -45,8 +60,27 @@ export class StoryService {
 
     const total = await Story.countDocuments();
 
+    let storiesWithLikeStatus = stories;
+    if (currentUserId) {
+      const storyIds = stories.map(s => s._id);
+      const likes = await Like.find({
+        userId: currentUserId,
+        targetId: { $in: storyIds },
+        targetType: 'Story'
+      });
+      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+
+      storiesWithLikeStatus = stories.map(story => {
+        const storyObj = story.toObject();
+        return {
+          ...storyObj,
+          isLiked: likedStoryIds.has(story._id.toString())
+        };
+      }) as any;
+    }
+
     return {
-      stories,
+      stories: storiesWithLikeStatus,
       pagination: {
         total,
         page,
@@ -80,7 +114,7 @@ export class StoryService {
     return comment;
   }
 
-  public async getStoryComments(storyId: string, page: number = 1, limit: number = 10) {
+  public async getStoryComments(storyId: string, currentUserId?: string, page: number = 1, limit: number = 10) {
     const comments = await Comment.find({ storyId })
       .populate('userId', 'name email profileImage')
       .sort({ createdAt: -1 })
@@ -89,8 +123,27 @@ export class StoryService {
 
     const total = await Comment.countDocuments({ storyId });
 
+    let commentsWithLikeStatus = comments;
+    if (currentUserId) {
+      const commentIds = comments.map(c => c._id);
+      const likes = await Like.find({
+        userId: currentUserId,
+        targetId: { $in: commentIds },
+        targetType: 'Comment'
+      });
+      const likedCommentIds = new Set(likes.map(l => l.targetId.toString()));
+
+      commentsWithLikeStatus = comments.map(comment => {
+        const commentObj = comment.toObject();
+        return {
+          ...commentObj,
+          isLiked: likedCommentIds.has(comment._id.toString())
+        };
+      }) as any;
+    }
+
     return {
-      comments,
+      comments: commentsWithLikeStatus,
       pagination: {
         total,
         page,
@@ -101,6 +154,15 @@ export class StoryService {
   }
 
   public async likeComment(userId: string, commentId: string) {
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      throw new Error('Invalid comment ID');
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      throw new Error('Comment not found');
+    }
+
     const existingLike = await Like.findOne({ userId, targetId: commentId, targetType: 'Comment' });
 
     if (existingLike) {

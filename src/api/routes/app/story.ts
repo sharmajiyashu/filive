@@ -70,11 +70,12 @@ export default (router: Router) => {
    *       200:
    *         description: List of stories
    */
-  appRouter.get('/explore', async (req: Request, res: Response) => {
+  appRouter.get('/explore', async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await storyService.getExploreStories(page, limit);
+      const userId = req.user?.id;
+      const result = await storyService.getExploreStories(userId, page, limit);
       return ResponseWrapper.success(res, result, 'Stories fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -168,11 +169,12 @@ export default (router: Router) => {
    *       200:
    *         description: List of comments
    */
-  appRouter.get('/:id/comments', async (req: Request, res: Response) => {
+  appRouter.get('/:id/comments', async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await storyService.getStoryComments(req.params.id as string, page, limit);
+      const userId = req.user?.id;
+      const result = await storyService.getStoryComments(req.params.id as string, userId, page, limit);
       return ResponseWrapper.success(res, result, 'Comments fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -184,7 +186,7 @@ export default (router: Router) => {
    * /app/comments/{id}/like:
    *   post:
    *     summary: Like or unlike a comment
-   *     tags: [Stories]
+   *     tags: [Comments]
    *     parameters:
    *       - in: path
    *         name: id
@@ -195,7 +197,7 @@ export default (router: Router) => {
    *       200:
    *         description: Comment liked/unliked successfully
    */
-  appRouter.post('/comments/:id/like', async (req: any, res: Response) => {
+  router.post('/comments/:id/like', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
       const result = await storyService.likeComment(userId, req.params.id);
