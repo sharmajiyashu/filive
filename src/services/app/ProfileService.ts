@@ -1,5 +1,6 @@
 import { Service } from 'typedi';
 import User from '../../models/User';
+import Follow from '../../models/Follow';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
@@ -16,7 +17,15 @@ export class ProfileService {
     if (!profile) {
       throw new Error('USER_NOT_FOUND');
     }
-    return profile;
+    
+    const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
+    const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
+
+    return {
+        ...profile.toObject(),
+        followersCount,
+        followingCount
+    };
   }
 
   public async updateProfile(userId: string, data: any, file?: Express.Multer.File) {
@@ -40,8 +49,15 @@ export class ProfileService {
       throw new Error('USER_NOT_FOUND');
     }
 
+    const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
+    const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
+
     return {
-        profile: updatedUser,
+        profile: {
+            ...updatedUser.toObject(),
+            followersCount,
+            followingCount
+        },
         message: 'PROFILE_UPDATED'
     };
   }

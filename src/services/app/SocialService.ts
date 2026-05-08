@@ -11,7 +11,8 @@ export class SocialService {
     const existingFollow = await Follow.findOne({ followerId, followingId });
     if (existingFollow) return existingFollow;
 
-    return await Follow.create({ followerId, followingId, status: 'pending' });
+    // Direct follow as per requirement
+    return await Follow.create({ followerId, followingId, status: 'accepted' });
   }
 
   public async respondToFollowRequest(userId: string, followerId: string, status: 'accepted' | 'rejected') {
@@ -61,21 +62,84 @@ export class SocialService {
     return request;
   }
 
-  public async getFollowers(userId: string) {
-    return await Follow.find({ followingId: userId, status: 'accepted' })
+  public async getFollowers(userId: string, page: number = 1, limit: number = 10) {
+    const followers = await Follow.find({ followingId: userId, status: 'accepted' })
       .populate({
         path: 'followerId',
         select: 'name email profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
-      });
+      })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
+
+    return {
+      followers,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
-  public async getFollowing(userId: string) {
-    return await Follow.find({ followerId: userId, status: 'accepted' })
+  public async getFollowing(userId: string, page: number = 1, limit: number = 10) {
+    const following = await Follow.find({ followerId: userId, status: 'accepted' })
       .populate({
         path: 'followingId',
         select: 'name email profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
-      });
+      })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
+
+    return {
+      following,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  public async getFriends(userId: string, page: number = 1, limit: number = 10) {
+    // Friends are mutual followers
+    const following = await Follow.find({ followerId: userId, status: 'accepted' }).select('followingId');
+    const followingIds = following.map(f => f.followingId);
+
+    const friends = await Follow.find({
+      followingId: userId,
+      followerId: { $in: followingIds },
+      status: 'accepted'
+    })
+      .populate({
+        path: 'followerId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Follow.countDocuments({
+      followingId: userId,
+      followerId: { $in: followingIds },
+      status: 'accepted'
+    });
+
+    return {
+      friends,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 }

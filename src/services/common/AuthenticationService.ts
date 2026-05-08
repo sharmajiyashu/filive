@@ -1,6 +1,7 @@
 import { Inject, Service } from "typedi";
 import mongoose from "mongoose";
 import User, { IUser } from '../../models/User';
+import Follow from '../../models/Follow';
 import bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import config from "../../config";
@@ -110,7 +111,17 @@ export class AuthenticationService {
 
         await user.populate('profileImage');
 
-        return { token: '', user }; // Return empty token, must verify first
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+
+        return {
+            token: '',
+            user: {
+                ...user.toObject(),
+                followersCount,
+                followingCount
+            } as any
+        }; // Return empty token, must verify first
     }
 
     async userLogin(email: string, password: string): Promise<{ token: string; user: IUser }> {
@@ -134,7 +145,17 @@ export class AuthenticationService {
         user.lastLoginAt = new Date();
         await user.save();
 
-        return { token, user };
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+
+        return {
+            token,
+            user: {
+                ...user.toObject(),
+                followersCount,
+                followingCount
+            } as any
+        };
     }
 
     async userVerifyEmail(email: string, otp: string): Promise<{ token: string; user: IUser }> {
@@ -155,7 +176,17 @@ export class AuthenticationService {
 
         const token = this.generateToken(user._id.toString(), user.userRole);
 
-        return { token, user };
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+
+        return {
+            token,
+            user: {
+                ...user.toObject(),
+                followersCount,
+                followingCount
+            } as any
+        };
     }
 
     async userSendOTP(mobile: string): Promise<{ otp: string }> {
@@ -205,7 +236,17 @@ export class AuthenticationService {
 
         const token = this.generateToken(user._id.toString(), user.userRole);
 
-        return { token, user };
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+
+        return {
+            token,
+            user: {
+                ...user.toObject(),
+                followersCount,
+                followingCount
+            } as any
+        };
     }
 
     async userForgotPassword(email: string): Promise<{ otp: string }> {

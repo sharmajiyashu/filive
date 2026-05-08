@@ -204,19 +204,11 @@ export default (router: Router) => {
     }
   });
 
-  /**
-   * @swagger
-   * /app/social/followers:
-   *   get:
-   *     summary: Get followers list
-   *     tags: [Social]
-   *     responses:
-   *       200:
-   *         description: List of followers
-   */
   appRouter.get('/followers', async (req: any, res: Response) => {
     try {
-      const followers = await socialService.getFollowers(req.user.id);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const followers = await socialService.getFollowers(req.user.id, page, limit);
       return ResponseWrapper.success(res, followers, 'Followers fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -229,14 +221,55 @@ export default (router: Router) => {
    *   get:
    *     summary: Get following list
    *     tags: [Social]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
    *     responses:
    *       200:
    *         description: List of followed users
    */
   appRouter.get('/following', async (req: any, res: Response) => {
     try {
-      const following = await socialService.getFollowing(req.user.id);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const following = await socialService.getFollowing(req.user.id, page, limit);
       return ResponseWrapper.success(res, following, 'Following list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/social/friends:
+   *   get:
+   *     summary: Get friends list (mutual followers)
+   *     tags: [Social]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of friends
+   */
+  appRouter.get('/friends', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const friends = await socialService.getFriends(req.user.id, page, limit);
+      return ResponseWrapper.success(res, friends, 'Friends list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -260,7 +293,9 @@ export default (router: Router) => {
    */
   appRouter.get('/followers/:userId', async (req: any, res: Response) => {
     try {
-      const followers = await socialService.getFollowers(req.params.userId);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const followers = await socialService.getFollowers(req.params.userId, page, limit);
       return ResponseWrapper.success(res, followers, 'Followers fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -285,7 +320,9 @@ export default (router: Router) => {
    */
   appRouter.get('/following/:userId', async (req: any, res: Response) => {
     try {
-      const following = await socialService.getFollowing(req.params.userId);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const following = await socialService.getFollowing(req.params.userId, page, limit);
       return ResponseWrapper.success(res, following, 'Following list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
