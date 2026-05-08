@@ -161,8 +161,21 @@ export class StoryService {
       }) as any;
     }
 
+    let isCommented = false;
+    let isStoryLiked = false;
+    if (currentUserId) {
+      const [userComment, storyLike] = await Promise.all([
+        Comment.findOne({ userId: currentUserId, storyId }),
+        Like.findOne({ userId: currentUserId, targetId: storyId, targetType: 'Story' })
+      ]);
+      isCommented = !!userComment;
+      isStoryLiked = !!storyLike;
+    }
+
     return {
       comments: commentsWithLikeStatus,
+      isCommented,
+      isStoryLiked,
       pagination: {
         total,
         page,

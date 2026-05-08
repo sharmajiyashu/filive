@@ -8,11 +8,13 @@ export class SocialService {
   public async sendFollowRequest(followerId: string, followingId: string) {
     if (followerId === followingId) throw new Error('You cannot follow yourself');
 
-    const existingFollow = await Follow.findOne({ followerId, followingId });
-    if (existingFollow) return existingFollow;
+    const follow = await Follow.findOneAndUpdate(
+      { followerId, followingId },
+      { status: 'accepted' },
+      { new: true, upsert: true }
+    );
 
-    // Direct follow as per requirement
-    return await Follow.create({ followerId, followingId, status: 'accepted' });
+    return follow;
   }
 
   public async respondToFollowRequest(userId: string, followerId: string, status: 'accepted' | 'rejected') {
