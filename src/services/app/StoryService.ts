@@ -53,7 +53,11 @@ export class StoryService {
 
   public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10) {
     const stories = await Story.find()
-      .populate('userId', 'name email profileImage')
+      .populate({
+        path: 'userId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      })
       .populate('images')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -138,7 +142,11 @@ export class StoryService {
 
   public async getStoryComments(storyId: string, currentUserId?: string, page: number = 1, limit: number = 10) {
     const comments = await Comment.find({ storyId })
-      .populate('userId', 'name email profileImage')
+      .populate({
+        path: 'userId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);

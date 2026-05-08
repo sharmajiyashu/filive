@@ -85,7 +85,11 @@ export class UserService {
 
     const stories = await Story.find({ userId: userId })
       .populate('images')
-      .populate('userId', 'name profileImage')
+      .populate({
+        path: 'userId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      })
       .sort({ createdAt: -1 });
 
     const visitorsCount = await UserVisitor.countDocuments({ userId });
@@ -132,6 +136,7 @@ export class UserService {
 
     return {
       user,
+      isFollowing: isFollowingAuthor,
       followersCount,
       followingCount,
       friendsCount,
