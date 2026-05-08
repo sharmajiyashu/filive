@@ -61,7 +61,10 @@ export class StoryService {
 
     const total = await Story.countDocuments();
 
-    let storiesWithStatus = stories as any[];
+    let likedStoryIds = new Set<string>();
+    let commentedStoryIds = new Set<string>();
+    let followingUserIds = new Set<string>();
+
     if (currentUserId) {
       const storyIds = stories.map(s => s._id);
 
@@ -82,21 +85,21 @@ export class StoryService {
         })
       ]);
 
-      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
-      const commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
-      const followingUserIds = new Set(following.map(f => f.followingId.toString()));
-
-      storiesWithStatus = stories.map(story => {
-        const storyObj = story.toObject();
-        const authorId = (story.userId as any)._id || story.userId;
-        return {
-          ...storyObj,
-          isLiked: likedStoryIds.has(story._id.toString()),
-          isCommented: commentedStoryIds.has(story._id.toString()),
-          isFollowing: followingUserIds.has(authorId.toString())
-        };
-      });
+      likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+      commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
+      followingUserIds = new Set(following.map(f => f.followingId.toString()));
     }
+
+    const storiesWithStatus = stories.map(story => {
+      const storyObj = story.toObject();
+      const authorId = (story.userId as any)._id || story.userId;
+      return {
+        ...storyObj,
+        isLiked: currentUserId ? likedStoryIds.has(story._id.toString()) : false,
+        isCommented: currentUserId ? commentedStoryIds.has(story._id.toString()) : false,
+        isFollowing: currentUserId ? followingUserIds.has(authorId.toString()) : false
+      };
+    });
 
     return {
       stories: storiesWithStatus,
@@ -142,38 +145,47 @@ export class StoryService {
 
     const total = await Comment.countDocuments({ storyId });
 
-    let commentsWithLikeStatus = comments;
-    if (currentUserId) {
-      const commentIds = comments.map(c => c._id);
-      const likes = await Like.find({
-        userId: currentUserId,
-        targetId: { $in: commentIds },
-        targetType: 'Comment'
-      });
-      const likedCommentIds = new Set(likes.map(l => l.targetId.toString()));
-
-      commentsWithLikeStatus = comments.map(comment => {
-        const commentObj = comment.toObject();
-        return {
-          ...commentObj,
-          isLiked: likedCommentIds.has(comment._id.toString())
-        };
-      }) as any;
-    }
-
     let isCommented = false;
     let isStoryLiked = false;
+    let followingUserIds = new Set<string>();
+    let likedCommentIds = new Set<string>();
+
     if (currentUserId) {
-      const [userComment, storyLike] = await Promise.all([
+      const commentIds = comments.map(c => c._id);
+      const [userComment, storyLike, following, commentLikes] = await Promise.all([
         Comment.findOne({ userId: currentUserId, storyId }),
-        Like.findOne({ userId: currentUserId, targetId: storyId, targetType: 'Story' })
+        Like.findOne({ userId: currentUserId, targetId: storyId, targetType: 'Story' }),
+        Follow.find({
+          followerId: currentUserId,
+          followingId: { $in: comments.map(c => c.userId._id.toString()) },
+          status: 'accepted'
+        }),
+        Like.find({
+          userId: currentUserId,
+          targetId: { $in: commentIds },
+          targetType: 'Comment'
+        })
       ]);
       isCommented = !!userComment;
       isStoryLiked = !!storyLike;
+      followingUserIds = new Set(following.map(f => f.followingId.toString()));
+      likedCommentIds = new Set(commentLikes.map(l => l.targetId.toString()));
     }
 
+    const commentsWithFullStatus = comments.map(comment => {
+      const commentObj = comment.toObject();
+      const authorId = comment.userId._id.toString();
+      return {
+        ...commentObj,
+        isLiked: currentUserId ? likedCommentIds.has(comment._id.toString()) : false,
+        isCommented: isCommented,
+        isStoryLiked: isStoryLiked,
+        isFollowing: currentUserId ? followingUserIds.has(authorId) : false
+      };
+    });
+
     return {
-      comments: commentsWithLikeStatus,
+      comments: commentsWithFullStatus,
       isCommented,
       isStoryLiked,
       pagination: {

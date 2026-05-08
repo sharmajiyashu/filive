@@ -91,7 +91,10 @@ export class UserService {
     const visitorsCount = await UserVisitor.countDocuments({ userId });
     const uniqueVisitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
-    let storiesWithStatus = stories as any[];
+    let likedStoryIds = new Set<string>();
+    let commentedStoryIds = new Set<string>();
+    let isFollowingAuthor = false;
+
     if (currentUserId) {
       const storyIds = stories.map(s => s._id);
 
@@ -112,20 +115,20 @@ export class UserService {
         })
       ]);
 
-      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
-      const commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
-      const isFollowingAuthor = !!followingStatus;
-
-      storiesWithStatus = stories.map(story => {
-        const storyObj = story.toObject();
-        return {
-          ...storyObj,
-          isLiked: likedStoryIds.has(story._id.toString()),
-          isCommented: commentedStoryIds.has(story._id.toString()),
-          isFollowing: isFollowingAuthor
-        };
-      });
+      likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+      commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
+      isFollowingAuthor = !!followingStatus;
     }
+
+    const storiesWithStatus = stories.map(story => {
+      const storyObj = story.toObject();
+      return {
+        ...storyObj,
+        isLiked: currentUserId ? likedStoryIds.has(story._id.toString()) : false,
+        isCommented: currentUserId ? commentedStoryIds.has(story._id.toString()) : false,
+        isFollowing: isFollowingAuthor
+      };
+    });
 
     return {
       user,
