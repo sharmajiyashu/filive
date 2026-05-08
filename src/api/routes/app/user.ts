@@ -63,7 +63,11 @@ export default (router: Router) => {
   appRouter.get('/:id', async (req: any, res: Response) => {
     try {
       const visitorId = req.user.id;
-      const result = await userService.getUserDetail(req.params.id as string, visitorId);
+      const followersPage = parseInt(req.query.followersPage?.toString() || '1');
+      const followingPage = parseInt(req.query.followingPage?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      
+      const result = await userService.getUserDetail(req.params.id as string, visitorId, followersPage, followingPage, limit);
       return ResponseWrapper.success(res, result, 'User details fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

@@ -328,4 +328,30 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+  /**
+   * @swagger
+   * /app/social/friends/{userId}:
+   *   get:
+   *     summary: Get friends list for a specific user
+   *     tags: [Social]
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: List of friends
+   */
+  appRouter.get('/friends/:userId', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const friends = await socialService.getFriends(req.params.userId, page, limit);
+      return ResponseWrapper.success(res, friends, 'Friends list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };
