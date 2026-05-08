@@ -2,6 +2,7 @@ import { Service } from 'typedi';
 import Story from '../../models/Story';
 import Comment from '../../models/Comment';
 import Like from '../../models/Like';
+import Follow from '../../models/Follow';
 import User from '../../models/User';
 import mongoose from 'mongoose';
 import { CloudinaryService } from '../common/CloudinaryService';
@@ -60,27 +61,45 @@ export class StoryService {
 
     const total = await Story.countDocuments();
 
-    let storiesWithLikeStatus = stories;
+    let storiesWithStatus = stories as any[];
     if (currentUserId) {
       const storyIds = stories.map(s => s._id);
-      const likes = await Like.find({
-        userId: currentUserId,
-        targetId: { $in: storyIds },
-        targetType: 'Story'
-      });
-      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
 
-      storiesWithLikeStatus = stories.map(story => {
+      const [likes, comments, following] = await Promise.all([
+        Like.find({
+          userId: currentUserId,
+          targetId: { $in: storyIds },
+          targetType: 'Story'
+        }),
+        Comment.find({
+          userId: currentUserId,
+          storyId: { $in: storyIds }
+        }),
+        Follow.find({
+          followerId: currentUserId,
+          followingId: { $in: stories.map(s => (s.userId as any)._id || s.userId) },
+          status: 'accepted'
+        })
+      ]);
+
+      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+      const commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
+      const followingUserIds = new Set(following.map(f => f.followingId.toString()));
+
+      storiesWithStatus = stories.map(story => {
         const storyObj = story.toObject();
+        const authorId = (story.userId as any)._id || story.userId;
         return {
           ...storyObj,
-          isLiked: likedStoryIds.has(story._id.toString())
+          isLiked: likedStoryIds.has(story._id.toString()),
+          isCommented: commentedStoryIds.has(story._id.toString()),
+          isFollowing: followingUserIds.has(authorId.toString())
         };
-      }) as any;
+      });
     }
 
     return {
-      stories: storiesWithLikeStatus,
+      stories: storiesWithStatus,
       pagination: {
         total,
         page,

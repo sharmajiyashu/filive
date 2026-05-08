@@ -3,6 +3,7 @@ import User from '../../models/User';
 import Follow from '../../models/Follow';
 import Story from '../../models/Story';
 import Like from '../../models/Like';
+import Comment from '../../models/Comment';
 import UserVisitor from '../../models/UserVisitor';
 import mongoose from 'mongoose';
 
@@ -71,23 +72,40 @@ export class UserService {
     const visitorsCount = await UserVisitor.countDocuments({ userId });
     const uniqueVisitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
-    let storiesWithLikeStatus = stories;
+    let storiesWithStatus = stories as any[];
     if (currentUserId) {
       const storyIds = stories.map(s => s._id);
-      const likes = await Like.find({
-        userId: currentUserId,
-        targetId: { $in: storyIds },
-        targetType: 'Story'
-      });
-      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
 
-      storiesWithLikeStatus = stories.map(story => {
+      const [likes, comments, followingStatus] = await Promise.all([
+        Like.find({
+          userId: currentUserId,
+          targetId: { $in: storyIds },
+          targetType: 'Story'
+        }),
+        Comment.find({
+          userId: currentUserId,
+          storyId: { $in: storyIds }
+        }),
+        Follow.findOne({
+          followerId: currentUserId,
+          followingId: userId,
+          status: 'accepted'
+        })
+      ]);
+
+      const likedStoryIds = new Set(likes.map(l => l.targetId.toString()));
+      const commentedStoryIds = new Set(comments.map(c => c.storyId.toString()));
+      const isFollowingAuthor = !!followingStatus;
+
+      storiesWithStatus = stories.map(story => {
         const storyObj = story.toObject();
         return {
           ...storyObj,
-          isLiked: likedStoryIds.has(story._id.toString())
+          isLiked: likedStoryIds.has(story._id.toString()),
+          isCommented: commentedStoryIds.has(story._id.toString()),
+          isFollowing: isFollowingAuthor
         };
-      }) as any;
+      });
     }
 
     return {
@@ -98,7 +116,7 @@ export class UserService {
       totalViews: visitorsCount,
       followers,
       following,
-      stories: storiesWithLikeStatus,
+      stories: storiesWithStatus,
     };
   }
 }
