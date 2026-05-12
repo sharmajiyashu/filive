@@ -1,0 +1,30 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface ICoinHistory extends Document {
+  userId: mongoose.Types.ObjectId;
+  amount: number; // Positive for credit, negative for debit
+  type: 'recharge' | 'family_creation' | 'transfer' | 'other';
+  description?: string;
+  transactionId?: string; // For payment gateways
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const CoinHistorySchema: Schema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    amount: { type: Number, required: true },
+    type: { 
+      type: String, 
+      enum: ['recharge', 'family_creation', 'transfer', 'other'], 
+      required: true 
+    },
+    description: { type: String },
+    transactionId: { type: String },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export default mongoose.model<ICoinHistory>('CoinHistory', CoinHistorySchema);
