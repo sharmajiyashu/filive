@@ -4,7 +4,9 @@ import auth from './auth';
 import story from './story';
 import social from './social';
 import user from './user';
-
+import coin from './coin';
+import family from './family';
+import appSetting from './appSetting';
 
 export default (router: Router): Router => {
   profile(router);
@@ -12,5 +14,8 @@ export default (router: Router): Router => {
   story(router);
   social(router);
   user(router);
+  coin(router);
+  family(router);
+  appSetting(router);
   return router;
 };

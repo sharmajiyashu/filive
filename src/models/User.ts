@@ -30,6 +30,7 @@ export interface IUser extends Document {
   height?: string;
   country?: string;
   maritalStatus?: string;
+  coins: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,6 +72,7 @@ const UserSchema: Schema = new Schema(
     height: { type: String },
     country: { type: String },
     maritalStatus: { type: String },
+    coins: { type: Number, default: 0 },
   },
   {
     timestamps: true,

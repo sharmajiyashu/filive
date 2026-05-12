@@ -15,6 +15,7 @@ export default async (): Promise<typeof mongoose> => {
             serverSelectionTimeoutMS: 10000, // Timeout after 10s
             socketTimeoutMS: 45000,
             heartbeatFrequencyMS: 10000,
+            family: 4, // Force IPv4 to avoid ECONNREFUSED issues on Windows
         });
 
         AppLogger.info('✌️ MongoDB connected successfully');
