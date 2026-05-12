@@ -18,6 +18,8 @@ import AppLogger from '../api/loaders/logger';
 import { adminSeed } from './adminSeeder';
 import { seedUsers } from './UserSeeder';
 import { seedCoinPackages } from './CoinPackageSeeder';
+import { seedCountries } from './CountrySeeder';
+import { seedLanguages } from './LanguageSeeder';
 
 async function main() {
   try {
@@ -31,6 +33,8 @@ async function main() {
     await adminSeed();
     await seedUsers();
     await seedCoinPackages();
+    await seedCountries();
+    await seedLanguages();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);

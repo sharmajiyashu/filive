@@ -189,7 +189,7 @@ export class AuthenticationService {
         };
     }
 
-    async userSendOTP(mobile: string): Promise<{ otp: string }> {
+    async userSendOTP(mobile: string, countryId?: string): Promise<{ otp: string }> {
         let user = await User.findOne({ mobile });
 
         const otp = this.generateOTP(4);
@@ -203,6 +203,7 @@ export class AuthenticationService {
                 otp,
                 otpExpires,
                 userRole: 'user',
+                countryId: countryId ? new mongoose.Types.ObjectId(countryId) : undefined
             });
         } else {
             // Update existing user with new OTP
@@ -222,7 +223,7 @@ export class AuthenticationService {
             mobile,
             otp,
             otpExpires: { $gt: new Date() }
-        }).populate('profileImage');
+        }).populate('profileImage').populate('countryId');
 
         if (!user) {
             throw new Error('Invalid or expired OTP');

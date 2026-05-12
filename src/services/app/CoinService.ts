@@ -2,12 +2,40 @@ import { Service } from 'typedi';
 import CoinPackage from '../../models/CoinPackage';
 import CoinHistory from '../../models/CoinHistory';
 import User from '../../models/User';
+import Country from '../../models/Country';
+import { calculateLocalPrice } from '../../utils/pricing';
 import mongoose from 'mongoose';
 
 @Service()
 export class CoinService {
-  async getPackages() {
-    return await CoinPackage.find({ isActive: true }).sort({ coins: 1 });
+  async getPackages(countryId?: string) {
+    const packages = await CoinPackage.find({ isActive: true }).sort({ coins: 1 });
+    
+    if (!countryId) {
+      return packages.map(pkg => ({
+        ...pkg.toObject(),
+        localPrice: pkg.price,
+        currencyCode: 'USD',
+        currencySymbol: '$'
+      }));
+    }
+
+    const country = await Country.findById(countryId);
+    if (!country) {
+      return packages.map(pkg => ({
+        ...pkg.toObject(),
+        localPrice: pkg.price,
+        currencyCode: 'USD',
+        currencySymbol: '$'
+      }));
+    }
+
+    return packages.map(pkg => ({
+      ...pkg.toObject(),
+      localPrice: calculateLocalPrice(pkg.price, country.exchangeRate),
+      currencyCode: country.currencyCode,
+      currencySymbol: country.currencySymbol
+    }));
   }
 
   async getWallet(userId: string) {

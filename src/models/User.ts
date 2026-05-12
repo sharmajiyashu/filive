@@ -31,6 +31,7 @@ export interface IUser extends Document {
   country?: string;
   maritalStatus?: string;
   coins: number;
+  countryId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -73,6 +74,7 @@ const UserSchema: Schema = new Schema(
     country: { type: String },
     maritalStatus: { type: String },
     coins: { type: Number, default: 0 },
+    countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
   },
   {
     timestamps: true,
