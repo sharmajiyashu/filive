@@ -6,10 +6,18 @@ import AppSetting from '../../models/AppSetting';
 import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
 import mongoose from 'mongoose';
+import { CloudinaryService } from '../common/CloudinaryService';
+import { MediaService } from '../common/MediaService';
+import { MediaType } from '../../constants/enum';
 
 @Service()
 export class FamilyService {
-  async createFamily(userId: string, data: { name: string; announcement?: string; tags?: string[] }) {
+  constructor(
+    private cloudinaryService: CloudinaryService,
+    private mediaService: MediaService
+  ) { }
+
+  async createFamily(userId: string, data: { name: string; announcement?: string; tags?: any }, file?: Express.Multer.File) {
     const setting = await AppSetting.findOne({ key: 'family_creation_charge' });
     const charge = setting ? (setting.value as number) : 3000;
 
@@ -33,9 +41,20 @@ export class FamilyService {
         description: `Created family: ${data.name}`
       }], { session });
 
+      let imageId: mongoose.Types.ObjectId | undefined;
+      if (file) {
+        const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, [file], 'families');
+        const media = await this.mediaService.createMedia(uploadResults[0]);
+        imageId = media._id as mongoose.Types.ObjectId;
+      }
+
+      const tags = typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : (data.tags ? [data.tags] : []));
+
       // 3. Create family
       const family = await Family.create([{
         ...data,
+        tags,
+        image: imageId,
         creatorId: userId,
         memberCount: 1
       }], { session });
@@ -57,23 +76,108 @@ export class FamilyService {
     }
   }
 
-  async getFamilyHall(userId: string) {
-    // 1. Populated Families (by member count)
-    const populatedRaw = await Family.find().sort({ memberCount: -1 }).limit(10);
+  async editFamily(userId: string, familyId: string, data: { name?: string; announcement?: string; tags?: any }, file?: Express.Multer.File) {
+    const family = await Family.findById(familyId);
+    if (!family) throw new Error('Family not found');
 
-    // 2. Friends Families
+    if (family.creatorId.toString() !== userId) {
+      throw new Error('Only the creator can edit the family');
+    }
+
+    if (file) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, [file], 'families');
+      const media = await this.mediaService.createMedia(uploadResults[0]);
+      (data as any).image = media._id;
+    }
+
+    if (data.tags) {
+      data.tags = typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : [data.tags]);
+    }
+
+    const updatedFamily = await Family.findByIdAndUpdate(familyId, { $set: data }, { new: true }).populate('image');
+    return updatedFamily;
+  }
+
+  async getFamilyHall(userId: string, type?: 'friends' | 'populated', page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+
+    if (type === 'populated') {
+      const populatedRaw = await Family.find().populate('image').sort({ memberCount: -1 }).skip(skip).limit(limit);
+      const total = await Family.countDocuments();
+      
+      const populated = await Promise.all(populatedRaw.map(async (f) => {
+        const stats = await this.getFamilyGenderStats(f._id.toString());
+        const familyObj = f.toObject();
+        return {
+          ...familyObj,
+          genderStats: stats,
+          image: (familyObj.image as any)?.url || null
+        };
+      }));
+
+      return {
+        data: populated,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    }
+
+    if (type === 'friends') {
+      const following = await Follow.find({ followerId: userId, status: 'accepted' }).distinct('followingId');
+      const friendFamilyIds = await FamilyMember.find({ userId: { $in: following } }).distinct('familyId');
+      
+      const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds } }).populate('image').skip(skip).limit(limit);
+      const total = await Family.countDocuments({ _id: { $in: friendFamilyIds } });
+
+      const friendsFamily = await Promise.all(friendsFamilyRaw.map(async (f) => {
+        const stats = await this.getFamilyGenderStats(f._id.toString());
+        const familyObj = f.toObject();
+        return {
+          ...familyObj,
+          genderStats: stats,
+          image: (familyObj.image as any)?.url || null
+        };
+      }));
+
+      return {
+        data: friendsFamily,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    }
+
+    // Default: return top 10 of each without full pagination metadata
+    const populatedRaw = await Family.find().populate('image').sort({ memberCount: -1 }).limit(10);
     const following = await Follow.find({ followerId: userId, status: 'accepted' }).distinct('followingId');
     const friendFamilyIds = await FamilyMember.find({ userId: { $in: following } }).distinct('familyId');
-    const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds } }).limit(10);
+    const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds } }).populate('image').limit(10);
 
     const populated = await Promise.all(populatedRaw.map(async (f) => {
       const stats = await this.getFamilyGenderStats(f._id.toString());
-      return { ...f.toObject(), genderStats: stats };
+      const familyObj = f.toObject();
+      return {
+        ...familyObj,
+        genderStats: stats,
+        image: (familyObj.image as any)?.url || null
+      };
     }));
 
     const friendsFamily = await Promise.all(friendsFamilyRaw.map(async (f) => {
       const stats = await this.getFamilyGenderStats(f._id.toString());
-      return { ...f.toObject(), genderStats: stats };
+      const familyObj = f.toObject();
+      return {
+        ...familyObj,
+        genderStats: stats,
+        image: (familyObj.image as any)?.url || null
+      };
     }));
 
     return {
@@ -81,6 +185,7 @@ export class FamilyService {
       populated
     };
   }
+
 
   private async getFamilyGenderStats(familyId: string) {
     const members = await FamilyMember.find({ familyId }).populate('userId', 'gender');
@@ -141,7 +246,9 @@ export class FamilyService {
   }
 
   async getFamilyDetails(familyId: string) {
-    const family = await Family.findById(familyId).populate('creatorId', 'name profileImage');
+    const family = await Family.findById(familyId)
+      .populate('creatorId', 'name profileImage')
+      .populate('image');
     if (!family) throw new Error('Family not found');
 
     const members = await FamilyMember.find({ familyId })
@@ -174,12 +281,15 @@ export class FamilyService {
 
     const genderStats = await this.getFamilyGenderStats(familyId);
 
+    const familyObj = family.toObject();
     return {
-      family: { ...family.toObject(), genderStats },
+      family: {
+        ...familyObj,
+        genderStats,
+        image: (familyObj.image as any)?.url || null
+      },
       totalMembers: family.memberCount,
       members: memberDetails
     };
   }
 }
-
-export default new FamilyService();
