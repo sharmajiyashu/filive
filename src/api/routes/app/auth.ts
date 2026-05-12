@@ -36,9 +36,9 @@ export default (router: Router) => {
         validate(sendOtpSchema, 'body'),
         async (req: Request, res: Response) => {
             try {
-                const { extension, mobile } = req.body;
+                const { extension, mobile, countryId } = req.body;
                 const fullMobile = `${extension}${mobile}`;
-                await authService.userSendOTP(fullMobile);
+                await authService.userSendOTP(fullMobile, countryId);
                 return ResponseWrapper.success(res, null, 'OTP sent successfully');
             } catch (error: any) {
                 return ResponseWrapper.error(res, error);

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Container from 'typedi';
 import { CoinService } from '../../../services/app/CoinService';
+import User from '../../../models/User';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 
@@ -14,15 +15,31 @@ export default (router: Router) => {
    * @swagger
    * /app/coins/packages:
    *   get:
-   *     summary: Get coin packages
+   *     summary: Get coin packages with local pricing
    *     tags: [Coins]
+   *     parameters:
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *         description: Optional country ID for local pricing
    *     responses:
    *       200:
-   *         description: List of packages
+   *         description: List of packages with local pricing
    */
-  coinRouter.get('/packages', async (req: Request, res: Response) => {
+  coinRouter.get('/packages', async (req: any, res: Response) => {
     try {
-      const result = await coinService.getPackages();
+      let countryId = req.query.countryId;
+
+      // If no countryId in query but user is logged in, try user's country
+      if (!countryId && req.user) {
+        const user = await User.findById(req.user.id);
+        if (user?.countryId) {
+          countryId = user.countryId.toString();
+        }
+      }
+
+      const result = await coinService.getPackages(countryId);
       return ResponseWrapper.success(res, result, 'Packages fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

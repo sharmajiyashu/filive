@@ -7,6 +7,8 @@ import user from './user';
 import coin from './coin';
 import family from './family';
 import appSetting from './appSetting';
+import country from './country';
+import language from './language';
 
 export default (router: Router): Router => {
   profile(router);
@@ -17,5 +19,7 @@ export default (router: Router): Router => {
   coin(router);
   family(router);
   appSetting(router);
+  country(router);
+  language(router);
   return router;
 };
