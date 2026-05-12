@@ -10,7 +10,7 @@ import mongoose from 'mongoose';
 export class CoinService {
   async getPackages(countryId?: string) {
     const packages = await CoinPackage.find({ isActive: true }).sort({ coins: 1 });
-    
+
     if (!countryId) {
       return packages.map(pkg => ({
         ...pkg.toObject(),
@@ -44,8 +44,26 @@ export class CoinService {
     return { coins: user.coins || 0 };
   }
 
-  async getHistory(userId: string) {
-    return await CoinHistory.find({ userId }).sort({ createdAt: -1 });
+  async getHistory(userId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [history, total] = await Promise.all([
+      CoinHistory.find({ userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      CoinHistory.countDocuments({ userId })
+    ]);
+
+    return {
+      history,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
   }
 
   async recharge(userId: string, packageId: string, transactionId: string) {
@@ -57,7 +75,7 @@ export class CoinService {
 
     try {
       await User.findByIdAndUpdate(userId, { $inc: { coins: pkg.coins } }, { session });
-      
+
       await CoinHistory.create([{
         userId,
         amount: pkg.coins,

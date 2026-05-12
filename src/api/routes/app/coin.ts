@@ -75,13 +75,28 @@ export default (router: Router) => {
    *     tags: [Coins]
    *     security:
    *       - BearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *         description: Page number
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *         description: Number of items per page
    *     responses:
    *       200:
    *         description: History details
    */
   coinRouter.get('/history', async (req: any, res: Response) => {
     try {
-      const result = await coinService.getHistory(req.user.id);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const result = await coinService.getHistory(req.user.id, page, limit);
       return ResponseWrapper.success(res, result, 'History fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
