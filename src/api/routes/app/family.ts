@@ -3,6 +3,7 @@ import Container from 'typedi';
 import { FamilyService } from '../../../services/app/FamilyService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import upload from '../../middleware/upload';
 
 export default (router: Router) => {
   const familyService = Container.get(FamilyService);
@@ -21,7 +22,7 @@ export default (router: Router) => {
    *     requestBody:
    *       required: true
    *       content:
-   *         application/json:
+   *         multipart/form-data:
    *           schema:
    *             type: object
    *             properties:
@@ -30,17 +31,61 @@ export default (router: Router) => {
    *               announcement:
    *                 type: string
    *               tags:
-   *                 type: array
-   *                 items:
-   *                   type: string
+   *                 type: string
+   *                 description: JSON string or comma-separated tags
+   *               image:
+   *                 type: string
+   *                 format: binary
    *     responses:
    *       200:
    *         description: Family created
    */
-  familyRouter.post('/create', async (req: any, res: Response) => {
+  familyRouter.post('/create', upload.single('image'), async (req: any, res: Response) => {
     try {
-      const result = await familyService.createFamily(req.user.id, req.body);
+      const result = await familyService.createFamily(req.user.id, req.body, req.file);
       return ResponseWrapper.success(res, result, 'Family created successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/families/edit/{id}:
+   *   put:
+   *     summary: Edit a family
+   *     tags: [Families]
+   *     security:
+   *       - BearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *               announcement:
+   *                 type: string
+   *               tags:
+   *                 type: string
+   *               image:
+   *                 type: string
+   *                 format: binary
+   *     responses:
+   *       200:
+   *         description: Family updated
+   */
+  familyRouter.put('/edit/:id', upload.single('image'), async (req: any, res: Response) => {
+    try {
+      const result = await familyService.editFamily(req.user.id, req.params.id, req.body, req.file);
+      return ResponseWrapper.success(res, result, 'Family updated successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -54,18 +99,42 @@ export default (router: Router) => {
    *     tags: [Families]
    *     security:
    *       - BearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [friends, populated]
+   *         description: Type of families to fetch
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 10
    *     responses:
    *       200:
    *         description: Hall details
    */
   familyRouter.get('/hall', async (req: any, res: Response) => {
     try {
-      const result = await familyService.getFamilyHall(req.user.id);
+      const { type, page, limit } = req.query;
+      const result = await familyService.getFamilyHall(
+        req.user.id,
+        type as any,
+        page ? parseInt(page as string) : 1,
+        limit ? parseInt(limit as string) : 10
+      );
       return ResponseWrapper.success(res, result, 'Family hall fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
   });
+
 
   /**
    * @swagger
@@ -156,3 +225,4 @@ export default (router: Router) => {
     }
   });
 };
+
