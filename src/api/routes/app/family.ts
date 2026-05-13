@@ -216,9 +216,9 @@ export default (router: Router) => {
    *       200:
    *         description: Family details
    */
-  familyRouter.get('/:id', async (req: Request, res: Response) => {
+  familyRouter.get('/:id', async (req: any, res: Response) => {
     try {
-      const result = await familyService.getFamilyDetails(req.params.id as string);
+      const result = await familyService.getFamilyDetails(req.params.id as string, req.user.id);
       return ResponseWrapper.success(res, result, 'Family details fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
