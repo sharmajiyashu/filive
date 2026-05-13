@@ -51,6 +51,16 @@ export class ProfileService {
       data.dob = new Date(data.dob);
     }
 
+    // Support nested updates for preferences if provided in profile update
+    if (data.notificationPreferences) {
+      const user = await User.findById(userId);
+      data.notificationPreferences = { ...user?.notificationPreferences, ...data.notificationPreferences };
+    }
+    if (data.privacySettings) {
+      const user = await User.findById(userId);
+      data.privacySettings = { ...user?.privacySettings, ...data.privacySettings };
+    }
+
     const updatedUser = await User.findByIdAndUpdate(userId, data, { new: true }).populate('profileImage');
 
     if (!updatedUser) {
@@ -75,6 +85,37 @@ export class ProfileService {
         friendsCount
       },
       message: 'PROFILE_UPDATED'
+    };
+  }
+
+  public async updatePreferences(userId: string, data: { notificationPreferences?: any; privacySettings?: any }) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    if (data.notificationPreferences) {
+      user.notificationPreferences = { ...user.notificationPreferences, ...data.notificationPreferences };
+    }
+    if (data.privacySettings) {
+      user.privacySettings = { ...user.privacySettings, ...data.privacySettings };
+    }
+
+    await user.save();
+    return user;
+  }
+
+  public async getProfileSettings() {
+    const settings = await require('../../models/AppSetting').default.find({
+      key: { $in: ['careers', 'marital_statuses'] }
+    });
+
+    const careers = settings.find((s: any) => s.key === 'careers')?.value || [];
+    const maritalStatuses = settings.find((s: any) => s.key === 'marital_statuses')?.value || [
+      'single', 'divorced', 'married', 'secret', 'inlove'
+    ];
+
+    return {
+      careers,
+      maritalStatuses
     };
   }
 }

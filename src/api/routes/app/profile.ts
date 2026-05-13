@@ -37,6 +37,69 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/profile/settings:
+   *   get:
+   *     summary: Get profile-related settings (careers, marital statuses)
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Settings fetched successfully
+   */
+  router.get('/profile/settings',
+    async (req: any, res: Response) => {
+      try {
+        const settings = await profileService.getProfileSettings();
+        return ResponseWrapper.success(res, settings, 'Settings fetched successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
+   * /app/profile/preferences:
+   *   post:
+   *     summary: Update notification and privacy preferences
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               notificationPreferences:
+   *                 type: object
+   *                 properties:
+   *                   inApp: { type: boolean }
+   *                   newMessage: { type: boolean }
+   *                   vibrations: { type: boolean }
+   *               privacySettings:
+   *                 type: object
+   *                 properties:
+   *                   hideWealthLevel: { type: boolean }
+   *                   hideCharmLevel: { type: boolean }
+   *                   anonymousRanking: { type: boolean }
+   *     responses:
+   *       200:
+   *         description: Preferences updated successfully
+   */
+  router.post('/profile/preferences',
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        const updatedUser = await profileService.updatePreferences(userId, req.body);
+        return ResponseWrapper.success(res, updatedUser, 'Preferences updated successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
    * /app/profile:
    *   post:
    *     summary: Update user profile (includes image upload)

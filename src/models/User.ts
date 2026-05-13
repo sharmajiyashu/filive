@@ -30,6 +30,19 @@ export interface IUser extends Document {
   height?: string;
   country?: string;
   maritalStatus?: string;
+  notificationPreferences: {
+    inApp: boolean;
+    newMessage: boolean;
+    vibrations: boolean;
+  };
+  privacySettings: {
+    hideWealthLevel: boolean;
+    hideCharmLevel: boolean;
+    anonymousRanking: boolean;
+  };
+  weight?: string;
+  career?: string;
+  emotionalStatus?: 'single' | 'divorced' | 'married' | 'secret' | 'inlove';
   coins: number;
   countryId?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -71,8 +84,21 @@ const UserSchema: Schema = new Schema(
     dob: { type: Date },
     selfIntroduce: { type: String },
     height: { type: String },
+    weight: { type: String },
+    career: { type: String },
+    emotionalStatus: { type: String, enum: ['single', 'divorced', 'married', 'secret', 'inlove'] },
     country: { type: String },
     maritalStatus: { type: String },
+    notificationPreferences: {
+      inApp: { type: Boolean, default: true },
+      newMessage: { type: Boolean, default: true },
+      vibrations: { type: Boolean, default: true },
+    },
+    privacySettings: {
+      hideWealthLevel: { type: Boolean, default: false },
+      hideCharmLevel: { type: Boolean, default: false },
+      anonymousRanking: { type: Boolean, default: false },
+    },
     coins: { type: Number, default: 0 },
     countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
   },
