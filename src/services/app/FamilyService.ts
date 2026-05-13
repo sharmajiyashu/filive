@@ -100,6 +100,8 @@ export class FamilyService {
 
   async getFamilyHall(userId: string, type?: 'friends' | 'populated', page: number = 1, limit: number = 10) {
     const skip = (page - 1) * limit;
+    const userJoinedFamilies = await FamilyMember.find({ userId }).distinct('familyId');
+    const userJoinedSet = new Set(userJoinedFamilies.map(id => id.toString()));
 
     if (type === 'populated') {
       const populatedRaw = await Family.find().populate('image').sort({ memberCount: -1 }).skip(skip).limit(limit);
@@ -110,6 +112,7 @@ export class FamilyService {
         const familyObj = f.toObject();
         return {
           ...familyObj,
+          isJoined: userJoinedSet.has(f._id.toString()),
           genderStats: stats,
           image: (familyObj.image as any)?.url || null
         };
@@ -138,6 +141,7 @@ export class FamilyService {
         const familyObj = f.toObject();
         return {
           ...familyObj,
+          isJoined: userJoinedSet.has(f._id.toString()),
           genderStats: stats,
           image: (familyObj.image as any)?.url || null
         };
@@ -165,6 +169,7 @@ export class FamilyService {
       const familyObj = f.toObject();
       return {
         ...familyObj,
+        isJoined: userJoinedSet.has(f._id.toString()),
         genderStats: stats,
         image: (familyObj.image as any)?.url || null
       };
@@ -175,6 +180,7 @@ export class FamilyService {
       const familyObj = f.toObject();
       return {
         ...familyObj,
+        isJoined: userJoinedSet.has(f._id.toString()),
         genderStats: stats,
         image: (familyObj.image as any)?.url || null
       };
@@ -245,7 +251,7 @@ export class FamilyService {
     }
   }
 
-  async getFamilyDetails(familyId: string) {
+  async getFamilyDetails(familyId: string, userId?: string) {
     const family = await Family.findById(familyId)
       .populate('creatorId', 'name profileImage')
       .populate('image');
@@ -281,10 +287,17 @@ export class FamilyService {
 
     const genderStats = await this.getFamilyGenderStats(familyId);
 
+    let isJoined = false;
+    if (userId) {
+      const membership = await FamilyMember.findOne({ familyId, userId });
+      isJoined = !!membership;
+    }
+
     const familyObj = family.toObject();
     return {
       family: {
         ...familyObj,
+        isJoined,
         genderStats,
         image: (familyObj.image as any)?.url || null
       },
