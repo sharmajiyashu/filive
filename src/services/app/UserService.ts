@@ -36,7 +36,12 @@ export class UserService {
 
     const user = await User.findById(userId)
       .select('-password -otp -otpExpires -fcmTokens')
-      .populate('profileImage');
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      });
 
     if (!user) {
       throw new Error('User not found');

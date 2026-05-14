@@ -41,8 +41,11 @@ export interface IUser extends Document {
     anonymousRanking: boolean;
   };
   weight?: string;
-  career?: string;
+  careerId?: mongoose.Types.ObjectId;
   emotionalStatus?: 'single' | 'divorced' | 'married' | 'secret' | 'inlove';
+  nationality?: string;
+  hobbies?: string[];
+  album?: mongoose.Types.ObjectId[];
   coins: number;
   countryId?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -85,8 +88,11 @@ const UserSchema: Schema = new Schema(
     selfIntroduce: { type: String },
     height: { type: String },
     weight: { type: String },
-    career: { type: String },
+    careerId: { type: Schema.Types.ObjectId, ref: 'Career' },
     emotionalStatus: { type: String, enum: ['single', 'divorced', 'married', 'secret', 'inlove'] },
+    nationality: { type: String },
+    hobbies: [{ type: String }],
+    album: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     country: { type: String },
     maritalStatus: { type: String },
     notificationPreferences: {

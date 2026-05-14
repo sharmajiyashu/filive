@@ -4,6 +4,7 @@ import Follow from '../../models/Follow';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
+import Career from '../../models/Career';
 
 @Service()
 export class ProfileService {
@@ -13,7 +14,13 @@ export class ProfileService {
   ) { }
 
   public async getProfile(userId: string) {
-    const profile = await User.findById(userId).populate('profileImage');
+    const profile = await User.findById(userId)
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      });
     if (!profile) {
       throw new Error('USER_NOT_FOUND');
     }
@@ -36,7 +43,7 @@ export class ProfileService {
     };
   }
 
-  public async updateProfile(userId: string, data: any, file?: Express.Multer.File) {
+  public async updateProfile(userId: string, data: any, file?: Express.Multer.File, albumFiles?: Express.Multer.File[]) {
     if (file) {
       const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, [file], 'profiles');
       if (uploadResults.length > 0) {
@@ -47,8 +54,34 @@ export class ProfileService {
       }
     }
 
+    if (albumFiles && albumFiles.length > 0) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, albumFiles, 'albums');
+      const mediaIds = [];
+      for (const result of uploadResults) {
+        const media = await this.mediaService.createMedia({
+          ...result
+        });
+        mediaIds.push(media._id);
+      }
+      data.$push = { album: { $each: mediaIds } };
+    }
+
     if (data.dob) {
       data.dob = new Date(data.dob);
+    }
+
+    // Parse JSON strings for multipart/form-data
+    if (typeof data.hobbies === 'string') {
+      try { data.hobbies = JSON.parse(data.hobbies); } catch (e) { data.hobbies = data.hobbies.split(',').map((s: string) => s.trim()); }
+    }
+    if (typeof data.location === 'string') {
+      try { data.location = JSON.parse(data.location); } catch (e) { }
+    }
+    if (typeof data.notificationPreferences === 'string') {
+      try { data.notificationPreferences = JSON.parse(data.notificationPreferences); } catch (e) { }
+    }
+    if (typeof data.privacySettings === 'string') {
+      try { data.privacySettings = JSON.parse(data.privacySettings); } catch (e) { }
     }
 
     // Support nested updates for preferences if provided in profile update
@@ -61,7 +94,13 @@ export class ProfileService {
       data.privacySettings = { ...user?.privacySettings, ...data.privacySettings };
     }
 
-    const updatedUser = await User.findByIdAndUpdate(userId, data, { new: true }).populate('profileImage');
+    const updatedUser = await User.findByIdAndUpdate(userId, data, { new: true })
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      });
 
     if (!updatedUser) {
       throw new Error('USER_NOT_FOUND');
@@ -104,11 +143,13 @@ export class ProfileService {
   }
 
   public async getProfileSettings() {
-    const settings = await require('../../models/AppSetting').default.find({
-      key: { $in: ['careers', 'marital_statuses'] }
-    });
+    const [careers, settings] = await Promise.all([
+      Career.find({ isActive: true }).populate('image'),
+      require('../../models/AppSetting').default.find({
+        key: { $in: ['marital_statuses'] }
+      })
+    ]);
 
-    const careers = settings.find((s: any) => s.key === 'careers')?.value || [];
     const maritalStatuses = settings.find((s: any) => s.key === 'marital_statuses')?.value || [
       'single', 'divorced', 'married', 'secret', 'inlove'
     ];
@@ -117,5 +158,45 @@ export class ProfileService {
       careers,
       maritalStatuses
     };
+  }
+
+  public async addAlbumPhotos(userId: string, files: Express.Multer.File[]) {
+    const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, files, 'albums');
+    const mediaIds = [];
+
+    for (const result of uploadResults) {
+      const media = await this.mediaService.createMedia({
+        ...result
+      });
+      mediaIds.push(media._id);
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $push: { album: { $each: mediaIds } } },
+      { new: true }
+    ).populate('profileImage').populate('album').populate({
+      path: 'careerId',
+      populate: { path: 'image' }
+    });
+
+    if (!updatedUser) throw new Error('USER_NOT_FOUND');
+
+    return updatedUser;
+  }
+
+  public async deleteAlbumPhoto(userId: string, photoId: string) {
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { album: photoId } },
+      { new: true }
+    ).populate('profileImage').populate('album').populate({
+      path: 'careerId',
+      populate: { path: 'image' }
+    });
+
+    if (!updatedUser) throw new Error('USER_NOT_FOUND');
+
+    return updatedUser;
   }
 }

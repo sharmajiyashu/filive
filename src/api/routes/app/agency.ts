@@ -74,4 +74,51 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/agencies:
+   *   get:
+   *     summary: Get all verified agencies
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Agencies fetched successfully
+   */
+  agencyRouter.get('/', async (req: any, res: Response) => {
+    try {
+      const result = await agencyService.getAgencies();
+      return ResponseWrapper.success(res, result, 'Agencies fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/{id}:
+   *   get:
+   *     summary: Get agency details
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Agency details fetched successfully
+   */
+  agencyRouter.get('/:id', async (req: any, res: Response) => {
+    try {
+      const result = await agencyService.getAgency(req.params.id);
+      return ResponseWrapper.success(res, result, 'Agency details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

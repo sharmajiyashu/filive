@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import AppSetting from '../../../models/AppSetting';
 import Country from '../../../models/Country';
 import Language from '../../../models/Language';
+import Career from '../../../models/Career';
 import { ResponseWrapper } from '../../responseWrapper';
 
 export default (router: Router) => {
@@ -13,7 +14,7 @@ export default (router: Router) => {
    * @swagger
    * /app/settings:
    *   get:
-   *     summary: Get all app settings, countries and languages
+   *     summary: Get all app settings, countries, languages and careers
    *     tags: [Settings]
    *     responses:
    *       200:
@@ -21,10 +22,11 @@ export default (router: Router) => {
    */
   settingsRouter.get('/', async (req: Request, res: Response) => {
     try {
-      const [settings, countries, languages] = await Promise.all([
+      const [settings, countries, languages, careers] = await Promise.all([
         AppSetting.find(),
         Country.find({ isActive: true }).sort({ name: 1 }),
-        Language.find({ isActive: true }).sort({ name: 1 })
+        Language.find({ isActive: true }).sort({ name: 1 }),
+        Career.find({ isActive: true }).populate('image').sort({ name: 1 })
       ]);
 
       const settingsMap = settings.reduce((acc: any, curr) => {
@@ -35,7 +37,8 @@ export default (router: Router) => {
       const result = {
         settings: settingsMap,
         countries,
-        languages
+        languages,
+        careers
       };
 
       return ResponseWrapper.success(res, result, 'Configuration fetched successfully');

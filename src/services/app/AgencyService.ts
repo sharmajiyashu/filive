@@ -81,4 +81,14 @@ export class AgencyService {
 
     return agency;
   }
+
+  public async getAgencies(filter: any = {}) {
+    return await Agency.find({ ...filter, isVerified: true }).populate('countryId').populate('creatorId', 'name profileImage');
+  }
+
+  public async getAgency(id: string) {
+    const agency = await Agency.findById(id).populate('countryId').populate('creatorId', 'name profileImage');
+    if (!agency) throw new Error('Agency not found');
+    return agency;
+  }
 }

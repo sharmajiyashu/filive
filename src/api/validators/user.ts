@@ -16,9 +16,11 @@ export const updateProfileSchema = z.object({
   selfIntroduce: z.string().optional(),
   height: z.string().optional(),
   weight: z.string().optional(),
-  career: z.string().optional(),
+  careerId: z.string().optional(),
   emotionalStatus: z.enum(['single', 'divorced', 'married', 'secret', 'inlove']).optional(),
   country: z.string().optional(),
+  nationality: z.string().optional(),
+  hobbies: z.array(z.string()).optional(),
   maritalStatus: z.string().optional(),
   notificationPreferences: z.object({
     inApp: z.boolean().optional(),
