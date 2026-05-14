@@ -37,6 +37,69 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/profile/settings:
+   *   get:
+   *     summary: Get profile-related settings (careers, marital statuses)
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Settings fetched successfully
+   */
+  router.get('/profile/settings',
+    async (req: any, res: Response) => {
+      try {
+        const settings = await profileService.getProfileSettings();
+        return ResponseWrapper.success(res, settings, 'Settings fetched successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
+   * /app/profile/preferences:
+   *   post:
+   *     summary: Update notification and privacy preferences
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               notificationPreferences:
+   *                 type: object
+   *                 properties:
+   *                   inApp: { type: boolean }
+   *                   newMessage: { type: boolean }
+   *                   vibrations: { type: boolean }
+   *               privacySettings:
+   *                 type: object
+   *                 properties:
+   *                   hideWealthLevel: { type: boolean }
+   *                   hideCharmLevel: { type: boolean }
+   *                   anonymousRanking: { type: boolean }
+   *     responses:
+   *       200:
+   *         description: Preferences updated successfully
+   */
+  router.post('/profile/preferences',
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        const updatedUser = await profileService.updatePreferences(userId, req.body);
+        return ResponseWrapper.success(res, updatedUser, 'Preferences updated successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
    * /app/profile:
    *   post:
    *     summary: Update user profile (includes image upload)
@@ -111,6 +174,11 @@ export default (router: Router) => {
    *               image:
    *                 type: string
    *                 format: binary
+   *               images:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: binary
    *     responses:
    *       200:
    *         description: Profile updated successfully
@@ -118,12 +186,14 @@ export default (router: Router) => {
    *         description: Unauthorized
    */
   router.post('/profile',
-    upload.single('image'),
+    upload.fields([{ name: 'image', maxCount: 1 }, { name: 'images', maxCount: 10 }]),
     validate(updateProfileSchema, 'body'),
     async (req: any, res: Response) => {
       try {
         const userId = req.user.id;
-        const updatedProfile = await profileService.updateProfile(userId, req.body, req.file);
+        const profileFile = req.files?.['image']?.[0];
+        const albumFiles = req.files?.['images'];
+        const updatedProfile = await profileService.updateProfile(userId, req.body, profileFile, albumFiles);
         return ResponseWrapper.success(res, updatedProfile, 'Profile updated successfully');
       } catch (error: any) {
         return ResponseWrapper.error(res, error);
@@ -159,6 +229,73 @@ export default (router: Router) => {
         if (!req.file) throw new Error('Please upload an image');
         const updatedProfile = await profileService.updateProfile(userId, {}, req.file);
         return ResponseWrapper.success(res, updatedProfile, 'Image uploaded successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
+   * /app/profile/album:
+   *   post:
+   *     summary: Upload multiple photos to user album
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               images:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: binary
+   *     responses:
+   *       200:
+   *         description: Album photos uploaded successfully
+   */
+  router.post('/profile/album',
+    upload.array('images', 10),
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        const files = req.files as Express.Multer.File[];
+        if (!files || files.length === 0) throw new Error('Please upload at least one image');
+        const updatedProfile = await profileService.addAlbumPhotos(userId, files);
+        return ResponseWrapper.success(res, updatedProfile, 'Album photos uploaded successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
+   * /app/profile/album/{photoId}:
+   *   delete:
+   *     summary: Delete a photo from user album
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: photoId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Album photo deleted successfully
+   */
+  router.delete('/profile/album/:photoId',
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        const { photoId } = req.params;
+        const updatedProfile = await profileService.deleteAlbumPhoto(userId, photoId);
+        return ResponseWrapper.success(res, updatedProfile, 'Album photo deleted successfully');
       } catch (error: any) {
         return ResponseWrapper.error(res, error);
       }

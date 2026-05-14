@@ -6,6 +6,11 @@ export async function seedSettings() {
     const settings = [
       { key: 'family_creation_charge', value: 3000, description: 'Cost to create a family in coins' },
       { key: 'app_name', value: 'Filive', description: 'Application name' },
+      {
+        key: 'marital_statuses',
+        value: ['single', 'divorced', 'married', 'secret', 'inlove'],
+        description: 'List of available marital statuses'
+      },
     ];
 
     for (const setting of settings) {
