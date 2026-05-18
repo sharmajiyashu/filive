@@ -44,7 +44,7 @@ export interface IUser extends Document {
   careerId?: mongoose.Types.ObjectId;
   emotionalStatus?: 'single' | 'divorced' | 'married' | 'secret' | 'inlove';
   nationality?: string;
-  hobbies?: string[];
+  hobbies?: (mongoose.Types.ObjectId | any)[];
   album?: mongoose.Types.ObjectId[];
   coins: number;
   countryId?: mongoose.Types.ObjectId;
@@ -91,7 +91,7 @@ const UserSchema: Schema = new Schema(
     careerId: { type: Schema.Types.ObjectId, ref: 'Career' },
     emotionalStatus: { type: String, enum: ['single', 'divorced', 'married', 'secret', 'inlove'] },
     nationality: { type: String },
-    hobbies: [{ type: String }],
+    hobbies: [{ type: Schema.Types.ObjectId, ref: 'Hobby' }],
     album: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     country: { type: String },
     maritalStatus: { type: String },

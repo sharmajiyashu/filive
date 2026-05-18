@@ -5,6 +5,7 @@ import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
 import Career from '../../models/Career';
+import Hobby from '../../models/Hobby';
 
 @Service()
 export class ProfileService {
@@ -17,6 +18,10 @@ export class ProfileService {
     const profile = await User.findById(userId)
       .populate('profileImage')
       .populate('album')
+      .populate({
+        path: 'hobbies',
+        populate: { path: 'image' }
+      })
       .populate({
         path: 'careerId',
         populate: { path: 'image' }
@@ -98,6 +103,10 @@ export class ProfileService {
       .populate('profileImage')
       .populate('album')
       .populate({
+        path: 'hobbies',
+        populate: { path: 'image' }
+      })
+      .populate({
         path: 'careerId',
         populate: { path: 'image' }
       });
@@ -143,11 +152,12 @@ export class ProfileService {
   }
 
   public async getProfileSettings() {
-    const [careers, settings] = await Promise.all([
+    const [careers, settings, hobbies] = await Promise.all([
       Career.find({ isActive: true }).populate('image'),
       require('../../models/AppSetting').default.find({
         key: { $in: ['marital_statuses'] }
-      })
+      }),
+      Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 })
     ]);
 
     const maritalStatuses = settings.find((s: any) => s.key === 'marital_statuses')?.value || [
@@ -156,7 +166,8 @@ export class ProfileService {
 
     return {
       careers,
-      maritalStatuses
+      maritalStatuses,
+      hobbies
     };
   }
 
@@ -175,10 +186,17 @@ export class ProfileService {
       userId,
       { $push: { album: { $each: mediaIds } } },
       { new: true }
-    ).populate('profileImage').populate('album').populate({
-      path: 'careerId',
-      populate: { path: 'image' }
-    });
+    )
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'hobbies',
+        populate: { path: 'image' }
+      })
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      });
 
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
@@ -190,10 +208,17 @@ export class ProfileService {
       userId,
       { $pull: { album: photoId } },
       { new: true }
-    ).populate('profileImage').populate('album').populate({
-      path: 'careerId',
-      populate: { path: 'image' }
-    });
+    )
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'hobbies',
+        populate: { path: 'image' }
+      })
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      });
 
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
