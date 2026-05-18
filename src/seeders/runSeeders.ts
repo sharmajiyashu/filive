@@ -21,6 +21,7 @@ import { seedCoinPackages } from './CoinPackageSeeder';
 import { seedCountries } from './CountrySeeder';
 import { seedLanguages } from './LanguageSeeder';
 import { seedCareers } from './CareerSeeder';
+import { seedHobbies } from './HobbySeeder';
 
 async function main() {
   try {
@@ -37,6 +38,7 @@ async function main() {
     await seedCountries();
     await seedLanguages();
     await seedCareers();
+    await seedHobbies();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);
