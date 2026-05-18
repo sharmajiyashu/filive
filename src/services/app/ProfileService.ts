@@ -89,6 +89,19 @@ export class ProfileService {
       try { data.privacySettings = JSON.parse(data.privacySettings); } catch (e) { }
     }
 
+    if (typeof data.enableVoiceCall === 'string') {
+      data.enableVoiceCall = data.enableVoiceCall === 'true';
+    }
+    if (typeof data.enableVideoCall === 'string') {
+      data.enableVideoCall = data.enableVideoCall === 'true';
+    }
+    if (typeof data.voiceCallPrice === 'string') {
+      data.voiceCallPrice = Number(data.voiceCallPrice);
+    }
+    if (typeof data.videoCallPrice === 'string') {
+      data.videoCallPrice = Number(data.videoCallPrice);
+    }
+
     // Support nested updates for preferences if provided in profile update
     if (data.notificationPreferences) {
       const user = await User.findById(userId);

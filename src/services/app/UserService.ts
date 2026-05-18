@@ -5,18 +5,38 @@ import Story from '../../models/Story';
 import Like from '../../models/Like';
 import Comment from '../../models/Comment';
 import UserVisitor from '../../models/UserVisitor';
+import Block from '../../models/Block';
 import mongoose from 'mongoose';
 
 @Service()
 export class UserService {
-  public async getAllUsers(page: number = 1, limit: number = 10) {
-    const users = await User.find({ userRole: 'user' })
-      .select('name email profileImage bio location isPremium selfIntroduce height country maritalStatus')
+  public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string) {
+    let query: any = { userRole: 'user' };
+
+    if (currentUserId) {
+      const blockedRelations = await Block.find({
+        $or: [
+          { blockerId: currentUserId },
+          { blockedId: currentUserId }
+        ]
+      });
+
+      const excludedUserIds = blockedRelations.map((rel: any) =>
+        rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
+      );
+
+      if (excludedUserIds.length > 0) {
+        query._id = { $nin: excludedUserIds };
+      }
+    }
+
+    const users = await User.find(query)
+      .select('name email profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
       .populate('profileImage')
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const total = await User.countDocuments({ userRole: 'user' });
+    const total = await User.countDocuments(query);
 
     return {
       users,
@@ -32,6 +52,18 @@ export class UserService {
   public async getUserDetail(userId: string, currentUserId?: string, followersPage: number = 1, followingPage: number = 1, limit: number = 10) {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error('Invalid user ID');
+    }
+
+    if (currentUserId) {
+      const isBlocked = await Block.findOne({
+        $or: [
+          { blockerId: currentUserId, blockedId: userId },
+          { blockerId: userId, blockedId: currentUserId }
+        ]
+      });
+      if (isBlocked) {
+        throw new Error('User blocked');
+      }
     }
 
     const user = await User.findById(userId)
@@ -166,6 +198,62 @@ export class UserService {
         }
       },
       stories: storiesWithStatus,
+    };
+  }
+
+  public async toggleBlockUser(blockerId: string, blockedId: string) {
+    if (blockerId === blockedId) {
+      throw new Error('You cannot block yourself');
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(blockedId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    const targetUser = await User.findById(blockedId);
+    if (!targetUser) {
+      throw new Error('User to block not found');
+    }
+
+    const existingBlock = await Block.findOne({ blockerId, blockedId });
+
+    if (existingBlock) {
+      await Block.deleteOne({ _id: existingBlock._id });
+      return { blocked: false, message: 'User unblocked successfully' };
+    } else {
+      await Block.create({ blockerId, blockedId });
+      // Remove follow relationships if blocked
+      await Follow.deleteMany({
+        $or: [
+          { followerId: blockerId, followingId: blockedId },
+          { followerId: blockedId, followingId: blockerId }
+        ]
+      });
+      return { blocked: true, message: 'User blocked successfully' };
+    }
+  }
+
+  public async getBlockedList(blockerId: string, page: number = 1, limit: number = 10) {
+    const blocks = await Block.find({ blockerId })
+      .populate({
+        path: 'blockedId',
+        select: 'name email profileImage bio isPremium location country',
+        populate: { path: 'profileImage' }
+      })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Block.countDocuments({ blockerId });
+    const users = blocks.map(b => b.blockedId).filter(u => u !== null);
+
+    return {
+      users,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

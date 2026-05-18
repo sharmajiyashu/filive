@@ -11,6 +11,11 @@ export async function seedSettings() {
         value: ['single', 'divorced', 'married', 'secret', 'inlove'],
         description: 'List of available marital statuses'
       },
+      {
+        key: 'feedback_types',
+        value: ['bug_report', 'feature_request', 'billing_issue', 'general_inquiry'],
+        description: 'List of available help & feedback types'
+      },
     ];
 
     for (const setting of settings) {

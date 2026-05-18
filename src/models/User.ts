@@ -48,6 +48,10 @@ export interface IUser extends Document {
   album?: mongoose.Types.ObjectId[];
   coins: number;
   countryId?: mongoose.Types.ObjectId;
+  enableVoiceCall: boolean;
+  enableVideoCall: boolean;
+  voiceCallPrice: number;
+  videoCallPrice: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -107,6 +111,10 @@ const UserSchema: Schema = new Schema(
     },
     coins: { type: Number, default: 0 },
     countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
+    enableVoiceCall: { type: Boolean, default: false },
+    enableVideoCall: { type: Boolean, default: false },
+    voiceCallPrice: { type: Number, default: 0 },
+    videoCallPrice: { type: Number, default: 0 },
   },
   {
     timestamps: true,

@@ -31,12 +31,75 @@ export default (router: Router) => {
    *       200:
    *         description: List of users
    */
-  appRouter.get('/', async (req: Request, res: Response) => {
+  appRouter.get('/', async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await userService.getAllUsers(page, limit);
+      const currentUserId = req.user.id;
+      const result = await userService.getAllUsers(page, limit, currentUserId);
       return ResponseWrapper.success(res, result, 'Users fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/blocked:
+   *   get:
+   *     summary: Get all blocked users list with pagination
+   *     tags: [Users]
+   *     security:
+   *       - BearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of blocked users
+   */
+  appRouter.get('/blocked', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const blockerId = req.user.id;
+      const result = await userService.getBlockedList(blockerId, page, limit);
+      return ResponseWrapper.success(res, result, 'Blocked list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/block/{id}:
+   *   post:
+   *     summary: Block or unblock a user
+   *     tags: [Users]
+   *     security:
+   *       - BearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Block/Unblock toggle status
+   */
+  appRouter.post('/block/:id', async (req: any, res: Response) => {
+    try {
+      const blockerId = req.user.id;
+      const blockedId = req.params.id;
+      const result = await userService.toggleBlockUser(blockerId, blockedId);
+      return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -66,7 +129,7 @@ export default (router: Router) => {
       const followersPage = parseInt(req.query.followersPage?.toString() || '1');
       const followingPage = parseInt(req.query.followingPage?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      
+
       const result = await userService.getUserDetail(req.params.id as string, visitorId, followersPage, followingPage, limit);
       return ResponseWrapper.success(res, result, 'User details fetched successfully');
     } catch (error: any) {
