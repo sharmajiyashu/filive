@@ -10,6 +10,7 @@ import appSetting from './appSetting';
 import country from './country';
 import language from './language';
 import agency from './agency';
+import helpFeedback from './helpFeedback';
 
 export default (router: Router): Router => {
   profile(router);
@@ -23,5 +24,6 @@ export default (router: Router): Router => {
   country(router);
   language(router);
   agency(router);
+  helpFeedback(router);
   return router;
 };

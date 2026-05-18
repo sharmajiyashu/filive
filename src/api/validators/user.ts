@@ -32,4 +32,8 @@ export const updateProfileSchema = z.object({
     hideCharmLevel: z.boolean().optional(),
     anonymousRanking: z.boolean().optional(),
   }).optional(),
+  enableVoiceCall: z.boolean().optional(),
+  enableVideoCall: z.boolean().optional(),
+  voiceCallPrice: z.number().optional(),
+  videoCallPrice: z.number().optional(),
 });
