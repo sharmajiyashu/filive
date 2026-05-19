@@ -51,8 +51,26 @@ export default (router: Router) => {
       }
 
       const mediaIds: any[] = [];
-      const files = req.files as Express.Multer.File[];
 
+      // Parse existing media IDs from request body if any
+      let bodyImages = req.body.images;
+      if (bodyImages) {
+        if (typeof bodyImages === 'string') {
+          try {
+            bodyImages = JSON.parse(bodyImages);
+          } catch (e) {
+            bodyImages = bodyImages.split(',').map((s: string) => s.trim()).filter(Boolean);
+          }
+        }
+        if (Array.isArray(bodyImages)) {
+          mediaIds.push(...bodyImages);
+        } else if (typeof bodyImages === 'string' && bodyImages.trim() !== '') {
+          mediaIds.push(bodyImages);
+        }
+      }
+
+      // Handle uploaded files
+      const files = req.files as Express.Multer.File[];
       if (files && files.length > 0) {
         const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, files, 'feedbacks');
         for (const result of uploadResults) {

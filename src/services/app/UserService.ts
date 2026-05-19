@@ -172,7 +172,10 @@ export class UserService {
     });
 
     return {
-      user,
+      user: {
+        ...user.toObject(),
+        career: user.careerId
+      },
       isFollowing: isFollowingAuthor,
       followersCount,
       followingCount,
