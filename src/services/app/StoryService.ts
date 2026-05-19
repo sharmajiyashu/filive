@@ -4,6 +4,7 @@ import Comment from '../../models/Comment';
 import Like from '../../models/Like';
 import Follow from '../../models/Follow';
 import User from '../../models/User';
+import Block from '../../models/Block';
 import mongoose from 'mongoose';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
@@ -52,7 +53,26 @@ export class StoryService {
   }
 
   public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10) {
-    const stories = await Story.find()
+    let query: any = {};
+
+    if (currentUserId) {
+      const blockedRelations = await Block.find({
+        $or: [
+          { blockerId: currentUserId },
+          { blockedId: currentUserId }
+        ]
+      });
+
+      const excludedUserIds = blockedRelations.map((rel: any) =>
+        rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
+      );
+
+      if (excludedUserIds.length > 0) {
+        query.userId = { $nin: excludedUserIds };
+      }
+    }
+
+    const stories = await Story.find(query)
       .populate({
         path: 'userId',
         select: 'name email profileImage bio isPremium location country',
@@ -63,7 +83,7 @@ export class StoryService {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const total = await Story.countDocuments();
+    const total = await Story.countDocuments(query);
 
     let likedStoryIds = new Set<string>();
     let commentedStoryIds = new Set<string>();
@@ -84,7 +104,7 @@ export class StoryService {
         }),
         Follow.find({
           followerId: currentUserId,
-          followingId: { $in: stories.map(s => (s.userId as any)._id || s.userId) },
+          followingId: { $in: stories.map(s => s.userId ? ((s.userId as any)._id || s.userId) : null).filter(Boolean) },
           status: 'accepted'
         })
       ]);
@@ -96,12 +116,12 @@ export class StoryService {
 
     const storiesWithStatus = stories.map(story => {
       const storyObj = story.toObject();
-      const authorId = (story.userId as any)._id || story.userId;
+      const authorId = story.userId ? ((story.userId as any)._id || story.userId) : null;
       return {
         ...storyObj,
         isLiked: currentUserId ? likedStoryIds.has(story._id.toString()) : false,
         isCommented: currentUserId ? commentedStoryIds.has(story._id.toString()) : false,
-        isFollowing: currentUserId ? followingUserIds.has(authorId.toString()) : false
+        isFollowing: (currentUserId && authorId) ? followingUserIds.has(authorId.toString()) : false
       };
     });
 

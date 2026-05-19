@@ -224,7 +224,7 @@ export class UserService {
       await Block.deleteOne({ _id: existingBlock._id });
       return { blocked: false, message: 'User unblocked successfully' };
     } else {
-      await Block.create({ blockerId, blockedId });
+      const newBlock = await Block.create({ blockerId, blockedId });
       // Remove follow relationships if blocked
       await Follow.deleteMany({
         $or: [
@@ -232,7 +232,12 @@ export class UserService {
           { followerId: blockedId, followingId: blockerId }
         ]
       });
-      return { blocked: true, message: 'User blocked successfully' };
+      return {
+        blocked: true,
+        message: 'User blocked successfully',
+        blockedAt: newBlock.createdAt,
+        createdAt: newBlock.createdAt,
+      };
     }
   }
 
@@ -247,7 +252,16 @@ export class UserService {
       .limit(limit);
 
     const total = await Block.countDocuments({ blockerId });
-    const users = blocks.map(b => b.blockedId).filter(u => u !== null);
+    const users = blocks
+      .filter(b => b.blockedId !== null)
+      .map(b => {
+        const userObj = (b.blockedId as any).toObject ? (b.blockedId as any).toObject() : b.blockedId;
+        return {
+          ...userObj,
+          blockedAt: b.createdAt,
+          createdAt: b.createdAt,
+        };
+      });
 
     return {
       users,
