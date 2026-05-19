@@ -4,6 +4,7 @@ import Comment from '../../models/Comment';
 import Like from '../../models/Like';
 import Follow from '../../models/Follow';
 import User from '../../models/User';
+import Block from '../../models/Block';
 import mongoose from 'mongoose';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
