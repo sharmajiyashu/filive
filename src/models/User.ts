@@ -42,6 +42,7 @@ export interface IUser extends Document {
   };
   weight?: string;
   careerId?: mongoose.Types.ObjectId;
+  career?: any;
   emotionalStatus?: 'single' | 'divorced' | 'married' | 'secret' | 'inlove';
   nationality?: string;
   hobbies?: (mongoose.Types.ObjectId | any)[];

@@ -1,4 +1,5 @@
 import { Service } from 'typedi';
+import mongoose from 'mongoose';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import { CloudinaryService } from '../common/CloudinaryService';
@@ -42,6 +43,7 @@ export class ProfileService {
 
     return {
       ...profile.toObject(),
+      career: profile.careerId,
       followersCount,
       followingCount,
       friendsCount
@@ -79,6 +81,10 @@ export class ProfileService {
     if (typeof data.hobbies === 'string') {
       try { data.hobbies = JSON.parse(data.hobbies); } catch (e) { data.hobbies = data.hobbies.split(',').map((s: string) => s.trim()); }
     }
+    if (Array.isArray(data.hobbies)) {
+      data.hobbies = data.hobbies.filter((id: string) => id && mongoose.Types.ObjectId.isValid(id));
+    }
+
     if (typeof data.location === 'string') {
       try { data.location = JSON.parse(data.location); } catch (e) { }
     }
@@ -112,6 +118,29 @@ export class ProfileService {
       data.privacySettings = { ...user?.privacySettings, ...data.privacySettings };
     }
 
+    // Map career to careerId if provided, handling empty values and casting safely
+    if ('career' in data) {
+      if (data.career === '' || data.career === null || data.career === undefined) {
+        data.careerId = null;
+      } else if (mongoose.Types.ObjectId.isValid(data.career)) {
+        data.careerId = new mongoose.Types.ObjectId(data.career);
+      } else {
+        data.careerId = null;
+      }
+      delete data.career;
+    }
+
+    // Validate careerId directly if provided
+    if ('careerId' in data) {
+      if (data.careerId === '' || data.careerId === null || data.careerId === undefined) {
+        data.careerId = null;
+      } else if (mongoose.Types.ObjectId.isValid(data.careerId)) {
+        data.careerId = new mongoose.Types.ObjectId(data.careerId);
+      } else {
+        data.careerId = null;
+      }
+    }
+
     const updatedUser = await User.findByIdAndUpdate(userId, data, { new: true })
       .populate('profileImage')
       .populate('album')
@@ -141,6 +170,7 @@ export class ProfileService {
     return {
       profile: {
         ...updatedUser.toObject(),
+        career: updatedUser.careerId,
         followersCount,
         followingCount,
         friendsCount
