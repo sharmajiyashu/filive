@@ -17,7 +17,7 @@ export default (router: Router) => {
    *     summary: Create a new story
    *     tags: [Stories]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       required: true
    *       content:

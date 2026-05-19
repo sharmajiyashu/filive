@@ -9,7 +9,7 @@ export default (router: Router) => {
   const coinService = Container.get(CoinService);
   const coinRouter = Router();
 
-  router.use('/coins', appAuthMiddleware, coinRouter);
+  router.use('/coins', coinRouter);
 
   /**
    * @swagger
@@ -53,7 +53,7 @@ export default (router: Router) => {
    *     summary: Get user coin wallet
    *     tags: [Coins]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     responses:
    *       200:
    *         description: Wallet details
@@ -74,7 +74,7 @@ export default (router: Router) => {
    *     summary: Get coin transaction history
    *     tags: [Coins]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: query
    *         name: page
@@ -110,7 +110,7 @@ export default (router: Router) => {
    *     summary: Recharge coins (simulated)
    *     tags: [Coins]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       required: true
    *       content:

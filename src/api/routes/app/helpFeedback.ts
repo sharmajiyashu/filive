@@ -13,7 +13,7 @@ export default (router: Router) => {
   const cloudinaryService = Container.get(CloudinaryService);
   const mediaService = Container.get(MediaService);
 
-  router.use('/help-feedback', appAuthMiddleware, feedbackRouter);
+  router.use('/help-feedback', feedbackRouter);
 
   /**
    * @swagger
@@ -22,7 +22,7 @@ export default (router: Router) => {
    *     summary: Submit a help & feedback ticket
    *     tags: [Help & Feedback]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       content:
    *         multipart/form-data:
