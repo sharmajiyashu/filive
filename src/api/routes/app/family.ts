@@ -9,7 +9,7 @@ export default (router: Router) => {
   const familyService = Container.get(FamilyService);
   const familyRouter = Router();
 
-  router.use('/families', appAuthMiddleware, familyRouter);
+  router.use('/families', familyRouter);
 
   /**
    * @swagger
@@ -18,7 +18,7 @@ export default (router: Router) => {
    *     summary: Create a family
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       required: true
    *       content:
@@ -56,7 +56,7 @@ export default (router: Router) => {
    *     summary: Edit a family
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: path
    *         name: id
@@ -98,7 +98,7 @@ export default (router: Router) => {
    *     summary: Get families for Hall (Friends and Populated)
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: query
    *         name: type
@@ -143,7 +143,7 @@ export default (router: Router) => {
    *     summary: Join a family
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       required: true
    *       content:
@@ -174,7 +174,7 @@ export default (router: Router) => {
    *     summary: Leave a family
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     requestBody:
    *       required: true
    *       content:
@@ -205,7 +205,7 @@ export default (router: Router) => {
    *     summary: Get family details and members
    *     tags: [Families]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: path
    *         name: id

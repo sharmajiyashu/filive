@@ -8,7 +8,7 @@ export default (router: Router) => {
   const userService = Container.get(UserService);
   const appRouter = Router();
 
-  router.use('/users', appAuthMiddleware, appRouter);
+  router.use('/users', appRouter);
 
   /**
    * @swagger
@@ -17,7 +17,7 @@ export default (router: Router) => {
    *     summary: Get all users
    *     tags: [Users]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: query
    *         name: page
@@ -50,7 +50,7 @@ export default (router: Router) => {
    *     summary: Get all blocked users list with pagination
    *     tags: [Users]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: query
    *         name: page
@@ -83,7 +83,7 @@ export default (router: Router) => {
    *     summary: Block or unblock a user
    *     tags: [Users]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: path
    *         name: id
@@ -112,7 +112,7 @@ export default (router: Router) => {
    *     summary: Get user details
    *     tags: [Users]
    *     security:
-   *       - BearerAuth: []
+   *       - bearerAuth: []
    *     parameters:
    *       - in: path
    *         name: id
