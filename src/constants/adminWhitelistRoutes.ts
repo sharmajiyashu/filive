@@ -1,3 +1,4 @@
 export const adminWhitelistRoutes = [
-    '/login'
-];
+    '/login',
+    '/admin/login'
+];
