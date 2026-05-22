@@ -273,4 +273,90 @@ export class UserService {
       },
     };
   }
+
+  public async getVisitorsList(userId: string, currentUserId?: string, page: number = 1, limit: number = 10) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    let matchQuery: any = { userId: userObjectId };
+
+    if (currentUserId) {
+      const blockedRelations = await Block.find({
+        $or: [
+          { blockerId: currentUserId },
+          { blockedId: currentUserId }
+        ]
+      });
+
+      const excludedUserIds = blockedRelations.map((rel: any) =>
+        rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
+      );
+
+      if (excludedUserIds.length > 0) {
+        matchQuery.visitorId = { $nin: excludedUserIds };
+      }
+    }
+
+    // Aggregate to get unique visitors with their latest visit time
+    const aggregationResult = await UserVisitor.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: '$visitorId',
+          visitedAt: { $max: '$visitedAt' },
+          createdAt: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { visitedAt: -1 } },
+      {
+        $facet: {
+          metadata: [{ $count: 'total' }],
+          data: [
+            { $skip: (page - 1) * limit },
+            { $limit: limit }
+          ]
+        }
+      }
+    ]);
+
+    const total = aggregationResult[0]?.metadata[0]?.total || 0;
+    const records = aggregationResult[0]?.data || [];
+
+    // Populate user details for each visitor
+    const visitorIds = records.map((r: any) => r._id);
+    const users = await User.find({ _id: { $in: visitorIds } })
+      .select('name email profileImage bio isPremium location country')
+      .populate('profileImage');
+
+    // Create a map for quick lookup
+    const userMap = new Map();
+    users.forEach(u => {
+      userMap.set(u._id.toString(), u);
+    });
+
+    const formattedVisitors = records
+      .map((r: any) => {
+        const visitorUser = userMap.get(r._id.toString());
+        if (!visitorUser) return null;
+        return {
+          ...visitorUser.toObject(),
+          visitedAt: r.visitedAt,
+          createdAt: r.createdAt
+        };
+      })
+      .filter((v: any) => v !== null);
+
+    return {
+      visitors: formattedVisitors,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 }
+

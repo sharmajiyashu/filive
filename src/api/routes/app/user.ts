@@ -78,6 +78,118 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/users/visitors:
+   *   get:
+   *     summary: Get visitors list of the logged-in user with pagination
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of visitors for the current user
+   */
+  appRouter.get('/visitors', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const userId = req.user.id;
+      const result = await userService.getVisitorsList(userId, userId, page, limit);
+      return ResponseWrapper.success(res, result, 'Visitors list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/visitors/{id}:
+   *   get:
+   *     summary: Get visitors list of a specific user by user ID with pagination
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of visitors for the specified user
+   */
+  appRouter.get('/visitors/:id', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const userId = req.params.id;
+      const currentUserId = req.user.id;
+      const result = await userService.getVisitorsList(userId, currentUserId, page, limit);
+      return ResponseWrapper.success(res, result, 'Visitors list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/{id}/visitors:
+   *   get:
+   *     summary: Get visitors list of a specific user by user ID with pagination (Alternative path)
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: List of visitors for the specified user
+   */
+  appRouter.get('/:id/visitors', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const userId = req.params.id;
+      const currentUserId = req.user.id;
+      const result = await userService.getVisitorsList(userId, currentUserId, page, limit);
+      return ResponseWrapper.success(res, result, 'Visitors list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+
+   * @swagger
    * /app/users/block/{id}:
    *   post:
    *     summary: Block or unblock a user
