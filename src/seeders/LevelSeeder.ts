@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Level from '../models/Level';
 import AppLogger from '../api/loaders/logger';
+import { v2 as cloudinary } from 'cloudinary';
 
 function generateSVGForLevel(levelNumber: number, color: string, name: string): string {
   let secondaryColor = '#888888';
@@ -42,6 +43,13 @@ export async function seedLevels() {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
+    // Configure Cloudinary using process.env
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+
     const levels = [
       {
         levelNumber: 1,
@@ -49,7 +57,7 @@ export async function seedLevels() {
         minCoins: 0,
         maxCoins: 5000,
         color: '#CD7F32',
-        image: '/public/uploads/levels/level_1.svg',
+        image: '',
       },
       {
         levelNumber: 2,
@@ -57,7 +65,7 @@ export async function seedLevels() {
         minCoins: 5000,
         maxCoins: 10000,
         color: '#C0C0C0',
-        image: '/public/uploads/levels/level_2.svg',
+        image: '',
       },
       {
         levelNumber: 3,
@@ -65,7 +73,7 @@ export async function seedLevels() {
         minCoins: 10000,
         maxCoins: 20000,
         color: '#FFD700',
-        image: '/public/uploads/levels/level_3.svg',
+        image: '',
       },
       {
         levelNumber: 4,
@@ -73,7 +81,7 @@ export async function seedLevels() {
         minCoins: 20000,
         maxCoins: 50000,
         color: '#E5E4E2',
-        image: '/public/uploads/levels/level_4.svg',
+        image: '',
       },
       {
         levelNumber: 5,
@@ -81,7 +89,7 @@ export async function seedLevels() {
         minCoins: 50000,
         maxCoins: 100000,
         color: '#0F52BA',
-        image: '/public/uploads/levels/level_5.svg',
+        image: '',
       },
       {
         levelNumber: 6,
@@ -89,7 +97,7 @@ export async function seedLevels() {
         minCoins: 100000,
         maxCoins: 200000,
         color: '#50C878',
-        image: '/public/uploads/levels/level_6.svg',
+        image: '',
       },
       {
         levelNumber: 7,
@@ -97,7 +105,7 @@ export async function seedLevels() {
         minCoins: 200000,
         maxCoins: 500000,
         color: '#E0115F',
-        image: '/public/uploads/levels/level_7.svg',
+        image: '',
       },
       {
         levelNumber: 8,
@@ -105,7 +113,7 @@ export async function seedLevels() {
         minCoins: 500000,
         maxCoins: 1000000,
         color: '#B9F2FF',
-        image: '/public/uploads/levels/level_8.svg',
+        image: '',
       },
       {
         levelNumber: 9,
@@ -113,7 +121,7 @@ export async function seedLevels() {
         minCoins: 1000000,
         maxCoins: 2000000,
         color: '#E6E6FA',
-        image: '/public/uploads/levels/level_9.svg',
+        image: '',
       },
       {
         levelNumber: 10,
@@ -121,7 +129,7 @@ export async function seedLevels() {
         minCoins: 2000000,
         maxCoins: 10000000,
         color: '#00FFFF',
-        image: '/public/uploads/levels/level_10.svg',
+        image: '',
       },
     ];
 
@@ -131,13 +139,24 @@ export async function seedLevels() {
       const filePath = path.join(uploadDir, `level_${lvl.levelNumber}.svg`);
       fs.writeFileSync(filePath, svgContent);
 
+      AppLogger.info(`Uploading level ${lvl.levelNumber} icon to Cloudinary...`);
+      const uploadResult = await cloudinary.uploader.upload(filePath, {
+        folder: 'levels',
+        resource_type: 'auto'
+      });
+
+      const levelData = {
+        ...lvl,
+        image: uploadResult.secure_url
+      };
+
       await Level.findOneAndUpdate(
         { levelNumber: lvl.levelNumber },
-        lvl,
+        levelData,
         { upsert: true, new: true }
       );
     }
-    AppLogger.info('✅ Levels seeded successfully and level icons generated locally');
+    AppLogger.info('✅ Levels seeded successfully and level icons uploaded to Cloudinary');
   } catch (error) {
     AppLogger.error('❌ Error seeding levels:', error);
   }

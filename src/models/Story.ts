@@ -8,6 +8,7 @@ export interface IStory extends Document {
   mentions: mongoose.Types.ObjectId[];
   likesCount: number;
   commentsCount: number;
+  isBlocked: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +22,7 @@ const StorySchema: Schema = new Schema(
     mentions: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     likesCount: { type: Number, default: 0 },
     commentsCount: { type: Number, default: 0 },
+    isBlocked: { type: Boolean, default: false },
   },
   {
     timestamps: true,

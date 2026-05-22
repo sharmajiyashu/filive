@@ -94,4 +94,25 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  careerRouter.put('/:id', upload.single('image'), async (req: any, res: Response) => {
+    try {
+      const { name } = req.body;
+      const updateData: any = {};
+      if (name) updateData.name = name;
+
+      if (req.file) {
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'careers');
+        if (uploadResults.length > 0) {
+          const media = await mediaService.createMedia({ ...uploadResults[0] });
+          updateData.image = media._id;
+        }
+      }
+
+      const career = await Career.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('image');
+      return ResponseWrapper.success(res, career, 'Career updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

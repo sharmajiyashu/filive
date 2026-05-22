@@ -102,4 +102,26 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  hobbyRouter.put('/:id', upload.single('image'), async (req: any, res: Response) => {
+    try {
+      const { name, type } = req.body;
+      const updateData: any = {};
+      if (name) updateData.name = name;
+      if (type) updateData.type = type;
+
+      if (req.file) {
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'hobbies');
+        if (uploadResults.length > 0) {
+          const media = await mediaService.createMedia({ ...uploadResults[0] });
+          updateData.image = media._id;
+        }
+      }
+
+      const hobby = await Hobby.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('image');
+      return ResponseWrapper.success(res, hobby, 'Hobby updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

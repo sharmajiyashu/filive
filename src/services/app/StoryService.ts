@@ -53,7 +53,7 @@ export class StoryService {
   }
 
   public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10) {
-    let query: any = {};
+    let query: any = { isBlocked: { $ne: true } };
 
     if (currentUserId) {
       const blockedRelations = await Block.find({
