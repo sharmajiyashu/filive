@@ -1,24 +1,14 @@
 import { Router, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
+import Container from 'typedi';
 import Level from '../../../models/Level';
 import { ResponseWrapper } from '../../responseWrapper';
 import upload from '../../middleware/upload';
-
-function saveLevelImageLocally(file: Express.Multer.File): string {
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'levels');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-  const fileExt = path.extname(file.originalname);
-  const fileName = `level_${Date.now()}_${Math.round(Math.random() * 1e9)}${fileExt}`;
-  const filePath = path.join(uploadDir, fileName);
-  fs.writeFileSync(filePath, file.buffer);
-  return `/public/uploads/levels/${fileName}`;
-}
+import { CloudinaryService } from '../../../services/common/CloudinaryService';
+import { MediaType } from '../../../constants/enum';
 
 export default (router: Router) => {
   const levelRouter = Router();
+  const cloudinaryService = Container.get(CloudinaryService);
 
   router.use('/levels', levelRouter);
 
@@ -69,7 +59,10 @@ export default (router: Router) => {
       let imageUrl = '';
 
       if (req.file) {
-        imageUrl = saveLevelImageLocally(req.file);
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'levels');
+        if (uploadResults.length > 0) {
+          imageUrl = uploadResults[0].url;
+        }
       }
 
       const level = await Level.create({
@@ -126,7 +119,10 @@ export default (router: Router) => {
       if (color !== undefined) updateData.color = color;
 
       if (req.file) {
-        updateData.image = saveLevelImageLocally(req.file);
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'levels');
+        if (uploadResults.length > 0) {
+          updateData.image = uploadResults[0].url;
+        }
       }
 
       const updatedLevel = await Level.findByIdAndUpdate(req.params.id, updateData, { new: true });

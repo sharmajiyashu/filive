@@ -4,6 +4,9 @@ import career from './career';
 import hobby from './hobby';
 import helpFeedback from './helpFeedback';
 import level from './level';
+import user from './user';
+import story from './story';
+import dashboard from './dashboard';
 
 export default (router: Router): Router => {
   auth(router);
@@ -11,5 +14,8 @@ export default (router: Router): Router => {
   hobby(router);
   helpFeedback(router);
   level(router);
+  user(router);
+  story(router);
+  dashboard(router);
   return router;
 };
