@@ -7,12 +7,14 @@ import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
 import Career from '../../models/Career';
 import Hobby from '../../models/Hobby';
+import { LevelService } from './LevelService';
 
 @Service()
 export class ProfileService {
   constructor(
     private cloudinaryService: CloudinaryService,
-    private mediaService: MediaService
+    private mediaService: MediaService,
+    private levelService: LevelService
   ) { }
 
   public async getProfile(userId: string) {
@@ -41,12 +43,15 @@ export class ProfileService {
       status: 'accepted'
     });
 
+    const levelInfo = await this.levelService.getLevelInfoForCoins(profile.coins || 0);
+
     return {
       ...profile.toObject(),
       career: profile.careerId,
       followersCount,
       followingCount,
-      friendsCount
+      friendsCount,
+      levelInfo
     };
   }
 
@@ -167,13 +172,16 @@ export class ProfileService {
       status: 'accepted'
     });
 
+    const levelInfo = await this.levelService.getLevelInfoForCoins(updatedUser.coins || 0);
+
     return {
       profile: {
         ...updatedUser.toObject(),
         career: updatedUser.careerId,
         followersCount,
         followingCount,
-        friendsCount
+        friendsCount,
+        levelInfo
       },
       message: 'PROFILE_UPDATED'
     };
