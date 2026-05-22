@@ -22,6 +22,7 @@ import { seedCountries } from './CountrySeeder';
 import { seedLanguages } from './LanguageSeeder';
 import { seedCareers } from './CareerSeeder';
 import { seedHobbies } from './HobbySeeder';
+import { seedLevels } from './LevelSeeder';
 
 async function main() {
   try {
@@ -39,6 +40,8 @@ async function main() {
     await seedLanguages();
     await seedCareers();
     await seedHobbies();
+    await seedLevels();
+
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);

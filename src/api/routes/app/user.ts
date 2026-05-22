@@ -3,6 +3,8 @@ import Container from 'typedi';
 import { UserService } from '../../../services/app/UserService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import { LevelService } from '../../../services/app/LevelService';
+import User from '../../../models/User';
 
 export default (router: Router) => {
   const userService = Container.get(UserService);
@@ -71,6 +73,36 @@ export default (router: Router) => {
       const blockerId = req.user.id;
       const result = await userService.getBlockedList(blockerId, page, limit);
       return ResponseWrapper.success(res, result, 'Blocked list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/levels:
+   *   get:
+   *     summary: Get all level configurations and the current user's level progression
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Levels fetched successfully
+   */
+  appRouter.get('/levels', async (req: any, res: Response) => {
+    try {
+      const levelService = Container.get(LevelService);
+      const levels = await levelService.getAllLevels();
+
+      const userId = req.user.id;
+      const user = await User.findById(userId);
+      const currentUserLevelInfo = await levelService.getLevelInfoForCoins(user?.coins || 0);
+
+      return ResponseWrapper.success(res, {
+        levels,
+        currentUserLevelInfo
+      }, 'Levels list and user progression fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

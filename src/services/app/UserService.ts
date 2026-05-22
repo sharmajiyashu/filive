@@ -8,8 +8,12 @@ import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
 import mongoose from 'mongoose';
 
+import { LevelService } from './LevelService';
+
 @Service()
 export class UserService {
+  constructor(private levelService: LevelService) {}
+
   public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string) {
     let query: any = { userRole: 'user' };
 
@@ -171,10 +175,13 @@ export class UserService {
       };
     });
 
+    const levelInfo = await this.levelService.getLevelInfoForCoins(user.coins || 0);
+
     return {
       user: {
         ...user.toObject(),
-        career: user.careerId
+        career: user.careerId,
+        levelInfo
       },
       isFollowing: isFollowingAuthor,
       followersCount,

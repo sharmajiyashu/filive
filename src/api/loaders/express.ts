@@ -8,6 +8,7 @@ import routes from '../routes';
 import { ZodError } from 'zod';
 import { Language } from '../../constants/enum';
 import swaggerLoader from './swagger';
+import path from 'path';
 
 interface CustomError extends Error {
     status?: number;
@@ -20,6 +21,9 @@ export default (app: Express): void => {
     app.use(express.json({ limit: '5mb' }));
     app.use(express.urlencoded({ limit: '5mb', extended: true }));
     
+    // Serve static files from public folder
+    app.use('/public', express.static(path.join(process.cwd(), 'public')));
+
     // Load Swagger
     swaggerLoader(app);
 
