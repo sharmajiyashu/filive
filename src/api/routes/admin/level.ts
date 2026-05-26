@@ -1,10 +1,31 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import Level from '../../../models/Level';
+import Media from '../../../models/Media';
 import { ResponseWrapper } from '../../responseWrapper';
 import upload from '../../middleware/upload';
 import { CloudinaryService } from '../../../services/common/CloudinaryService';
 import { MediaType } from '../../../constants/enum';
+import config from '../../../config';
+
+function getFullImageUrl(imagePathOrMedia?: any): string {
+  if (!imagePathOrMedia) return '';
+  let imagePath = '';
+  if (typeof imagePathOrMedia === 'object' && imagePathOrMedia.url) {
+    imagePath = imagePathOrMedia.url;
+  } else if (typeof imagePathOrMedia === 'string') {
+    imagePath = imagePathOrMedia;
+  } else if (imagePathOrMedia.toString) {
+    imagePath = imagePathOrMedia.toString();
+  } else {
+    return '';
+  }
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
+  }
+  const baseUrl = config.backend.url || process.env.APP_URL || 'http://localhost:3000';
+  return `${baseUrl.replace(/\/$/, '')}/${imagePath.replace(/^\//, '')}`;
+}
 
 export default (router: Router) => {
   const levelRouter = Router();
@@ -35,7 +56,7 @@ export default (router: Router) => {
       if (req.query.type) {
         query.type = req.query.type;
       }
-      const levels = await Level.find(query).sort({ type: 1, levelNumber: 1 });
+      const levels = await Level.find(query).populate('image').sort({ type: 1, levelNumber: 1 });
 
       const formattedLevels = levels.map(l => {
         const obj = l.toObject ? l.toObject() : { ...l };
@@ -45,6 +66,9 @@ export default (router: Router) => {
         const computedRangeText = obj.rangeText || (levelNumber === 0 ? '0' : `${Math.floor((levelNumber - 1) / 5) * 5 + 1}-${Math.floor((levelNumber - 1) / 5) * 5 + 5}`);
         obj.rangeText = computedRangeText;
         obj.levelRange = computedRangeText;
+        if (obj.image && typeof obj.image === 'object') {
+          obj.image.url = getFullImageUrl(obj.image.url);
+        }
         return obj;
       });
 
@@ -82,12 +106,20 @@ export default (router: Router) => {
   levelRouter.post('/', upload.single('image'), async (req: any, res: Response) => {
     try {
       const { levelNumber, type, name, minCoins, maxCoins, color, rangeText, levelRange } = req.body;
-      let imageUrl = '';
+      let mediaId = undefined;
 
       if (req.file) {
         const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'levels');
         if (uploadResults.length > 0) {
-          imageUrl = uploadResults[0].url;
+          const media = await Media.create({
+            url: uploadResults[0].url,
+            mimetype: uploadResults[0].mimetype || req.file.mimetype || 'image/jpeg',
+            type: 'image',
+            size: uploadResults[0].size || req.file.size,
+            width: uploadResults[0].width,
+            height: uploadResults[0].height
+          });
+          mediaId = media._id;
         }
       }
 
@@ -101,12 +133,22 @@ export default (router: Router) => {
         minCoins: Number(minCoins),
         maxCoins: Number(maxCoins),
         color,
-        image: imageUrl || undefined,
+        image: mediaId,
         rangeText: computedRangeText,
         levelRange: computedRangeText,
       });
 
-      return ResponseWrapper.success(res, level, 'Level created successfully');
+      const populatedLevel = await Level.findById(level._id).populate('image');
+      if (!populatedLevel) {
+        throw new Error('Failed to retrieve created level');
+      }
+
+      const returnLevel = populatedLevel.toObject();
+      if (returnLevel.image && typeof returnLevel.image === 'object') {
+        returnLevel.image.url = getFullImageUrl(returnLevel.image.url);
+      }
+
+      return ResponseWrapper.success(res, returnLevel, 'Level created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -173,16 +215,29 @@ export default (router: Router) => {
       if (req.file) {
         const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'levels');
         if (uploadResults.length > 0) {
-          updateData.image = uploadResults[0].url;
+          const media = await Media.create({
+            url: uploadResults[0].url,
+            mimetype: uploadResults[0].mimetype || req.file.mimetype || 'image/jpeg',
+            type: 'image',
+            size: uploadResults[0].size || req.file.size,
+            width: uploadResults[0].width,
+            height: uploadResults[0].height
+          });
+          updateData.image = media._id;
         }
       }
 
-      const updatedLevel = await Level.findByIdAndUpdate(req.params.id, updateData, { new: true });
+      const updatedLevel = await Level.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('image');
       if (!updatedLevel) {
         throw new Error('Level not found');
       }
 
-      return ResponseWrapper.success(res, updatedLevel, 'Level updated successfully');
+      const returnLevel = updatedLevel.toObject();
+      if (returnLevel.image && typeof returnLevel.image === 'object') {
+        returnLevel.image.url = getFullImageUrl(returnLevel.image.url);
+      }
+
+      return ResponseWrapper.success(res, returnLevel, 'Level updated successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

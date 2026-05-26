@@ -7,7 +7,7 @@ function getFullImageUrl(imagePath?: string): string {
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
     return imagePath;
   }
-  const baseUrl = config.backend.url || 'http://localhost:3000';
+  const baseUrl = config.backend.url || process.env.APP_URL || 'http://localhost:3000';
   return `${baseUrl.replace(/\/$/, '')}/${imagePath.replace(/^\//, '')}`;
 }
 
@@ -22,7 +22,7 @@ function getLevelRangeText(levelNumber: number): string {
 export class LevelService {
   public async getLevelInfoForCoins(coins: number, type: 'rich' | 'charm' = 'rich') {
     // Fetch levels sorted by levelNumber
-    const levels = await Level.find({ type }).sort({ levelNumber: 1 });
+    const levels = await Level.find({ type }).populate('image').sort({ levelNumber: 1 });
 
     if (levels.length === 0) {
       // Fallback in case levels are not yet seeded
@@ -86,14 +86,18 @@ export class LevelService {
     progressPercentage = Math.min(100, Math.max(0, Number(progressPercentage.toFixed(2))));
 
     const currentObj = currentLevel.toObject ? currentLevel.toObject() : { ...currentLevel };
-    currentObj.image = getFullImageUrl(currentObj.image);
+    if (currentObj.image && typeof currentObj.image === 'object') {
+      currentObj.image.url = getFullImageUrl(currentObj.image.url);
+    }
     currentObj.levelRange = getLevelRangeText(currentObj.levelNumber);
     currentObj.rangeText = getLevelRangeText(currentObj.levelNumber);
 
     let nextObj = null;
     if (nextLevel) {
       nextObj = nextLevel.toObject ? nextLevel.toObject() : { ...nextLevel };
-      nextObj.image = getFullImageUrl(nextObj.image);
+      if (nextObj.image && typeof nextObj.image === 'object') {
+        nextObj.image.url = getFullImageUrl(nextObj.image.url);
+      }
       nextObj.levelRange = getLevelRangeText(nextObj.levelNumber);
       nextObj.rangeText = getLevelRangeText(nextObj.levelNumber);
     }
@@ -110,7 +114,7 @@ export class LevelService {
     if (type) {
       query.type = type;
     }
-    const levels = await Level.find(query).sort({ type: 1, levelNumber: 1 });
+    const levels = await Level.find(query).populate('image').sort({ type: 1, levelNumber: 1 });
 
     if (levels.length === 0) {
       const fallbackLevels = [
@@ -138,7 +142,9 @@ export class LevelService {
 
     return levels.map(l => {
       const obj = l.toObject ? l.toObject() : { ...l };
-      obj.image = getFullImageUrl(obj.image);
+      if (obj.image && typeof obj.image === 'object') {
+        obj.image.url = getFullImageUrl(obj.image.url);
+      }
       obj.levelRange = getLevelRangeText(obj.levelNumber);
       obj.rangeText = getLevelRangeText(obj.levelNumber);
       return obj;

@@ -13,7 +13,7 @@ export default {
         rememberExpiry: '30d' // 30 days for "Remember Me"
     },
     backend: {
-        url: process.env.BACKEND_URL || ''
+        url: process.env.BACKEND_URL || process.env.APP_URL || ''
     },
     database: {
         mongo: {
