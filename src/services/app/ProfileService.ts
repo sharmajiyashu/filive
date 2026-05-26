@@ -8,6 +8,7 @@ import { MediaType } from '../../constants/enum';
 import Career from '../../models/Career';
 import Hobby from '../../models/Hobby';
 import { LevelService } from './LevelService';
+import UserVisitor from '../../models/UserVisitor';
 
 @Service()
 export class ProfileService {
@@ -43,7 +44,12 @@ export class ProfileService {
       status: 'accepted'
     });
 
-    const levelInfo = await this.levelService.getLevelInfoForCoins(profile.coins || 0);
+    const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
+
+    const richCoins = profile.wealthCoins !== undefined ? profile.wealthCoins : (profile.coins || 0);
+    const charmCoins = profile.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
     return {
       ...profile.toObject(),
@@ -51,7 +57,10 @@ export class ProfileService {
       followersCount,
       followingCount,
       friendsCount,
-      levelInfo
+      visitorsCount,
+      levelInfo: richLevelInfo, // backward compatibility
+      richLevelInfo,
+      charmLevelInfo
     };
   }
 
@@ -172,7 +181,12 @@ export class ProfileService {
       status: 'accepted'
     });
 
-    const levelInfo = await this.levelService.getLevelInfoForCoins(updatedUser.coins || 0);
+    const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
+
+    const richCoins = updatedUser.wealthCoins !== undefined ? updatedUser.wealthCoins : (updatedUser.coins || 0);
+    const charmCoins = updatedUser.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
     return {
       profile: {
@@ -181,7 +195,10 @@ export class ProfileService {
         followersCount,
         followingCount,
         friendsCount,
-        levelInfo
+        visitorsCount,
+        levelInfo: richLevelInfo, // backward compatibility
+        richLevelInfo,
+        charmLevelInfo
       },
       message: 'PROFILE_UPDATED'
     };

@@ -74,7 +74,7 @@ export class CoinService {
     session.startTransaction();
 
     try {
-      await User.findByIdAndUpdate(userId, { $inc: { coins: pkg.coins } }, { session });
+      await User.findByIdAndUpdate(userId, { $inc: { coins: pkg.coins, wealthCoins: pkg.coins } }, { session });
 
       await CoinHistory.create([{
         userId,

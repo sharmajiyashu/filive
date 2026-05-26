@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import mongoose from 'mongoose';
+import Container from 'typedi';
 import User from '../../../models/User';
 import Follow from '../../../models/Follow';
 import UserVisitor from '../../../models/UserVisitor';
@@ -9,6 +10,7 @@ import FamilyMember from '../../../models/FamilyMember';
 import Story from '../../../models/Story';
 import CoinHistory from '../../../models/CoinHistory';
 import { ResponseWrapper } from '../../responseWrapper';
+import { LevelService } from '../../../services/app/LevelService';
 
 export default (router: Router) => {
   const userRouter = Router();
@@ -181,8 +183,21 @@ export default (router: Router) => {
       const rechargeHistory = await CoinHistory.find({ userId, type: 'recharge' })
         .sort({ createdAt: -1 });
 
+      const levelService = Container.get(LevelService);
+      const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
+      const charmCoins = user.charmCoins || 0;
+      const richLevelInfo = await levelService.getLevelInfoForCoins(richCoins, 'rich');
+      const charmLevelInfo = await levelService.getLevelInfoForCoins(charmCoins, 'charm');
+
+      const userObj = {
+        ...user.toObject(),
+        levelInfo: richLevelInfo,
+        richLevelInfo,
+        charmLevelInfo
+      };
+
       return ResponseWrapper.success(res, {
-        user,
+        user: userObj,
         followers,
         followings,
         friends,

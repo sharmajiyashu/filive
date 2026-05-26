@@ -4,22 +4,21 @@ import Level from '../models/Level';
 import AppLogger from '../api/loaders/logger';
 import { v2 as cloudinary } from 'cloudinary';
 
-function generateSVGForLevel(levelNumber: number, color: string, name: string): string {
+function generateSVGForLevel(levelNumber: number, color: string, name: string, type: 'rich' | 'charm'): string {
   let secondaryColor = '#888888';
-  if (levelNumber === 1) secondaryColor = '#8B4513';
-  else if (levelNumber === 2) secondaryColor = '#708090';
-  else if (levelNumber === 3) secondaryColor = '#FF8C00';
-  else if (levelNumber === 4) secondaryColor = '#778899';
-  else if (levelNumber === 5) secondaryColor = '#1E90FF';
-  else if (levelNumber === 6) secondaryColor = '#006400';
-  else if (levelNumber === 7) secondaryColor = '#8B0000';
-  else if (levelNumber === 8) secondaryColor = '#00BFFF';
-  else if (levelNumber === 9) secondaryColor = '#4B0082';
-  else if (levelNumber === 10) secondaryColor = '#191970';
+  if (levelNumber === 0) secondaryColor = type === 'rich' ? '#8B4513' : '#FFD1DC';
+  else if (levelNumber === 1) secondaryColor = type === 'rich' ? '#708090' : '#FF69B4';
+  else if (levelNumber === 2) secondaryColor = type === 'rich' ? '#FF8C00' : '#FF1493';
+  else if (levelNumber === 3) secondaryColor = type === 'rich' ? '#778899' : '#DB7093';
+  else if (levelNumber === 4) secondaryColor = type === 'rich' ? '#1E90FF' : '#C71585';
 
+  const prefix = type === 'rich' ? 'R' : 'C';
+  const label = type === 'rich' ? 'RICH' : 'CHARM';
+
+  // Hexagon polygon for rich levels, heart shape for charm levels
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
   <defs>
-    <linearGradient id="grad${levelNumber}" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="grad_${type}_${levelNumber}" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:${color};stop-opacity:1" />
       <stop offset="100%" style="stop-color:${secondaryColor};stop-opacity:1" />
     </linearGradient>
@@ -27,11 +26,12 @@ function generateSVGForLevel(levelNumber: number, color: string, name: string): 
       <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.3"/>
     </filter>
   </defs>
-  <polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="url(#grad${levelNumber})" filter="url(#shadow)"/>
-  <polygon points="50,10 85,28 85,72 50,90 15,72 15,28" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.8"/>
-  ${levelNumber >= 5 ? `<polygon points="50,18 54,32 68,32 57,40 61,54 50,45 39,54 43,40 32,32 46,32" fill="#FFFFFF" opacity="0.9"/>` : ''}
-  <text x="50" y="${levelNumber >= 5 ? '68' : '58'}" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF" text-anchor="middle" filter="url(#shadow)">L${levelNumber}</text>
-  <text x="50" y="${levelNumber >= 5 ? '82' : '78'}" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="600" fill="#FFFFFF" text-anchor="middle" opacity="0.9">${name.split(' ')[0].toUpperCase()}</text>
+  ${type === 'rich' 
+    ? `<polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
+    : `<path d="M12,30 A20,20 0 0,1 50,30 A20,20 0 0,1 88,30 Q88,60 50,90 Q12,60 12,30 Z" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
+  }
+  <text x="50" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle" filter="url(#shadow)">${prefix}${levelNumber}</text>
+  <text x="50" y="75" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="600" fill="#FFFFFF" text-anchor="middle" opacity="0.9">${label}</text>
 </svg>`;
   return svg;
 }
@@ -51,112 +51,142 @@ export async function seedLevels() {
     });
 
     const levels = [
+      // Rich (Wealth) Levels
       {
-        levelNumber: 1,
-        name: 'Bronze Level',
+        levelNumber: 0,
+        type: 'rich',
+        name: 'Rich Level 0',
         minCoins: 0,
         maxCoins: 5000,
         color: '#CD7F32',
         image: '',
       },
       {
-        levelNumber: 2,
-        name: 'Silver Level',
+        levelNumber: 1,
+        type: 'rich',
+        name: 'Rich Level 1',
         minCoins: 5000,
-        maxCoins: 10000,
+        maxCoins: 20000,
         color: '#C0C0C0',
         image: '',
       },
       {
-        levelNumber: 3,
-        name: 'Gold Level',
-        minCoins: 10000,
-        maxCoins: 20000,
+        levelNumber: 2,
+        type: 'rich',
+        name: 'Rich Level 2',
+        minCoins: 20000,
+        maxCoins: 40000,
         color: '#FFD700',
         image: '',
       },
       {
-        levelNumber: 4,
-        name: 'Platinum Level',
-        minCoins: 20000,
-        maxCoins: 50000,
+        levelNumber: 3,
+        type: 'rich',
+        name: 'Rich Level 3',
+        minCoins: 40000,
+        maxCoins: 60000,
         color: '#E5E4E2',
         image: '',
       },
       {
-        levelNumber: 5,
-        name: 'Sapphire Level',
-        minCoins: 50000,
-        maxCoins: 100000,
+        levelNumber: 4,
+        type: 'rich',
+        name: 'Rich Level 4',
+        minCoins: 60000,
+        maxCoins: 82200,
         color: '#0F52BA',
         image: '',
       },
+      // Charm Levels
       {
-        levelNumber: 6,
-        name: 'Emerald Level',
-        minCoins: 100000,
-        maxCoins: 200000,
-        color: '#50C878',
+        levelNumber: 0,
+        type: 'charm',
+        name: 'Charm Level 0',
+        minCoins: 0,
+        maxCoins: 5000,
+        color: '#FFB6C1',
         image: '',
       },
       {
-        levelNumber: 7,
-        name: 'Ruby Level',
-        minCoins: 200000,
-        maxCoins: 500000,
-        color: '#E0115F',
+        levelNumber: 1,
+        type: 'charm',
+        name: 'Charm Level 1',
+        minCoins: 5000,
+        maxCoins: 20000,
+        color: '#FF69B4',
         image: '',
       },
       {
-        levelNumber: 8,
-        name: 'Diamond Level',
-        minCoins: 500000,
-        maxCoins: 1000000,
-        color: '#B9F2FF',
+        levelNumber: 2,
+        type: 'charm',
+        name: 'Charm Level 2',
+        minCoins: 20000,
+        maxCoins: 40000,
+        color: '#FF1493',
         image: '',
       },
       {
-        levelNumber: 9,
-        name: 'Amethyst Level',
-        minCoins: 1000000,
-        maxCoins: 2000000,
-        color: '#E6E6FA',
+        levelNumber: 3,
+        type: 'charm',
+        name: 'Charm Level 3',
+        minCoins: 40000,
+        maxCoins: 60000,
+        color: '#DB7093',
         image: '',
       },
       {
-        levelNumber: 10,
-        name: 'Obsidian Level',
-        minCoins: 2000000,
-        maxCoins: 10000000,
-        color: '#00FFFF',
+        levelNumber: 4,
+        type: 'charm',
+        name: 'Charm Level 4',
+        minCoins: 60000,
+        maxCoins: 82200,
+        color: '#C71585',
         image: '',
       },
     ];
 
+    // Clear old levels to avoid duplicate key errors on old unique indexes
+    await Level.deleteMany({});
+
     for (const lvl of levels) {
       // Generate SVG markup and write it to local disk
-      const svgContent = generateSVGForLevel(lvl.levelNumber, lvl.color, lvl.name);
-      const filePath = path.join(uploadDir, `level_${lvl.levelNumber}.svg`);
+      const svgContent = generateSVGForLevel(lvl.levelNumber, lvl.color, lvl.name, lvl.type as 'rich' | 'charm');
+      const filename = `${lvl.type}_level_${lvl.levelNumber}.svg`;
+      const filePath = path.join(uploadDir, filename);
       fs.writeFileSync(filePath, svgContent);
 
-      AppLogger.info(`Uploading level ${lvl.levelNumber} icon to Cloudinary...`);
-      const uploadResult = await cloudinary.uploader.upload(filePath, {
-        folder: 'levels',
-        resource_type: 'auto'
-      });
+      let secureUrl = `/public/uploads/levels/${filename}`;
+
+      // Upload to Cloudinary if credentials are configured
+      if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+        try {
+          AppLogger.info(`Uploading level ${lvl.type} L${lvl.levelNumber} icon to Cloudinary...`);
+          const uploadResult = await cloudinary.uploader.upload(filePath, {
+            folder: 'levels',
+            resource_type: 'auto'
+          });
+          secureUrl = uploadResult.secure_url;
+        } catch (uploadErr) {
+          AppLogger.error(`Error uploading to Cloudinary for ${filename}, falling back to local path:`, uploadErr);
+        }
+      }
+
+      const rangeTextVal = lvl.levelNumber === 0 ? '0' : `${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 1}-${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 5}`;
 
       const levelData = {
         ...lvl,
-        image: uploadResult.secure_url
+        image: secureUrl,
+        rangeText: rangeTextVal,
+        levelRange: rangeTextVal
       };
 
       await Level.findOneAndUpdate(
-        { levelNumber: lvl.levelNumber },
+        { levelNumber: lvl.levelNumber, type: lvl.type },
         levelData,
         { upsert: true, new: true }
       );
     }
-    AppLogger.info('✅ Levels seeded successfully and level icons uploaded to Cloudinary');
+    AppLogger.info('✅ Rich and Charm Levels seeded successfully');
   } catch (error) {
     AppLogger.error('❌ Error seeding levels:', error);
   }

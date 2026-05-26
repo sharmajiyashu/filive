@@ -11,11 +11,18 @@ function getFullImageUrl(imagePath?: string): string {
   return `${baseUrl.replace(/\/$/, '')}/${imagePath.replace(/^\//, '')}`;
 }
 
+function getLevelRangeText(levelNumber: number): string {
+  if (levelNumber === 0) return '0';
+  const groupStart = Math.floor((levelNumber - 1) / 5) * 5 + 1;
+  const groupEnd = groupStart + 4;
+  return `${groupStart}-${groupEnd}`;
+}
+
 @Service()
 export class LevelService {
-  public async getLevelInfoForCoins(coins: number) {
+  public async getLevelInfoForCoins(coins: number, type: 'rich' | 'charm' = 'rich') {
     // Fetch levels sorted by levelNumber
-    const levels = await Level.find().sort({ levelNumber: 1 });
+    const levels = await Level.find({ type }).sort({ levelNumber: 1 });
 
     if (levels.length === 0) {
       // Fallback in case levels are not yet seeded
@@ -23,20 +30,26 @@ export class LevelService {
       const progress = Math.min(100, Math.max(0, (coins / fallbackRange) * 100));
       return {
         currentLevel: {
-          levelNumber: 1,
-          name: 'Bronze Level',
+          levelNumber: 0,
+          type,
+          name: type === 'rich' ? 'Rich Level 0' : 'Charm Level 0',
           minCoins: 0,
           maxCoins: 5000,
-          color: '#CD7F32',
-          image: getFullImageUrl('/public/uploads/levels/level_1.svg'),
+          color: type === 'rich' ? '#CD7F32' : '#FFB6C1',
+          image: getFullImageUrl(`/public/uploads/levels/${type}_level_0.svg`),
+          levelRange: '0',
+          rangeText: '0'
         },
         nextLevel: {
-          levelNumber: 2,
-          name: 'Silver Level',
+          levelNumber: 1,
+          type,
+          name: type === 'rich' ? 'Rich Level 1' : 'Charm Level 1',
           minCoins: 5000,
-          maxCoins: 10000,
-          color: '#C0C0C0',
-          image: getFullImageUrl('/public/uploads/levels/level_2.svg'),
+          maxCoins: 20000,
+          color: type === 'rich' ? '#C0C0C0' : '#FF69B4',
+          image: getFullImageUrl(`/public/uploads/levels/${type}_level_1.svg`),
+          levelRange: '1-5',
+          rangeText: '1-5'
         },
         progressPercentage: Number(progress.toFixed(2)),
       };
@@ -74,11 +87,15 @@ export class LevelService {
 
     const currentObj = currentLevel.toObject ? currentLevel.toObject() : { ...currentLevel };
     currentObj.image = getFullImageUrl(currentObj.image);
+    currentObj.levelRange = getLevelRangeText(currentObj.levelNumber);
+    currentObj.rangeText = getLevelRangeText(currentObj.levelNumber);
 
     let nextObj = null;
     if (nextLevel) {
       nextObj = nextLevel.toObject ? nextLevel.toObject() : { ...nextLevel };
       nextObj.image = getFullImageUrl(nextObj.image);
+      nextObj.levelRange = getLevelRangeText(nextObj.levelNumber);
+      nextObj.rangeText = getLevelRangeText(nextObj.levelNumber);
     }
 
     return {
@@ -88,33 +105,43 @@ export class LevelService {
     };
   }
 
-  public async getAllLevels() {
-    const levels = await Level.find().sort({ levelNumber: 1 });
+  public async getAllLevels(type?: 'rich' | 'charm') {
+    const query: any = {};
+    if (type) {
+      query.type = type;
+    }
+    const levels = await Level.find(query).sort({ type: 1, levelNumber: 1 });
 
     if (levels.length === 0) {
       const fallbackLevels = [
-        { levelNumber: 1, name: 'Bronze Level', minCoins: 0, maxCoins: 5000, color: '#CD7F32', image: '/public/uploads/levels/level_1.svg' },
-        { levelNumber: 2, name: 'Silver Level', minCoins: 5000, maxCoins: 10000, color: '#C0C0C0', image: '/public/uploads/levels/level_2.svg' },
-        { levelNumber: 3, name: 'Gold Level', minCoins: 10000, maxCoins: 20000, color: '#FFD700', image: '/public/uploads/levels/level_3.svg' },
-        { levelNumber: 4, name: 'Platinum Level', minCoins: 20000, maxCoins: 50000, color: '#E5E4E2', image: '/public/uploads/levels/level_4.svg' },
-        { levelNumber: 5, name: 'Sapphire Level', minCoins: 50000, maxCoins: 100000, color: '#0F52BA', image: '/public/uploads/levels/level_5.svg' },
-        { levelNumber: 6, name: 'Emerald Level', minCoins: 100000, maxCoins: 200000, color: '#50C878', image: '/public/uploads/levels/level_6.svg' },
-        { levelNumber: 7, name: 'Ruby Level', minCoins: 200000, maxCoins: 500000, color: '#E0115F', image: '/public/uploads/levels/level_7.svg' },
-        { levelNumber: 8, name: 'Diamond Level', minCoins: 500000, maxCoins: 1000000, color: '#B9F2FF', image: '/public/uploads/levels/level_8.svg' },
-        { levelNumber: 9, name: 'Amethyst Level', minCoins: 1000000, maxCoins: 2000000, color: '#E6E6FA', image: '/public/uploads/levels/level_9.svg' },
-        { levelNumber: 10, name: 'Obsidian Level', minCoins: 2000000, maxCoins: 10000000, color: '#00FFFF', image: '/public/uploads/levels/level_10.svg' }
+        { levelNumber: 0, type: 'rich', name: 'Rich Level 0', minCoins: 0, maxCoins: 5000, color: '#CD7F32', image: '/public/uploads/levels/rich_level_0.svg' },
+        { levelNumber: 1, type: 'rich', name: 'Rich Level 1', minCoins: 5000, maxCoins: 20000, color: '#C0C0C0', image: '/public/uploads/levels/rich_level_1.svg' },
+        { levelNumber: 2, type: 'rich', name: 'Rich Level 2', minCoins: 20000, maxCoins: 40000, color: '#FFD700', image: '/public/uploads/levels/rich_level_2.svg' },
+        { levelNumber: 3, type: 'rich', name: 'Rich Level 3', minCoins: 40000, maxCoins: 60000, color: '#E5E4E2', image: '/public/uploads/levels/rich_level_3.svg' },
+        { levelNumber: 4, type: 'rich', name: 'Rich Level 4', minCoins: 60000, maxCoins: 82200, color: '#0F52BA', image: '/public/uploads/levels/rich_level_4.svg' },
+
+        { levelNumber: 0, type: 'charm', name: 'Charm Level 0', minCoins: 0, maxCoins: 5000, color: '#FFB6C1', image: '/public/uploads/levels/charm_level_0.svg' },
+        { levelNumber: 1, type: 'charm', name: 'Charm Level 1', minCoins: 5000, maxCoins: 20000, color: '#FF69B4', image: '/public/uploads/levels/charm_level_1.svg' },
+        { levelNumber: 2, type: 'charm', name: 'Charm Level 2', minCoins: 20000, maxCoins: 40000, color: '#FF1493', image: '/public/uploads/levels/charm_level_2.svg' },
+        { levelNumber: 3, type: 'charm', name: 'Charm Level 3', minCoins: 40000, maxCoins: 60000, color: '#DB7093', image: '/public/uploads/levels/charm_level_3.svg' },
+        { levelNumber: 4, type: 'charm', name: 'Charm Level 4', minCoins: 60000, maxCoins: 82200, color: '#C71585', image: '/public/uploads/levels/charm_level_4.svg' }
       ];
-      return fallbackLevels.map(l => ({
+
+      const filtered = type ? fallbackLevels.filter(l => l.type === type) : fallbackLevels;
+      return filtered.map(l => ({
         ...l,
-        image: getFullImageUrl(l.image)
+        image: getFullImageUrl(l.image),
+        levelRange: getLevelRangeText(l.levelNumber),
+        rangeText: getLevelRangeText(l.levelNumber)
       }));
     }
 
     return levels.map(l => {
       const obj = l.toObject ? l.toObject() : { ...l };
       obj.image = getFullImageUrl(obj.image);
+      obj.levelRange = getLevelRangeText(obj.levelNumber);
+      obj.rangeText = getLevelRangeText(obj.levelNumber);
       return obj;
     });
   }
 }
-

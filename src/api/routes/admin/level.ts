@@ -18,14 +18,37 @@ export default (router: Router) => {
    *   get:
    *     summary: Get all levels (Admin)
    *     tags: [Admin - Levels]
+   *     parameters:
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [rich, charm]
+   *         description: Optional level type to filter by
    *     responses:
    *       200:
    *         description: Levels fetched successfully
    */
   levelRouter.get('/', async (req: any, res: Response) => {
     try {
-      const levels = await Level.find().sort({ levelNumber: 1 });
-      return ResponseWrapper.success(res, levels, 'Levels fetched successfully');
+      const query: any = {};
+      if (req.query.type) {
+        query.type = req.query.type;
+      }
+      const levels = await Level.find(query).sort({ type: 1, levelNumber: 1 });
+
+      const formattedLevels = levels.map(l => {
+        const obj = l.toObject ? l.toObject() : { ...l };
+        const levelNumber = obj.levelNumber || 0;
+        
+        // Dynamically compute rangeText/levelRange if missing in DB
+        const computedRangeText = obj.rangeText || (levelNumber === 0 ? '0' : `${Math.floor((levelNumber - 1) / 5) * 5 + 1}-${Math.floor((levelNumber - 1) / 5) * 5 + 5}`);
+        obj.rangeText = computedRangeText;
+        obj.levelRange = computedRangeText;
+        return obj;
+      });
+
+      return ResponseWrapper.success(res, formattedLevels, 'Levels fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -44,10 +67,13 @@ export default (router: Router) => {
    *             type: object
    *             properties:
    *               levelNumber: { type: integer }
+   *               type: { type: string, enum: [rich, charm] }
    *               name: { type: string }
    *               minCoins: { type: integer }
    *               maxCoins: { type: integer }
    *               color: { type: string }
+   *               rangeText: { type: string }
+   *               levelRange: { type: string }
    *               image: { type: string, format: binary }
    *     responses:
    *       200:
@@ -55,7 +81,7 @@ export default (router: Router) => {
    */
   levelRouter.post('/', upload.single('image'), async (req: any, res: Response) => {
     try {
-      const { levelNumber, name, minCoins, maxCoins, color } = req.body;
+      const { levelNumber, type, name, minCoins, maxCoins, color, rangeText, levelRange } = req.body;
       let imageUrl = '';
 
       if (req.file) {
@@ -65,13 +91,19 @@ export default (router: Router) => {
         }
       }
 
+      const levelNum = Number(levelNumber);
+      const computedRangeText = rangeText || levelRange || (levelNum === 0 ? '0' : `${Math.floor((levelNum - 1) / 5) * 5 + 1}-${Math.floor((levelNum - 1) / 5) * 5 + 5}`);
+
       const level = await Level.create({
-        levelNumber: Number(levelNumber),
+        levelNumber: levelNum,
+        type: type || 'rich',
         name,
         minCoins: Number(minCoins),
         maxCoins: Number(maxCoins),
         color,
         image: imageUrl || undefined,
+        rangeText: computedRangeText,
+        levelRange: computedRangeText,
       });
 
       return ResponseWrapper.success(res, level, 'Level created successfully');
@@ -98,10 +130,13 @@ export default (router: Router) => {
    *             type: object
    *             properties:
    *               levelNumber: { type: integer }
+   *               type: { type: string, enum: [rich, charm] }
    *               name: { type: string }
    *               minCoins: { type: integer }
    *               maxCoins: { type: integer }
    *               color: { type: string }
+   *               rangeText: { type: string }
+   *               levelRange: { type: string }
    *               image: { type: string, format: binary }
    *     responses:
    *       200:
@@ -109,14 +144,31 @@ export default (router: Router) => {
    */
   levelRouter.put('/:id', upload.single('image'), async (req: any, res: Response) => {
     try {
-      const { levelNumber, name, minCoins, maxCoins, color } = req.body;
+      const { levelNumber, type, name, minCoins, maxCoins, color, rangeText, levelRange } = req.body;
       const updateData: any = {};
 
-      if (levelNumber !== undefined) updateData.levelNumber = Number(levelNumber);
+      if (levelNumber !== undefined) {
+        const levelNum = Number(levelNumber);
+        updateData.levelNumber = levelNum;
+        if (!rangeText && !levelRange) {
+          const computedRangeText = levelNum === 0 ? '0' : `${Math.floor((levelNum - 1) / 5) * 5 + 1}-${Math.floor((levelNum - 1) / 5) * 5 + 5}`;
+          updateData.rangeText = computedRangeText;
+          updateData.levelRange = computedRangeText;
+        }
+      }
+      if (type !== undefined) updateData.type = type;
       if (name !== undefined) updateData.name = name;
       if (minCoins !== undefined) updateData.minCoins = Number(minCoins);
       if (maxCoins !== undefined) updateData.maxCoins = Number(maxCoins);
       if (color !== undefined) updateData.color = color;
+      if (rangeText !== undefined) {
+        updateData.rangeText = rangeText;
+        updateData.levelRange = rangeText;
+      }
+      if (levelRange !== undefined) {
+        updateData.levelRange = levelRange;
+        updateData.rangeText = levelRange;
+      }
 
       if (req.file) {
         const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'levels');

@@ -175,13 +175,18 @@ export class UserService {
       };
     });
 
-    const levelInfo = await this.levelService.getLevelInfoForCoins(user.coins || 0);
+    const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
+    const charmCoins = user.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
     return {
       user: {
         ...user.toObject(),
         career: user.careerId,
-        levelInfo
+        levelInfo: richLevelInfo, // backward compatibility
+        richLevelInfo,
+        charmLevelInfo
       },
       isFollowing: isFollowingAuthor,
       followersCount,
