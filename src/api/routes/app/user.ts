@@ -98,7 +98,7 @@ export default (router: Router) => {
 
       const userId = req.user.id;
       const user = await User.findById(userId);
-      
+
       const richCoins = user && user.wealthCoins !== undefined ? user.wealthCoins : (user?.coins || 0);
       const charmCoins = user?.charmCoins || 0;
 
