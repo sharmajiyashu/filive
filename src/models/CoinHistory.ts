@@ -16,7 +16,7 @@ const CoinHistorySchema: Schema = new Schema(
     amount: { type: Number, required: true },
     type: { 
       type: String, 
-      enum: ['recharge', 'family_creation', 'transfer', 'other'], 
+      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'other'], 
       required: true 
     },
     description: { type: String },

@@ -93,16 +93,26 @@ export default (router: Router) => {
   appRouter.get('/levels', async (req: any, res: Response) => {
     try {
       const levelService = Container.get(LevelService);
-      const levels = await levelService.getAllLevels();
+      const richLevels = await levelService.getAllLevels('rich');
+      const charmLevels = await levelService.getAllLevels('charm');
 
       const userId = req.user.id;
       const user = await User.findById(userId);
-      const currentUserLevelInfo = await levelService.getLevelInfoForCoins(user?.coins || 0);
+      
+      const richCoins = user && user.wealthCoins !== undefined ? user.wealthCoins : (user?.coins || 0);
+      const charmCoins = user?.charmCoins || 0;
+
+      const currentRichLevelInfo = await levelService.getLevelInfoForCoins(richCoins, 'rich');
+      const currentCharmLevelInfo = await levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
       return ResponseWrapper.success(res, {
-        levels,
-        currentUserLevelInfo
-      }, 'Levels list and user progression fetched successfully');
+        levels: richLevels, // backward compatibility
+        currentUserLevelInfo: currentRichLevelInfo, // backward compatibility
+        richLevels,
+        charmLevels,
+        currentRichLevelInfo,
+        currentCharmLevelInfo
+      }, 'Levels lists and user progression fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

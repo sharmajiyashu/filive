@@ -11,6 +11,7 @@ import country from './country';
 import language from './language';
 import agency from './agency';
 import helpFeedback from './helpFeedback';
+import ranking from './ranking';
 
 export default (router: Router): Router => {
   profile(router);
@@ -25,5 +26,6 @@ export default (router: Router): Router => {
   language(router);
   agency(router);
   helpFeedback(router);
+  ranking(router);
   return router;
 };

@@ -48,6 +48,8 @@ export interface IUser extends Document {
   hobbies?: (mongoose.Types.ObjectId | any)[];
   album?: mongoose.Types.ObjectId[];
   coins: number;
+  wealthCoins: number;
+  charmCoins: number;
   countryId?: mongoose.Types.ObjectId;
   enableVoiceCall: boolean;
   enableVideoCall: boolean;
@@ -111,6 +113,8 @@ const UserSchema: Schema = new Schema(
       anonymousRanking: { type: Boolean, default: false },
     },
     coins: { type: Number, default: 0 },
+    wealthCoins: { type: Number, default: 0 },
+    charmCoins: { type: Number, default: 0 },
     countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
     enableVoiceCall: { type: Boolean, default: false },
     enableVideoCall: { type: Boolean, default: false },
