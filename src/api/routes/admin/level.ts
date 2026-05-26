@@ -6,61 +6,7 @@ import { ResponseWrapper } from '../../responseWrapper';
 import upload from '../../middleware/upload';
 import { CloudinaryService } from '../../../services/common/CloudinaryService';
 import { MediaType } from '../../../constants/enum';
-import config from '../../../config';
-
 import mongoose from 'mongoose';
-
-function getFullImageUrl(imagePathOrMedia?: any): string {
-  if (!imagePathOrMedia) return '';
-  let imagePath = '';
-  if (typeof imagePathOrMedia === 'object' && imagePathOrMedia.url) {
-    imagePath = imagePathOrMedia.url;
-  } else if (typeof imagePathOrMedia === 'string') {
-    imagePath = imagePathOrMedia;
-  } else if (imagePathOrMedia.toString) {
-    imagePath = imagePathOrMedia.toString();
-  } else {
-    return '';
-  }
-  if (imagePath.length === 24 && /^[0-9a-fA-F]{24}$/.test(imagePath)) {
-    return '';
-  }
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath;
-  }
-  const baseUrl = config.backend.url || process.env.APP_URL || 'http://localhost:3000';
-  return `${baseUrl.replace(/\/$/, '')}/${imagePath.replace(/^\//, '')}`;
-}
-
-async function resolveLevelImage(imageField: any): Promise<any> {
-  if (!imageField) return null;
-
-  let mediaDoc: any = null;
-
-  if (typeof imageField === 'object' && imageField.url) {
-    mediaDoc = imageField.toObject ? imageField.toObject() : { ...imageField };
-  } else if (mongoose.Types.ObjectId.isValid(imageField)) {
-    const doc = await Media.findById(imageField);
-    if (doc) {
-      mediaDoc = doc.toObject();
-    }
-  }
-
-  if (mediaDoc) {
-    mediaDoc.url = getFullImageUrl(mediaDoc.url);
-    return mediaDoc;
-  }
-
-  if (typeof imageField === 'string' && !mongoose.Types.ObjectId.isValid(imageField)) {
-    return {
-      url: getFullImageUrl(imageField),
-      mimetype: imageField.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg',
-      type: 'image'
-    };
-  }
-
-  return null;
-}
 
 export default (router: Router) => {
   const levelRouter = Router();
@@ -98,12 +44,11 @@ export default (router: Router) => {
       const formattedLevels = await Promise.all(levels.map(async l => {
         const obj = l.toObject ? l.toObject() : { ...l };
         const levelNumber = obj.levelNumber || 0;
-        
+
         // Dynamically compute rangeText/levelRange if missing in DB
         const computedRangeText = obj.rangeText || (levelNumber === 0 ? '0' : `${Math.floor((levelNumber - 1) / 5) * 5 + 1}-${Math.floor((levelNumber - 1) / 5) * 5 + 5}`);
         obj.rangeText = computedRangeText;
         obj.levelRange = computedRangeText;
-        obj.image = await resolveLevelImage(obj.image);
         return obj;
       }));
 
@@ -179,7 +124,6 @@ export default (router: Router) => {
       }
 
       const returnLevel = populatedLevel.toObject();
-      returnLevel.image = await resolveLevelImage(returnLevel.image);
 
       return ResponseWrapper.success(res, returnLevel, 'Level created successfully');
     } catch (error: any) {
@@ -266,7 +210,6 @@ export default (router: Router) => {
       }
 
       const returnLevel = updatedLevel.toObject();
-      returnLevel.image = await resolveLevelImage(returnLevel.image);
 
       return ResponseWrapper.success(res, returnLevel, 'Level updated successfully');
     } catch (error: any) {

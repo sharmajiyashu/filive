@@ -27,10 +27,10 @@ function generateSVGForLevel(levelNumber: number, color: string, name: string, t
       <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.3"/>
     </filter>
   </defs>
-  ${type === 'rich' 
-    ? `<polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
-    : `<path d="M12,30 A20,20 0 0,1 50,30 A20,20 0 0,1 88,30 Q88,60 50,90 Q12,60 12,30 Z" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
-  }
+  ${type === 'rich'
+      ? `<polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
+      : `<path d="M12,30 A20,20 0 0,1 50,30 A20,20 0 0,1 88,30 Q88,60 50,90 Q12,60 12,30 Z" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
+    }
   <text x="50" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle" filter="url(#shadow)">${prefix}${levelNumber}</text>
   <text x="50" y="75" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="600" fill="#FFFFFF" text-anchor="middle" opacity="0.9">${label}</text>
 </svg>`;
@@ -169,7 +169,12 @@ export async function seedLevels() {
           secureUrl = uploadResult.secure_url;
         } catch (uploadErr) {
           AppLogger.error(`Error uploading to Cloudinary for ${filename}, falling back to local path:`, uploadErr);
+          const appUrl = process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:3000';
+          secureUrl = `${appUrl.replace(/\/$/, '')}/${secureUrl.replace(/^\//, '')}`;
         }
+      } else {
+        const appUrl = process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:3000';
+        secureUrl = `${appUrl.replace(/\/$/, '')}/${secureUrl.replace(/^\//, '')}`;
       }
 
       const rangeTextVal = lvl.levelNumber === 0 ? '0' : `${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 1}-${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 5}`;
