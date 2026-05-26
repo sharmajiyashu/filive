@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Level from '../models/Level';
+import Media from '../models/Media';
 import AppLogger from '../api/loaders/logger';
 import { v2 as cloudinary } from 'cloudinary';
 
@@ -173,9 +174,16 @@ export async function seedLevels() {
 
       const rangeTextVal = lvl.levelNumber === 0 ? '0' : `${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 1}-${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 5}`;
 
+      // Create a Media record for this level icon
+      const media = await Media.create({
+        url: secureUrl,
+        mimetype: 'image/svg+xml',
+        type: 'image'
+      });
+
       const levelData = {
         ...lvl,
-        image: secureUrl,
+        image: media._id,
         rangeText: rangeTextVal,
         levelRange: rangeTextVal
       };
