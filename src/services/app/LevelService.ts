@@ -1,14 +1,59 @@
 import { Service } from 'typedi';
 import Level from '../../models/Level';
+import Media from '../../models/Media';
 import config from '../../config';
+import mongoose from 'mongoose';
 
-function getFullImageUrl(imagePath?: string): string {
-  if (!imagePath) return '';
+function getFullImageUrl(imagePathOrMedia?: any): string {
+  if (!imagePathOrMedia) return '';
+  let imagePath = '';
+  if (typeof imagePathOrMedia === 'object' && imagePathOrMedia.url) {
+    imagePath = imagePathOrMedia.url;
+  } else if (typeof imagePathOrMedia === 'string') {
+    imagePath = imagePathOrMedia;
+  } else if (imagePathOrMedia.toString) {
+    imagePath = imagePathOrMedia.toString();
+  } else {
+    return '';
+  }
+  if (imagePath.length === 24 && /^[0-9a-fA-F]{24}$/.test(imagePath)) {
+    return '';
+  }
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
     return imagePath;
   }
   const baseUrl = config.backend.url || process.env.APP_URL || 'http://localhost:3000';
   return `${baseUrl.replace(/\/$/, '')}/${imagePath.replace(/^\//, '')}`;
+}
+
+async function resolveLevelImage(imageField: any): Promise<any> {
+  if (!imageField) return null;
+
+  let mediaDoc: any = null;
+
+  if (typeof imageField === 'object' && imageField.url) {
+    mediaDoc = imageField.toObject ? imageField.toObject() : { ...imageField };
+  } else if (mongoose.Types.ObjectId.isValid(imageField)) {
+    const doc = await Media.findById(imageField);
+    if (doc) {
+      mediaDoc = doc.toObject();
+    }
+  }
+
+  if (mediaDoc) {
+    mediaDoc.url = getFullImageUrl(mediaDoc.url);
+    return mediaDoc;
+  }
+
+  if (typeof imageField === 'string' && !mongoose.Types.ObjectId.isValid(imageField)) {
+    return {
+      url: getFullImageUrl(imageField),
+      mimetype: imageField.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg',
+      type: 'image'
+    };
+  }
+
+  return null;
 }
 
 function getLevelRangeText(levelNumber: number): string {
@@ -86,18 +131,14 @@ export class LevelService {
     progressPercentage = Math.min(100, Math.max(0, Number(progressPercentage.toFixed(2))));
 
     const currentObj = currentLevel.toObject ? currentLevel.toObject() : { ...currentLevel };
-    if (currentObj.image && typeof currentObj.image === 'object') {
-      currentObj.image.url = getFullImageUrl(currentObj.image.url);
-    }
+    currentObj.image = await resolveLevelImage(currentObj.image);
     currentObj.levelRange = getLevelRangeText(currentObj.levelNumber);
     currentObj.rangeText = getLevelRangeText(currentObj.levelNumber);
 
     let nextObj = null;
     if (nextLevel) {
       nextObj = nextLevel.toObject ? nextLevel.toObject() : { ...nextLevel };
-      if (nextObj.image && typeof nextObj.image === 'object') {
-        nextObj.image.url = getFullImageUrl(nextObj.image.url);
-      }
+      nextObj.image = await resolveLevelImage(nextObj.image);
       nextObj.levelRange = getLevelRangeText(nextObj.levelNumber);
       nextObj.rangeText = getLevelRangeText(nextObj.levelNumber);
     }
@@ -140,14 +181,12 @@ export class LevelService {
       }));
     }
 
-    return levels.map(l => {
+    return Promise.all(levels.map(async l => {
       const obj = l.toObject ? l.toObject() : { ...l };
-      if (obj.image && typeof obj.image === 'object') {
-        obj.image.url = getFullImageUrl(obj.image.url);
-      }
+      obj.image = await resolveLevelImage(obj.image);
       obj.levelRange = getLevelRangeText(obj.levelNumber);
       obj.rangeText = getLevelRangeText(obj.levelNumber);
       return obj;
-    });
+    }));
   }
 }
