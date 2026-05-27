@@ -7,7 +7,7 @@ import { LevelService } from './LevelService';
 
 @Service()
 export class RankingService {
-  constructor(private levelService: LevelService) {}
+  constructor(private levelService: LevelService) { }
 
   public async getRanking(
     type: 'rich' | 'charm',
@@ -21,7 +21,7 @@ export class RankingService {
     if (period === 'alltime') {
       const sortField = type === 'rich' ? 'wealthCoins' : 'charmCoins';
       const users = await User.find({ userRole: 'user' })
-        .sort({ [sortField]: -1 })
+        .sort({ [sortField]: -1, _id: 1 })
         .skip(skip)
         .limit(limit);
 
@@ -33,7 +33,8 @@ export class RankingService {
       const startDate = getPeriodStartDate(period);
       const historyType = type === 'rich' ? 'recharge' : 'charm_received';
 
-      const aggregation = await CoinHistory.aggregate([
+      // Get all unique user IDs who have activity in the period (to exclude them from fallback)
+      const allPeriodUserIdsAgg = await CoinHistory.aggregate([
         {
           $match: {
             type: historyType,
@@ -42,31 +43,74 @@ export class RankingService {
         },
         {
           $group: {
-            _id: '$userId',
-            totalAmount: { $sum: { $abs: '$amount' } }
+            _id: '$userId'
           }
-        },
-        { $sort: { totalAmount: -1 } },
-        { $skip: skip },
-        { $limit: limit }
+        }
       ]);
+      const allPeriodUserIds = allPeriodUserIdsAgg
+        .map(a => a._id)
+        .filter((id): id is mongoose.Types.ObjectId => !!id);
+      const totalPeriodUsers = allPeriodUserIds.length;
 
-      rankList = aggregation.map(a => ({
-        userId: a._id.toString(),
-        score: a.totalAmount
-      }));
+      if (skip + limit <= totalPeriodUsers) {
+        // Case 1: We only need period users
+        const aggregation = await CoinHistory.aggregate([
+          {
+            $match: {
+              type: historyType,
+              createdAt: { $gte: startDate }
+            }
+          },
+          {
+            $group: {
+              _id: '$userId',
+              totalAmount: { $sum: { $abs: '$amount' } }
+            }
+          },
+          { $sort: { totalAmount: -1, _id: 1 } },
+          { $skip: skip },
+          { $limit: limit }
+        ]);
 
-      // Fallback to alltime if period doesn't have enough data
-      if (rankList.length < limit) {
-        const existingIds = new Set(rankList.map(r => r.userId));
+        rankList = aggregation.map(a => ({
+          userId: a._id.toString(),
+          score: a.totalAmount
+        }));
+      } else if (skip < totalPeriodUsers) {
+        // Case 2: We need some period users and some fallback users
+        const periodLimit = totalPeriodUsers - skip;
+        const aggregation = await CoinHistory.aggregate([
+          {
+            $match: {
+              type: historyType,
+              createdAt: { $gte: startDate }
+            }
+          },
+          {
+            $group: {
+              _id: '$userId',
+              totalAmount: { $sum: { $abs: '$amount' } }
+            }
+          },
+          { $sort: { totalAmount: -1, _id: 1 } },
+          { $skip: skip },
+          { $limit: periodLimit }
+        ]);
+
+        rankList = aggregation.map(a => ({
+          userId: a._id.toString(),
+          score: a.totalAmount
+        }));
+
+        // The remaining slots come from fallback users starting at index 0 of fallback
+        const fallbackLimit = limit - rankList.length;
         const sortField = type === 'rich' ? 'wealthCoins' : 'charmCoins';
-        
         const fallbackUsers = await User.find({
           userRole: 'user',
-          _id: { $nin: Array.from(existingIds).map(id => new mongoose.Types.ObjectId(id)) }
+          _id: { $nin: allPeriodUserIds }
         })
-          .sort({ [sortField]: -1 })
-          .limit(limit - rankList.length);
+          .sort({ [sortField]: -1, _id: 1 })
+          .limit(fallbackLimit);
 
         for (const u of fallbackUsers) {
           rankList.push({
@@ -74,6 +118,22 @@ export class RankingService {
             score: 0
           });
         }
+      } else {
+        // Case 3: We only need fallback users
+        const fallbackSkip = skip - totalPeriodUsers;
+        const sortField = type === 'rich' ? 'wealthCoins' : 'charmCoins';
+        const fallbackUsers = await User.find({
+          userRole: 'user',
+          _id: { $nin: allPeriodUserIds }
+        })
+          .sort({ [sortField]: -1, _id: 1 })
+          .skip(fallbackSkip)
+          .limit(limit);
+
+        rankList = fallbackUsers.map(u => ({
+          userId: u._id.toString(),
+          score: 0
+        }));
       }
     }
 
@@ -98,7 +158,7 @@ export class RankingService {
 
       const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
       const charmCoins = user.charmCoins || 0;
-      
+
       const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
       const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
