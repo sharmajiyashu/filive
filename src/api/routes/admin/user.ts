@@ -247,4 +247,73 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /admin/users/{id}/adjust-balance:
+   *   put:
+   *     summary: Adjust user coins or beans balance (Admin)
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               type:
+   *                 type: string
+   *                 enum: [coins, beans]
+   *               amount:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Balance updated successfully
+   */
+  userRouter.put('/:id/adjust-balance', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { type, amount } = req.body;
+
+      if (!['coins', 'beans'].includes(type)) {
+        throw new Error('Invalid balance type specified. Must be coins or beans.');
+      }
+      if (typeof amount !== 'number') {
+        throw new Error('Amount must be a number.');
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const field = type === 'coins' ? 'coins' : 'beans';
+      const currentVal = (user as any)[field] || 0;
+      const newVal = currentVal + amount;
+
+      if (newVal < 0) {
+        throw new Error(`Insufficient balance. Resulting balance cannot be less than zero.`);
+      }
+
+      (user as any)[field] = newVal;
+      await user.save();
+
+      // Log action in CoinHistory
+      await CoinHistory.create({
+        userId: user._id,
+        amount: amount,
+        type: type === 'coins' ? 'recharge' : 'other',
+        description: `Admin balance adjustment: ${amount >= 0 ? '+' : ''}${amount} ${type}`
+      });
+
+      return ResponseWrapper.success(res, user, `${type} balance updated successfully`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

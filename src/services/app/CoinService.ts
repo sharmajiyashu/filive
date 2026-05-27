@@ -39,9 +39,12 @@ export class CoinService {
   }
 
   async getWallet(userId: string) {
-    const user = await User.findById(userId).select('coins');
+    const user = await User.findById(userId).select('coins beans');
     if (!user) throw new Error('User not found');
-    return { coins: user.coins || 0 };
+    return { 
+      coins: user.coins || 0,
+      beans: user.beans || 0
+    };
   }
 
   async getHistory(userId: string, page: number = 1, limit: number = 20) {

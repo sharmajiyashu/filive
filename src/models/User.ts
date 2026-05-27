@@ -1,6 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
+  userId?: number;
+  beans?: number;
   name?: string;
   email: string;
   password?: string;
@@ -61,6 +63,7 @@ export interface IUser extends Document {
 
 const UserSchema: Schema = new Schema(
   {
+    userId: { type: Number, unique: true, sparse: true },
     name: { type: String },
     email: { type: String, unique: true, sparse: true },
     password: { type: String },
@@ -113,6 +116,7 @@ const UserSchema: Schema = new Schema(
       anonymousRanking: { type: Boolean, default: false },
     },
     coins: { type: Number, default: 0 },
+    beans: { type: Number, default: 0 },
     wealthCoins: { type: Number, default: 0 },
     charmCoins: { type: Number, default: 0 },
     countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
@@ -125,5 +129,35 @@ const UserSchema: Schema = new Schema(
     timestamps: true,
   }
 );
+
+UserSchema.pre('save', async function (next) {
+  const user = this as any;
+  if (!user.userId) {
+    let unique = false;
+    let attempts = 0;
+    while (!unique && attempts < 100) {
+      const randomId = Math.floor(1000000000 + Math.random() * 9000000000);
+      const exists = await mongoose.models.User.findOne({ userId: randomId });
+      if (!exists) {
+        user.userId = randomId;
+        unique = true;
+      }
+      attempts++;
+    }
+  }
+  next();
+});
+
+setTimeout(async () => {
+  try {
+    const Model = mongoose.model('User');
+    const usersWithoutId = await Model.find({ userId: { $exists: false } });
+    for (const user of usersWithoutId) {
+      await user.save();
+    }
+  } catch (error) {
+    console.error('Error migrating existing users to generate userId:', error);
+  }
+}, 5000);
 
 export default mongoose.model<IUser>('User', UserSchema);

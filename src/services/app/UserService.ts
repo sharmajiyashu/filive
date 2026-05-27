@@ -35,7 +35,7 @@ export class UserService {
     }
 
     const users = await User.find(query)
-      .select('name email profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+      .select('userId name email profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
       .populate('profileImage')
       .skip((page - 1) * limit)
       .limit(limit);
@@ -54,15 +54,45 @@ export class UserService {
   }
 
   public async getUserDetail(userId: string, currentUserId?: string, followersPage: number = 1, followingPage: number = 1, limit: number = 10) {
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const isObjectId = mongoose.Types.ObjectId.isValid(userId);
+    const is10DigitNum = /^\d{10}$/.test(userId);
+
+    if (!isObjectId && !is10DigitNum) {
       throw new Error('Invalid user ID');
     }
+
+    let user;
+    if (isObjectId) {
+      user = await User.findById(userId)
+        .select('-password -otp -otpExpires -fcmTokens')
+        .populate('profileImage')
+        .populate('album')
+        .populate({
+          path: 'careerId',
+          populate: { path: 'image' }
+        });
+    } else {
+      user = await User.findOne({ userId: parseInt(userId) })
+        .select('-password -otp -otpExpires -fcmTokens')
+        .populate('profileImage')
+        .populate('album')
+        .populate({
+          path: 'careerId',
+          populate: { path: 'image' }
+        });
+    }
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const userObjectIdStr = user._id.toString();
 
     if (currentUserId) {
       const isBlocked = await Block.findOne({
         $or: [
-          { blockerId: currentUserId, blockedId: userId },
-          { blockerId: userId, blockedId: currentUserId }
+          { blockerId: currentUserId, blockedId: userObjectIdStr },
+          { blockerId: userObjectIdStr, blockedId: currentUserId }
         ]
       });
       if (isBlocked) {
@@ -70,71 +100,58 @@ export class UserService {
       }
     }
 
-    const user = await User.findById(userId)
-      .select('-password -otp -otpExpires -fcmTokens')
-      .populate('profileImage')
-      .populate('album')
-      .populate({
-        path: 'careerId',
-        populate: { path: 'image' }
-      });
-
-    if (!user) {
-      throw new Error('User not found');
-    }
-
     // Track visitor if it's not the user viewing their own profile
-    if (currentUserId && currentUserId !== userId) {
+    if (currentUserId && currentUserId !== userObjectIdStr) {
       await UserVisitor.create({
-        userId: new mongoose.Types.ObjectId(userId),
+        userId: user._id,
         visitorId: new mongoose.Types.ObjectId(currentUserId)
       });
     }
 
     // Paginated followers
-    const followers = await Follow.find({ followingId: userId, status: 'accepted' })
+    const followers = await Follow.find({ followingId: user._id, status: 'accepted' })
       .populate({
         path: 'followerId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
       })
       .skip((followersPage - 1) * limit)
       .limit(limit);
 
-    const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
+    const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
 
     // Paginated following
-    const following = await Follow.find({ followerId: userId, status: 'accepted' })
+    const following = await Follow.find({ followerId: user._id, status: 'accepted' })
       .populate({
         path: 'followingId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
       })
       .skip((followingPage - 1) * limit)
       .limit(limit);
 
-    const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
+    const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
 
     // Friends Count (Mutual Followers)
-    const myFollowing = await Follow.find({ followerId: userId, status: 'accepted' }).select('followingId');
+    const myFollowing = await Follow.find({ followerId: user._id, status: 'accepted' }).select('followingId');
     const myFollowingIds = myFollowing.map(f => f.followingId);
     const friendsCount = await Follow.countDocuments({
-      followingId: userId,
+      followingId: user._id,
       followerId: { $in: myFollowingIds },
       status: 'accepted'
     });
 
-    const stories = await Story.find({ userId: userId })
+    const stories = await Story.find({ userId: user._id })
       .populate('images')
       .populate({
         path: 'userId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
       })
       .sort({ createdAt: -1 });
 
-    const visitorsCount = await UserVisitor.countDocuments({ userId });
-    const uniqueVisitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
+    const visitorsCount = await UserVisitor.countDocuments({ userId: user._id });
+    const uniqueVisitorsCount = await UserVisitor.distinct('visitorId', { userId: user._id }).then(ids => ids.length);
 
     let likedStoryIds = new Set<string>();
     let commentedStoryIds = new Set<string>();
@@ -155,7 +172,7 @@ export class UserService {
         }),
         Follow.findOne({
           followerId: currentUserId,
-          followingId: userId,
+          followingId: user._id,
           status: 'accepted'
         })
       ]);

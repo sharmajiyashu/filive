@@ -13,6 +13,7 @@ import agency from './agency';
 import helpFeedback from './helpFeedback';
 import ranking from './ranking';
 import chat from './chat';
+import coinSeller from './coinSeller';
 
 export default (router: Router): Router => {
   profile(router);
@@ -29,5 +30,6 @@ export default (router: Router): Router => {
   helpFeedback(router);
   ranking(router);
   chat(router);
+  coinSeller(router);
   return router;
 };
