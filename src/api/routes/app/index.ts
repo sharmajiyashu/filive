@@ -12,6 +12,7 @@ import language from './language';
 import agency from './agency';
 import helpFeedback from './helpFeedback';
 import ranking from './ranking';
+import chat from './chat';
 
 export default (router: Router): Router => {
   profile(router);
@@ -27,5 +28,6 @@ export default (router: Router): Router => {
   agency(router);
   helpFeedback(router);
   ranking(router);
+  chat(router);
   return router;
 };
