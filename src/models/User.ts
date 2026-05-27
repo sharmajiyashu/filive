@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
   userId?: number;
+  beans?: number;
   name?: string;
   email: string;
   password?: string;
@@ -115,6 +116,7 @@ const UserSchema: Schema = new Schema(
       anonymousRanking: { type: Boolean, default: false },
     },
     coins: { type: Number, default: 0 },
+    beans: { type: Number, default: 0 },
     wealthCoins: { type: Number, default: 0 },
     charmCoins: { type: Number, default: 0 },
     countryId: { type: Schema.Types.ObjectId, ref: 'Country' },

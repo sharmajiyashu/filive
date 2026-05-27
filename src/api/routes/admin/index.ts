@@ -7,6 +7,7 @@ import level from './level';
 import user from './user';
 import story from './story';
 import dashboard from './dashboard';
+import appSetting from './appSetting';
 
 export default (router: Router): Router => {
   auth(router);
@@ -17,5 +18,6 @@ export default (router: Router): Router => {
   user(router);
   story(router);
   dashboard(router);
+  appSetting(router);
   return router;
 };

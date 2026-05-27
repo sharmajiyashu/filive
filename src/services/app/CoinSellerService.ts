@@ -1,7 +1,8 @@
-import { Service } from 'typedi';
+import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
+import { AppSettingService } from '../common/AppSettingService';
 
 @Service()
 export class CoinSellerService {
@@ -140,7 +141,7 @@ export class CoinSellerService {
   async getSellerDashboard(sellerId: string) {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
     
-    const seller = await User.findById(sellerId).select('userId name coins');
+    const seller = await User.findById(sellerId).select('userId name coins beans');
     if (!seller) throw new Error('Seller not found');
 
     // 1. Calculate total coins sold
@@ -171,9 +172,114 @@ export class CoinSellerService {
       userId: seller.userId,
       name: seller.name,
       availableBalance: seller.coins || 0,
+      beansBalance: seller.beans || 0,
       totalCoinsSold,
       customerNumbers,
       coinSellerRank
     };
+  }
+
+  async convertBeansToCoins(userId: string, beansAmount: number) {
+    if (!beansAmount || beansAmount <= 0) {
+      throw new Error('Beans amount must be greater than zero');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    if ((user.beans || 0) < beansAmount) {
+      throw new Error('Insufficient beans balance');
+    }
+
+    const appSettingService = Container.get(AppSettingService);
+    const coinToBeanRate = await appSettingService.getSettingValue('coin_to_bean_rate') || 1;
+    const minTransfer = await appSettingService.getSettingValue('min_coin_to_bean_transfer') || 100;
+
+    if (beansAmount < minTransfer) {
+      throw new Error(`Minimum transfer amount is ${minTransfer} beans`);
+    }
+
+    const coinsToCredit = Math.floor(beansAmount / coinToBeanRate);
+    if (coinsToCredit <= 0) {
+      throw new Error('Converted coins value is too low');
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Deduct beans and add coins
+      await User.findByIdAndUpdate(userId, {
+        $inc: { beans: -beansAmount, coins: coinsToCredit }
+      }, { session });
+
+      // Create history record
+      await CoinHistory.create([{
+        userId: user._id,
+        amount: coinsToCredit,
+        type: 'beans_to_coins',
+        description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
+      }], { session });
+
+      await session.commitTransaction();
+      return {
+        success: true,
+        message: 'Beans converted to coins successfully',
+        beansDeducted: beansAmount,
+        coinsCredited: coinsToCredit
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async convertCoinsToBeans(userId: string, coinsAmount: number) {
+    if (!coinsAmount || coinsAmount <= 0) {
+      throw new Error('Coins amount must be greater than zero');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    if ((user.coins || 0) < coinsAmount) {
+      throw new Error('Insufficient coins balance');
+    }
+
+    const appSettingService = Container.get(AppSettingService);
+    const coinToBeanRate = await appSettingService.getSettingValue('coin_to_bean_rate') || 1;
+
+    const beansToCredit = coinsAmount * coinToBeanRate;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Deduct coins and add beans
+      await User.findByIdAndUpdate(userId, {
+        $inc: { coins: -coinsAmount, beans: beansToCredit }
+      }, { session });
+
+      // Create history record
+      await CoinHistory.create([{
+        userId: user._id,
+        amount: -coinsAmount,
+        type: 'coins_to_beans',
+        description: `Converted ${coinsAmount} coins to ${beansToCredit} beans`
+      }], { session });
+
+      await session.commitTransaction();
+      return {
+        success: true,
+        message: 'Coins converted to beans successfully',
+        coinsDeducted: coinsAmount,
+        beansCredited: beansToCredit
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 }

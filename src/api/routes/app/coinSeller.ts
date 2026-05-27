@@ -101,4 +101,70 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/coin-seller/convert-beans-to-coins:
+   *   post:
+   *     summary: Convert user beans to coins
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - beansAmount
+   *             properties:
+   *               beansAmount:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Beans converted to coins successfully
+   */
+  sellerRouter.post('/convert-beans-to-coins', async (req: any, res: Response) => {
+    try {
+      const { beansAmount } = req.body;
+      const result = await coinSellerService.convertBeansToCoins(req.user.id, Number(beansAmount));
+      return ResponseWrapper.success(res, result, 'Beans converted to coins successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coin-seller/convert-coins-to-beans:
+   *   post:
+   *     summary: Convert user coins to beans
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - coinsAmount
+   *             properties:
+   *               coinsAmount:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Coins converted to beans successfully
+   */
+  sellerRouter.post('/convert-coins-to-beans', async (req: any, res: Response) => {
+    try {
+      const { coinsAmount } = req.body;
+      const result = await coinSellerService.convertCoinsToBeans(req.user.id, Number(coinsAmount));
+      return ResponseWrapper.success(res, result, 'Coins converted to beans successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };
