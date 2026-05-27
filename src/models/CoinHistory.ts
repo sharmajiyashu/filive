@@ -2,8 +2,9 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ICoinHistory extends Document {
   userId: mongoose.Types.ObjectId;
+  relatedUserId?: mongoose.Types.ObjectId;
   amount: number; // Positive for credit, negative for debit
-  type: 'recharge' | 'family_creation' | 'transfer' | 'other';
+  type: 'recharge' | 'family_creation' | 'transfer' | 'charm_received' | 'other';
   description?: string;
   transactionId?: string; // For payment gateways
   createdAt: Date;
@@ -13,11 +14,12 @@ export interface ICoinHistory extends Document {
 const CoinHistorySchema: Schema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    relatedUserId: { type: Schema.Types.ObjectId, ref: 'User' },
     amount: { type: Number, required: true },
-    type: { 
-      type: String, 
-      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'other'], 
-      required: true 
+    type: {
+      type: String,
+      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'other'],
+      required: true
     },
     description: { type: String },
     transactionId: { type: String },
