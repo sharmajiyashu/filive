@@ -57,6 +57,18 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         }
     });
 
+    // Retrieve user's inbox / chat threads
+    socket.on('get_chats', async (data: { page?: number; limit?: number; filter?: 'online' | 'frequent' | 'follow' }) => {
+        try {
+            const page = Number(data.page ?? 1);
+            const limit = Number(data.limit ?? 20);
+            const chats = await chatService.getUserChats(userId, page, limit, data.filter);
+            socket.emit('user_chats', chats);
+        } catch (error: any) {
+            socket.emit('error_message', error.message || 'Failed to load chats');
+        }
+    });
+
     // Create a new chat session (private or group)
     socket.on('create_chat', async (data: { type: 'private' | 'group'; name?: string; participants: string[]; mediaId?: string }) => {
         try {
