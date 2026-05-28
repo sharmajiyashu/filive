@@ -27,12 +27,19 @@ jobs:
         # This step verifies that the code builds successfully on GitHub Actions before triggering the deployment on the server.
         # This prevents breaking the live server if there are TypeScript compiler errors in the merged code.
 
+      - name: Verify Secrets
+        run: |
+          echo "Checking secret availability (without showing values):"
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "❌ SSH_HOST is EMPTY"; else echo "✅ SSH_HOST is configured"; fi
+          if [ -z "${{ secrets.SSH_USERNAME }}" ]; then echo "❌ SSH_USERNAME is EMPTY"; else echo "✅ SSH_USERNAME is configured"; fi
+          if [ -z "${{ secrets.SSH_PASSWORD }}" ]; then echo "❌ SSH_PASSWORD is EMPTY"; else echo "✅ SSH_PASSWORD is configured"; fi
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          port: ${{ secrets.SSH_PORT }}
           script: |
             sudo -u creatamax-filiva-node -i bash -c "cd ~/htdocs/filiva-node.creatamax.in/filive && bash deploy.sh"
