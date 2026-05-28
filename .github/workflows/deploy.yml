@@ -43,3 +43,5 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             sudo -u creatamax-filiva-node -i bash -c "cd ~/htdocs/filiva-node.creatamax.in/filive && bash deploy.sh"
+
+
