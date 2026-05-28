@@ -27,12 +27,17 @@ jobs:
         # This step verifies that the code builds successfully on GitHub Actions before triggering the deployment on the server.
         # This prevents breaking the live server if there are TypeScript compiler errors in the merged code.
 
-      - name: Verify Secrets
+      - name: Verify Secrets and Variables
         run: |
-          echo "Checking secret availability (without showing values):"
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "❌ SSH_HOST is EMPTY"; else echo "✅ SSH_HOST is configured"; fi
-          if [ -z "${{ secrets.SSH_USERNAME }}" ]; then echo "❌ SSH_USERNAME is EMPTY"; else echo "✅ SSH_USERNAME is configured"; fi
-          if [ -z "${{ secrets.SSH_PASSWORD }}" ]; then echo "❌ SSH_PASSWORD is EMPTY"; else echo "✅ SSH_PASSWORD is configured"; fi
+          echo "=== Checking Secrets (secrets.XYZ) ==="
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "❌ SSH_HOST is EMPTY in Secrets"; else echo "✅ SSH_HOST is configured in Secrets"; fi
+          if [ -z "${{ secrets.SSH_USERNAME }}" ]; then echo "❌ SSH_USERNAME is EMPTY in Secrets"; else echo "✅ SSH_USERNAME is configured in Secrets"; fi
+          if [ -z "${{ secrets.SSH_PASSWORD }}" ]; then echo "❌ SSH_PASSWORD is EMPTY in Secrets"; else echo "✅ SSH_PASSWORD is configured in Secrets"; fi
+          
+          echo "=== Checking Variables (vars.XYZ) ==="
+          if [ -z "${{ vars.SSH_HOST }}" ]; then echo "❌ SSH_HOST is EMPTY in Variables"; else echo "✅ SSH_HOST is configured in Variables"; fi
+          if [ -z "${{ vars.SSH_USERNAME }}" ]; then echo "❌ SSH_USERNAME is EMPTY in Variables"; else echo "✅ SSH_USERNAME is configured in Variables"; fi
+          if [ -z "${{ vars.SSH_PASSWORD }}" ]; then echo "❌ SSH_PASSWORD is EMPTY in Variables"; else echo "✅ SSH_PASSWORD is configured in Variables"; fi
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
