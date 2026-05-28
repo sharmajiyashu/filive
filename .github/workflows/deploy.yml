@@ -1,6 +1,4 @@
 name: Deploy to CloudPanel Server
-
-
 on:
   push:
     branches:
