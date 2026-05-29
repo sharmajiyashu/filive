@@ -104,6 +104,34 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/coin-seller/check-user/{userId}:
+   *   get:
+   *     summary: Check user details by 10-digit numeric userId
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: User details retrieved successfully
+   */
+  sellerRouter.get('/check-user/:userId', async (req: any, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const result = await coinSellerService.checkUser(Number(userId));
+      return ResponseWrapper.success(res, result, 'User details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/coin-seller/convert-beans-to-coins:
    *   post:
    *     summary: Convert user beans to coins
