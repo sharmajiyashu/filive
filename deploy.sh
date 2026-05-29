@@ -45,11 +45,8 @@ npm install
 echo "🛠️ Building TypeScript application..."
 npm run build
 
-# 5. Prune devDependencies to keep production clean (optional, but standard practice)
-# If your app runs with ts-node in production or you want to keep them, you can skip this.
-# Since npm run start runs "node dist/index.js", devDependencies are not needed at runtime.
-echo "🧹 Pruning development dependencies..."
-npm prune --omit=dev
+# 5. [Skipped Pruning]
+# We keep devDependencies on the server since the start script rebuilds the application using rimraf/tsc.
 
 # 6. Restart the application process
 echo "🔄 Restarting application process..."

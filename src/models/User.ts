@@ -7,6 +7,7 @@ export interface IUser extends Document {
   email: string;
   password?: string;
   mobile?: string;
+  whatsapp?: string;
   userRole: 'user' | 'admin';
   bio?: string;
   otp?: string;
@@ -68,6 +69,7 @@ const UserSchema: Schema = new Schema(
     email: { type: String, unique: true, sparse: true },
     password: { type: String },
     mobile: { type: String, unique: true, sparse: true },
+    whatsapp: { type: String },
     userRole: { type: String, enum: ['user', 'admin'], default: 'user' },
     bio: { type: String },
     otp: { type: String },

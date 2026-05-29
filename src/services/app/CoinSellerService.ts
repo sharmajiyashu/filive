@@ -13,13 +13,13 @@ export class CoinSellerService {
       throw new Error('Transfer amount must be greater than zero');
     }
 
-    const sender = await User.findById(senderId);
+    const sender = await User.findById(senderId).populate('profileImage');
     if (!sender) throw new Error('Sender user not found');
     if ((sender.coins || 0) < amount) {
       throw new Error('Insufficient coins balance');
     }
 
-    const target = await User.findOne({ userId: targetUserId });
+    const target = await User.findOne({ userId: targetUserId }).populate('profileImage');
     if (!target) {
       throw new Error('Recipient user with specified ID not found');
     }
@@ -66,6 +66,20 @@ export class CoinSellerService {
           userId: target.userId,
           name: target.name,
           email: target.email
+        },
+        user: {
+          id: target._id,
+          userId: target.userId,
+          name: target.name,
+          email: target.email,
+          profileImage: target.profileImage
+        },
+        coinSeller: {
+          id: sender._id,
+          userId: sender.userId,
+          name: sender.name,
+          email: sender.email,
+          profileImage: sender.profileImage
         }
       };
     } catch (error) {
@@ -141,7 +155,9 @@ export class CoinSellerService {
   async getSellerDashboard(sellerId: string) {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
     
-    const seller = await User.findById(sellerId).select('userId name coins beans');
+    const seller = await User.findById(sellerId)
+      .select('userId name coins beans mobile whatsapp profileImage')
+      .populate('profileImage');
     if (!seller) throw new Error('Seller not found');
 
     // 1. Calculate total coins sold
@@ -171,6 +187,9 @@ export class CoinSellerService {
     return {
       userId: seller.userId,
       name: seller.name,
+      mobile: seller.mobile,
+      whatsapp: seller.whatsapp,
+      profileImage: seller.profileImage,
       availableBalance: seller.coins || 0,
       beansBalance: seller.beans || 0,
       totalCoinsSold,
@@ -281,5 +300,24 @@ export class CoinSellerService {
     } finally {
       session.endSession();
     }
+  }
+
+  async checkUser(userId: number) {
+    const user = await User.findOne({ userId })
+      .populate('profileImage')
+      .select('userId name email profileImage isPremium location country');
+    if (!user) {
+      throw new Error('Recipient user with specified ID not found');
+    }
+    return {
+      id: user._id,
+      userId: user.userId,
+      name: user.name,
+      email: user.email,
+      profileImage: user.profileImage,
+      isPremium: user.isPremium,
+      location: user.location,
+      country: user.country
+    };
   }
 }
