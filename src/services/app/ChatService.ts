@@ -188,10 +188,21 @@ export class ChatService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const targetUserObjectId = new mongoose.Types.ObjectId(targetUserId);
 
-    const existingChat = await Chat.findOne({
+    const query: any = {
       type: 'private',
-      'participants.userId': { $all: [userObjectId, targetUserObjectId] }
-    })
+      participants: { $size: 2 }
+    };
+
+    if (userId === targetUserId) {
+      query.$and = [
+        { 'participants.0.userId': userObjectId },
+        { 'participants.1.userId': userObjectId }
+      ];
+    } else {
+      query['participants.userId'] = { $all: [userObjectId, targetUserObjectId] };
+    }
+
+    const existingChat = await Chat.findOne(query)
       .populate({
         path: 'participants.userId',
         select: 'name email profileImage userRole',
@@ -234,4 +245,24 @@ export class ChatService {
 
     return populatedChat;
   }
+
+  async deleteChat(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    await Message.deleteMany({ chatId: chatObjectId });
+    await Chat.deleteOne({ _id: chatObjectId });
+
+    return { message: 'Chat deleted successfully' };
+  }
 }
+
