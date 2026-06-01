@@ -6,13 +6,14 @@ import Like from '../../models/Like';
 import Comment from '../../models/Comment';
 import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
+import Chat from '../../models/Chat';
 import mongoose from 'mongoose';
 
 import { LevelService } from './LevelService';
 
 @Service()
 export class UserService {
-  constructor(private levelService: LevelService) {}
+  constructor(private levelService: LevelService) { }
 
   public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string) {
     let query: any = { userRole: 'user' };
@@ -197,15 +198,28 @@ export class UserService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
+    let isChatCreated = false;
+    if (currentUserId && user._id) {
+      const existingChat = await Chat.findOne({
+        type: 'private',
+        'participants.userId': { $all: [new mongoose.Types.ObjectId(currentUserId), user._id] }
+      });
+      if (existingChat) {
+        isChatCreated = true;
+      }
+    }
+
     return {
       user: {
         ...user.toObject(),
         career: user.careerId,
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
-        charmLevelInfo
+        charmLevelInfo,
+        isChatCreated
       },
       isFollowing: isFollowingAuthor,
+      isChatCreated,
       followersCount,
       followingCount,
       friendsCount,

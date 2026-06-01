@@ -137,6 +137,13 @@ export class ChatService {
   }
 
   async createChat(userId: string, data: { name?: string; type: 'private' | 'group'; participants: string[]; mediaId?: string }) {
+    if (data.type === 'private') {
+      const targetUserId = data.participants.find(p => p !== userId);
+      if (targetUserId) {
+        return this.getOrCreateSingleChat(userId, targetUserId);
+      }
+    }
+
     const participantsList: any[] = [
       {
         userId: new mongoose.Types.ObjectId(userId),

@@ -95,6 +95,43 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/chats/personal:
+   *   post:
+   *     summary: Get or create a personal chat with another user
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - targetUserId
+   *             properties:
+   *               targetUserId:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Chat retrieved or created successfully
+   */
+  appRouter.post('/personal', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { targetUserId } = req.body;
+      if (!targetUserId) {
+        throw new Error('targetUserId is required');
+      }
+      const chat = await chatService.getOrCreateSingleChat(userId, targetUserId);
+      return ResponseWrapper.success(res, chat, 'Chat retrieved or created successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/chats/{chatId}/messages:
    *   get:
    *     summary: Get message history for a chat
