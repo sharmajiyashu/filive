@@ -67,9 +67,16 @@ export class ChatService {
         let name = chat.name || '';
         let mediaUrl = chat.mediaId ? (chat.mediaId as any).url : '';
 
-        const otherParticipant = chat.participants.find(
+        let otherParticipant = chat.participants.find(
           (p) => p.userId && p.userId._id.toString() !== userId
         );
+
+        let otherParticipantDetails = null;
+        if (otherParticipant && otherParticipant.userId) {
+          otherParticipantDetails = (otherParticipant.userId as any).toObject 
+            ? (otherParticipant.userId as any).toObject() 
+            : otherParticipant.userId;
+        }
 
         if (chat.type === 'private' && otherParticipant && otherParticipant.userId) {
           const otherUser = otherParticipant.userId as any;
@@ -101,6 +108,7 @@ export class ChatService {
           isOnline,
           isFollowed,
           lastMessage,
+          otherParticipant: otherParticipantDetails,
           updatedAt: chat.updatedAt
         };
       })
@@ -133,6 +141,76 @@ export class ChatService {
         total,
         totalPages
       }
+    };
+  }
+
+  async getChatDetails(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    })
+      .populate({
+        path: 'participants.userId',
+        select: 'name email profileImage userRole coins gender dob location country bio',
+        populate: { path: 'profileImage' }
+      })
+      .populate('mediaId');
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    let isBlocked = false;
+    let blockedByMe = false;
+    let blockedByOther = false;
+    let otherParticipantIdStr = '';
+
+    const otherParticipant = chat.participants.find(
+      (p) => p.userId && p.userId._id.toString() !== userId
+    );
+
+    if (chat.type === 'private' && otherParticipant && otherParticipant.userId) {
+      const BlockModel = mongoose.model('Block');
+      otherParticipantIdStr = otherParticipant.userId._id.toString();
+      
+      const blockRelation = await BlockModel.findOne({
+        $or: [
+          { blockerId: userObjectId, blockedId: otherParticipant.userId._id },
+          { blockerId: otherParticipant.userId._id, blockedId: userObjectId }
+        ]
+      });
+
+      if (blockRelation) {
+        isBlocked = true;
+        if (blockRelation.blockerId.toString() === userId) {
+          blockedByMe = true;
+        } else {
+          blockedByOther = true;
+        }
+      }
+    }
+
+    const participantInfo = chat.participants.find(
+      (p) => p.userId && p.userId._id.toString() === userId
+    );
+
+    return {
+      id: chat._id,
+      type: chat.type,
+      name: chat.name,
+      mediaId: chat.mediaId,
+      participants: chat.participants,
+      isMuted: participantInfo ? participantInfo.isMuted : false,
+      isPinned: participantInfo ? participantInfo.isPinned : false,
+      isBlocked,
+      blockedByMe,
+      blockedByOther,
+      otherParticipantId: otherParticipantIdStr || null,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt
     };
   }
 
