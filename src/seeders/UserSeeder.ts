@@ -4,6 +4,29 @@ import AppLogger from '../api/loaders/logger';
 
 export async function seedUsers() {
     try {
+        // Ensure static beans user with ID 2603904742 exists and has beans
+        const staticUserId = 2603904742;
+        const existingStaticUser = await User.findOne({ userId: staticUserId });
+        if (existingStaticUser) {
+            existingStaticUser.beans = 99999; // Set static beans data
+            await existingStaticUser.save();
+            AppLogger.info(`Updated static beans data for existing user: ${staticUserId}`);
+        } else {
+            const staticHashedPassword = await bcrypt.hash('User@123', 10);
+            await User.create({
+                userId: staticUserId,
+                name: 'Static Beans User',
+                email: 'staticbeans@example.com',
+                mobile: '2603904742',
+                password: staticHashedPassword,
+                userRole: 'user',
+                beans: 99999, // Static beans data
+                coins: 10000,
+                isVerified: true
+            });
+            AppLogger.info(`Created static beans user: ${staticUserId}`);
+        }
+
         const usersCount = await User.countDocuments({ userRole: 'user' });
 
         if (usersCount > 0) {
