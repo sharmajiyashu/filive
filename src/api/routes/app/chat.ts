@@ -171,6 +171,35 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/chats/messages/{messageId}:
+   *   delete:
+   *     summary: Delete a message from a chat
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: messageId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Message deleted successfully
+   */
+  appRouter.delete('/messages/:messageId', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const messageId = req.params.messageId;
+      const result = await chatMessageService.deleteMessage(userId, messageId);
+      return ResponseWrapper.success(res, result, 'Message deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/chats/{chatId}:
    *   delete:
    *     summary: Delete a chat
