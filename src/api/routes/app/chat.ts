@@ -36,6 +36,94 @@ export default (router: Router) => {
    *     responses:
    *       200:
    *         description: List of user chats fetched successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 message:
+   *                   type: string
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     data:
+   *                       type: array
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           id:
+   *                             type: string
+   *                           type:
+   *                             type: string
+   *                             enum: [private, group]
+   *                           name:
+   *                             type: string
+   *                           mediaUrl:
+   *                             type: string
+   *                           role:
+   *                             type: string
+   *                           isMuted:
+   *                             type: boolean
+   *                           isPinned:
+   *                             type: boolean
+   *                           lastSeenAt:
+   *                             type: string
+   *                             format: date-time
+   *                           archiveAt:
+   *                             type: string
+   *                             format: date-time
+   *                           unreadCount:
+   *                             type: integer
+   *                           messageCount:
+   *                             type: integer
+   *                           isOnline:
+   *                             type: boolean
+   *                           isFollowed:
+   *                             type: boolean
+   *                           userId:
+   *                             type: string
+   *                           otherParticipant:
+   *                             type: object
+   *                           participants:
+   *                             type: array
+   *                             items:
+   *                               type: object
+   *                               properties:
+   *                                 role:
+   *                                   type: string
+   *                                 isMuted:
+   *                                   type: boolean
+   *                                 isPinned:
+   *                                   type: boolean
+   *                                 lastSeenAt:
+   *                                   type: string
+   *                                   format: date-time
+   *                                 archiveAt:
+   *                                   type: string
+   *                                   format: date-time
+   *                                 joinedAt:
+   *                                   type: string
+   *                                   format: date-time
+   *                                 userId:
+   *                                   type: object
+   *                                   properties:
+   *                                     _id:
+   *                                       type: string
+   *                                     userId:
+   *                                       type: integer
+   *                                     name:
+   *                                       type: string
+   *                                     email:
+   *                                       type: string
+   *                                     profileImage:
+   *                                       type: object
+   *                                     userRole:
+   *                                       type: string
+   *                           updatedAt:
+   *                             type: string
+   *                             format: date-time
    */
   appRouter.get('/', async (req: any, res: Response) => {
     try {

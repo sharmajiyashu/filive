@@ -120,6 +120,7 @@ export class ChatService {
           lastMessage,
           userId: otherParticipantIdStr || null,
           otherParticipant: otherParticipantDetails,
+          participants: chat.participants,
           updatedAt: chat.updatedAt
         };
       })
@@ -165,7 +166,7 @@ export class ChatService {
     })
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole coins gender dob location country bio',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -265,7 +266,7 @@ export class ChatService {
     const populatedChat = await Chat.findById(chat._id)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -294,7 +295,7 @@ export class ChatService {
     const existingChat = await Chat.findOne(query)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -327,7 +328,7 @@ export class ChatService {
     const populatedChat = await Chat.findById(chat._id)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
