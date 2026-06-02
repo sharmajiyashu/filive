@@ -289,6 +289,20 @@ export default (router: Router) => {
   /**
    * @swagger
    * /app/chats/{chatId}:
+   *   get:
+   *     summary: Get chat details with participants and block status
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: chatId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Chat details fetched successfully
    *   delete:
    *     summary: Delete a chat
    *     tags: [Chats]
@@ -315,24 +329,6 @@ export default (router: Router) => {
     }
   });
 
-  /**
-   * @swagger
-   * /app/chats/{chatId}:
-   *   get:
-   *     summary: Get chat details with participants and block status
-   *     tags: [Chats]
-   *     security:
-   *       - bearerAuth: []
-   *     parameters:
-   *       - in: path
-   *         name: chatId
-   *         required: true
-   *         schema:
-   *           type: string
-   *     responses:
-   *       200:
-   *         description: Chat details fetched successfully
-   */
   appRouter.get('/:chatId', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
