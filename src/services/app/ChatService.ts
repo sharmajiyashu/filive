@@ -7,7 +7,7 @@ import Follow from '../../models/Follow';
 
 @Service()
 export class ChatService {
-  constructor() {}
+  constructor() { }
 
   async getUserChats(userId: string, page: number = 1, limit: number = 20, filter?: 'online' | 'frequent' | 'follow') {
     const skip = (page - 1) * limit;
@@ -18,7 +18,7 @@ export class ChatService {
     })
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -26,7 +26,7 @@ export class ChatService {
     let io: any;
     try {
       io = Container.get('socket');
-    } catch (e) {}
+    } catch (e) { }
 
     const followedUserIds = new Set<string>();
     if (filter === 'follow') {
@@ -36,7 +36,7 @@ export class ChatService {
 
     const data = await Promise.all(
       chats.map(async (chat) => {
-        const lastMessage = await Message.findOne({ chatId: chat._id })
+        const lastMessage = await Message.findOne({ chatId: chat._id, deletedAt: { $exists: false } })
           .sort({ createdAt: -1 })
           .populate({
             path: 'senderId',
@@ -59,17 +59,34 @@ export class ChatService {
         const unreadCount = await Message.countDocuments({
           chatId: chat._id,
           senderId: { $ne: userObjectId },
-          'seenBy.userId': { $ne: userObjectId }
+          'seenBy.userId': { $ne: userObjectId },
+          deletedAt: { $exists: false }
         });
 
-        const messageCount = await Message.countDocuments({ chatId: chat._id });
+        const messageCount = await Message.countDocuments({ chatId: chat._id, deletedAt: { $exists: false } });
 
         let name = chat.name || '';
         let mediaUrl = chat.mediaId ? (chat.mediaId as any).url : '';
 
-        const otherParticipant = chat.participants.find(
+        let otherParticipant = chat.participants.find(
           (p) => p.userId && p.userId._id.toString() !== userId
         );
+        if (!otherParticipant && chat.participants.length > 0) {
+          otherParticipant = chat.participants[0];
+        }
+
+        let otherParticipantDetails = null;
+        let otherParticipantIdStr = '';
+        if (otherParticipant && otherParticipant.userId) {
+          const otherUser = (otherParticipant.userId as any).toObject
+            ? (otherParticipant.userId as any).toObject()
+            : otherParticipant.userId;
+          otherParticipantIdStr = otherUser._id ? otherUser._id.toString() : '';
+          otherParticipantDetails = {
+            id: otherParticipantIdStr,
+            ...otherUser
+          };
+        }
 
         if (chat.type === 'private' && otherParticipant && otherParticipant.userId) {
           const otherUser = otherParticipant.userId as any;
@@ -101,6 +118,9 @@ export class ChatService {
           isOnline,
           isFollowed,
           lastMessage,
+          userId: otherParticipantIdStr || null,
+          otherParticipant: otherParticipantDetails,
+          participants: chat.participants,
           updatedAt: chat.updatedAt
         };
       })
@@ -133,6 +153,76 @@ export class ChatService {
         total,
         totalPages
       }
+    };
+  }
+
+  async getChatDetails(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    })
+      .populate({
+        path: 'participants.userId',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
+        populate: { path: 'profileImage' }
+      })
+      .populate('mediaId');
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    let isBlocked = false;
+    let blockedByMe = false;
+    let blockedByOther = false;
+    let otherParticipantIdStr = '';
+
+    const otherParticipant = chat.participants.find(
+      (p) => p.userId && p.userId._id.toString() !== userId
+    );
+
+    if (chat.type === 'private' && otherParticipant && otherParticipant.userId) {
+      const BlockModel = mongoose.model('Block');
+      otherParticipantIdStr = otherParticipant.userId._id.toString();
+
+      const blockRelation = await BlockModel.findOne({
+        $or: [
+          { blockerId: userObjectId, blockedId: otherParticipant.userId._id },
+          { blockerId: otherParticipant.userId._id, blockedId: userObjectId }
+        ]
+      });
+
+      if (blockRelation) {
+        isBlocked = true;
+        if (blockRelation.blockerId.toString() === userId) {
+          blockedByMe = true;
+        } else {
+          blockedByOther = true;
+        }
+      }
+    }
+
+    const participantInfo = chat.participants.find(
+      (p) => p.userId && p.userId._id.toString() === userId
+    );
+
+    return {
+      id: chat._id,
+      type: chat.type,
+      name: chat.name,
+      mediaId: chat.mediaId,
+      participants: chat.participants,
+      isMuted: participantInfo ? participantInfo.isMuted : false,
+      isPinned: participantInfo ? participantInfo.isPinned : false,
+      isBlocked,
+      blockedByMe,
+      blockedByOther,
+      otherParticipantId: otherParticipantIdStr || null,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt
     };
   }
 
@@ -176,7 +266,7 @@ export class ChatService {
     const populatedChat = await Chat.findById(chat._id)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -188,13 +278,24 @@ export class ChatService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const targetUserObjectId = new mongoose.Types.ObjectId(targetUserId);
 
-    const existingChat = await Chat.findOne({
+    const query: any = {
       type: 'private',
-      'participants.userId': { $all: [userObjectId, targetUserObjectId] }
-    })
+      participants: { $size: 2 }
+    };
+
+    if (userId === targetUserId) {
+      query.$and = [
+        { 'participants.0.userId': userObjectId },
+        { 'participants.1.userId': userObjectId }
+      ];
+    } else {
+      query['participants.userId'] = { $all: [userObjectId, targetUserObjectId] };
+    }
+
+    const existingChat = await Chat.findOne(query)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -227,11 +328,31 @@ export class ChatService {
     const populatedChat = await Chat.findById(chat._id)
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole coins gender dob location country bio userId',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
 
     return populatedChat;
   }
+
+  async deleteChat(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    await Message.deleteMany({ chatId: chatObjectId });
+    await Chat.deleteOne({ _id: chatObjectId });
+
+    return { message: 'Chat deleted successfully' };
+  }
 }
+

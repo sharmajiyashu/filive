@@ -30,10 +30,10 @@ export class ChatMessageService {
       throw new Error('Chat conversation not found or access denied');
     }
 
-    const total = await Message.countDocuments({ chatId: chatObjectId });
+    const total = await Message.countDocuments({ chatId: chatObjectId, deletedAt: { $exists: false } });
     const totalPages = Math.ceil(total / limit);
 
-    const messages = await Message.find({ chatId: chatObjectId })
+    const messages = await Message.find({ chatId: chatObjectId, deletedAt: { $exists: false } })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -228,5 +228,37 @@ export class ChatMessageService {
       { _id: chatObjectId, 'participants.userId': userObjectId },
       { $set: { 'participants.$.lastSeenAt': new Date() } }
     );
+  }
+
+  async deleteMessage(userId: string, messageId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const messageObjectId = new mongoose.Types.ObjectId(messageId);
+
+    const message = await Message.findById(messageObjectId);
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    const chat = await Chat.findOne({
+      _id: message.chatId,
+      'participants.userId': userObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Chat access denied');
+    }
+
+    const participantInfo = chat.participants.find(p => p.userId && p.userId.toString() === userId);
+    const isSender = message.senderId.toString() === userId;
+    const isAdmin = participantInfo?.role === 'admin';
+
+    if (!isSender && !isAdmin) {
+      throw new Error('Not authorized to delete this message');
+    }
+
+    message.deletedAt = new Date();
+    await message.save();
+
+    return { message: 'Message deleted successfully' };
   }
 }
