@@ -53,7 +53,7 @@ export default (router: Router) => {
           { email: { $regex: search, $options: 'i' } },
           { mobile: { $regex: search, $options: 'i' } }
         ];
-        
+
         const searchNumber = Number(search);
         if (!isNaN(searchNumber)) {
           query.$or.push({ userId: searchNumber });
@@ -346,7 +346,7 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      
+
       const query = { isCoinseller: true };
       const users = await User.find(query)
         .populate('profileImage')
@@ -464,6 +464,63 @@ export default (router: Router) => {
       }
       const user = await userService.updateVideoVerificationStatus(userId, status);
       return ResponseWrapper.success(res, user, `Video verification status updated to ${status}`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/video-verifications:
+   *   get:
+   *     summary: Get all users with pending video verifications
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer }
+   *       - in: query
+   *         name: status
+   *         schema: { type: string, enum: [pending, approved, rejected, all] }
+   *     responses:
+   *       200:
+   *         description: Video verifications fetched successfully
+   */
+  userRouter.get('/video-verifications', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const status = req.query.status?.toString() || 'pending';
+
+      const query: any = {};
+
+      if (status !== 'all') {
+        query.videoVerificationStatus = status;
+      } else {
+        query.videoVerificationStatus = { $in: ['pending', 'approved', 'rejected'] };
+      }
+
+      const users = await User.find(query)
+        .populate('profileImage')
+        .populate('videoVerificationVideo')
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      const total = await User.countDocuments(query);
+
+      return ResponseWrapper.success(res, {
+        users,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      }, 'Video verifications fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

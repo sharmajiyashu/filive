@@ -8,6 +8,7 @@ export interface IAgency extends Document {
   description: string;
   creatorId: mongoose.Types.ObjectId;
   isVerified: boolean;
+  status: 'pending' | 'approved' | 'rejected';
   otp?: string;
   otpExpires?: Date;
   createdAt: Date;
@@ -23,6 +24,7 @@ const AgencySchema: Schema = new Schema(
     description: { type: String },
     creatorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isVerified: { type: Boolean, default: false },
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     otp: { type: String },
     otpExpires: { type: Date },
   },

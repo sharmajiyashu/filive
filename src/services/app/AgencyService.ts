@@ -123,7 +123,7 @@ export class AgencyService {
   }
 
   public async getAgencies(filter: any = {}) {
-    return await Agency.find({ ...filter, isVerified: true }).populate('countryId').populate('creatorId', 'name profileImage');
+    return await Agency.find({ ...filter, isVerified: true, status: 'approved' }).populate('countryId').populate('creatorId', 'name profileImage');
   }
 
   public async getAgency(id: string) {
