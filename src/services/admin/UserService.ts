@@ -35,4 +35,38 @@ export class UserService {
       },
     };
   }
+
+  public async toggleCoinseller(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    user.isCoinseller = !user.isCoinseller;
+    await user.save();
+    return user;
+  }
+
+  public async adjustCoinsellerCoins(userId: string, amount: number) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    
+    const currentVal = user.coinSellerCoins || 0;
+    const newVal = currentVal + amount;
+    
+    if (newVal < 0) {
+      throw new Error(`Insufficient coinseller coins. Resulting balance cannot be less than zero.`);
+    }
+
+    user.coinSellerCoins = newVal;
+    await user.save();
+    return user;
+  }
+
+  public async updateVideoVerificationStatus(userId: string, status: 'approved' | 'rejected') {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    
+    user.videoVerificationStatus = status;
+    // We could also set isVerified = true if approved, depending on business logic, but let's stick to the specific request.
+    await user.save();
+    return user;
+  }
 }

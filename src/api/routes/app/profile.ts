@@ -300,4 +300,37 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, error);
       }
     });
+  /**
+   * @swagger
+   * /app/profile/video-verification:
+   *   post:
+   *     summary: Upload video for verification
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               video:
+   *                 type: string
+   *                 format: binary
+   *     responses:
+   *       200:
+   *         description: Video verification uploaded successfully
+   */
+  router.post('/profile/video-verification',
+    upload.single('video'),
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        if (!req.file) throw new Error('Please upload a video');
+        const result = await profileService.uploadVideoVerification(userId, req.file);
+        return ResponseWrapper.success(res, result, 'Video uploaded successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
 };

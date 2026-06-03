@@ -8,6 +8,7 @@ import user from './user';
 import story from './story';
 import dashboard from './dashboard';
 import appSetting from './appSetting';
+import store from './store';
 
 export default (router: Router): Router => {
   auth(router);
@@ -19,5 +20,6 @@ export default (router: Router): Router => {
   story(router);
   dashboard(router);
   appSetting(router);
+  store(router);
   return router;
 };
