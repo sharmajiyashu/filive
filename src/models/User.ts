@@ -58,6 +58,7 @@ export interface IUser extends Document {
   enableVideoCall: boolean;
   voiceCallPrice: number;
   videoCallPrice: number;
+  hostVerificationCode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,6 +127,7 @@ const UserSchema: Schema = new Schema(
     enableVideoCall: { type: Boolean, default: false },
     voiceCallPrice: { type: Number, default: 0 },
     videoCallPrice: { type: Number, default: 0 },
+    hostVerificationCode: { type: String, unique: true, sparse: true },
   },
   {
     timestamps: true,
@@ -147,6 +149,11 @@ UserSchema.pre('save', async function (next) {
       attempts++;
     }
   }
+
+  if (!user.hostVerificationCode) {
+    user.hostVerificationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+
   next();
 });
 
