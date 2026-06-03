@@ -34,10 +34,14 @@ export class StoreService {
     return item;
   }
 
-  public async getAdminStoreItems(page: number = 1, limit: number = 20) {
+  public async getAdminStoreItems(page: number = 1, limit: number = 20, type?: string) {
     const skip = (page - 1) * limit;
-    const items = await StoreItem.find().populate('media').skip(skip).limit(limit).sort({ createdAt: -1 });
-    const total = await StoreItem.countDocuments();
+    const query: any = {};
+    if (type) {
+      query.type = type;
+    }
+    const items = await StoreItem.find(query).populate('media').skip(skip).limit(limit).sort({ createdAt: -1 });
+    const total = await StoreItem.countDocuments(query);
     return {
       data: items,
       total,
