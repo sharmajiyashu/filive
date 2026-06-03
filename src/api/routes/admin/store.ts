@@ -64,7 +64,8 @@ export default (router: Router) => {
     try {
       const page = req.query.page ? parseInt(req.query.page) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit) : 20;
-      const result = await storeService.getAdminStoreItems(page, limit);
+      const type = req.query.type ? req.query.type.toString() : undefined;
+      const result = await storeService.getAdminStoreItems(page, limit, type);
       return ResponseWrapper.success(res, result, 'Store items fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
