@@ -6,7 +6,7 @@ import { AppSettingService } from '../common/AppSettingService';
 
 @Service()
 export class CoinSellerService {
-  constructor() {}
+  constructor() { }
 
   async transferCoins(senderId: string, targetUserId: number, amount: number) {
     if (!amount || amount <= 0) {
@@ -15,8 +15,11 @@ export class CoinSellerService {
 
     const sender = await User.findById(senderId).populate('profileImage');
     if (!sender) throw new Error('Sender user not found');
-    if ((sender.coins || 0) < amount) {
-      throw new Error('Insufficient coins balance');
+    if (!sender.isCoinseller) {
+      throw new Error('You are not authorized as a coin seller');
+    }
+    if ((sender.coinSellerCoins || 0) < amount) {
+      throw new Error('Insufficient coinseller coins balance');
     }
 
     const target = await User.findOne({ userId: targetUserId }).populate('profileImage');
@@ -33,7 +36,7 @@ export class CoinSellerService {
 
     try {
       // Deduct from sender
-      await User.findByIdAndUpdate(senderId, { $inc: { coins: -amount } }, { session });
+      await User.findByIdAndUpdate(senderId, { $inc: { coinSellerCoins: -amount } }, { session });
 
       // Add to receiver
       await User.findByIdAndUpdate(target._id, { $inc: { coins: amount } }, { session });
@@ -154,9 +157,9 @@ export class CoinSellerService {
 
   async getSellerDashboard(sellerId: string) {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
-    
+
     const seller = await User.findById(sellerId)
-      .select('userId name coins beans mobile whatsapp profileImage')
+      .select('userId name coins coinSellerCoins beans mobile whatsapp profileImage')
       .populate('profileImage');
     if (!seller) throw new Error('Seller not found');
 
@@ -191,6 +194,7 @@ export class CoinSellerService {
       whatsapp: seller.whatsapp,
       profileImage: seller.profileImage,
       availableBalance: seller.coins || 0,
+      coinSellerBalance: seller.coinSellerCoins || 0,
       beansBalance: seller.beans || 0,
       totalCoinsSold,
       customerNumbers,

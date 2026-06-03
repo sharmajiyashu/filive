@@ -9,6 +9,7 @@ import Career from '../../models/Career';
 import Hobby from '../../models/Hobby';
 import { LevelService } from './LevelService';
 import UserVisitor from '../../models/UserVisitor';
+import AgencyHost from '../../models/AgencyHost';
 
 @Service()
 export class ProfileService {
@@ -51,6 +52,14 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
+    const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
+    let agency = null;
+    let isAgencyHost = false;
+    if (agencyHost && agencyHost.agencyId) {
+      agency = agencyHost.agencyId;
+      isAgencyHost = true;
+    }
+
     return {
       ...profile.toObject(),
       career: profile.careerId,
@@ -60,7 +69,9 @@ export class ProfileService {
       visitorsCount,
       levelInfo: richLevelInfo, // backward compatibility
       richLevelInfo,
-      charmLevelInfo
+      charmLevelInfo,
+      agency,
+      isAgencyHost
     };
   }
 
@@ -188,6 +199,14 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
+    const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
+    let agency = null;
+    let isAgencyHost = false;
+    if (agencyHost && agencyHost.agencyId) {
+      agency = agencyHost.agencyId;
+      isAgencyHost = true;
+    }
+
     return {
       profile: {
         ...updatedUser.toObject(),
@@ -198,7 +217,9 @@ export class ProfileService {
         visitorsCount,
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
-        charmLevelInfo
+        charmLevelInfo,
+        agency,
+        isAgencyHost
       },
       message: 'PROFILE_UPDATED'
     };
@@ -291,5 +312,32 @@ export class ProfileService {
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
     return updatedUser;
+  }
+
+  public async uploadVideoVerification(userId: string, file: Express.Multer.File) {
+    const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.video, [file], 'verifications');
+    if (!uploadResults || uploadResults.length === 0) {
+      throw new Error('Video upload failed');
+    }
+
+    const media = await this.mediaService.createMedia({
+      ...uploadResults[0]
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        videoVerificationVideo: media._id,
+        videoVerificationStatus: 'pending'
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) throw new Error('USER_NOT_FOUND');
+
+    return {
+      message: 'Video verification uploaded successfully',
+      status: updatedUser.videoVerificationStatus
+    };
   }
 }

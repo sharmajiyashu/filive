@@ -64,6 +64,10 @@ export interface IUser extends Document {
   activeChatBubble?: mongoose.Types.ObjectId;
   activeTheme?: mongoose.Types.ObjectId;
   activeRide?: mongoose.Types.ObjectId;
+  isCoinseller: boolean;
+  coinSellerCoins: number;
+  videoVerificationVideo?: mongoose.Types.ObjectId;
+  videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -138,6 +142,10 @@ const UserSchema: Schema = new Schema(
     activeChatBubble: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeTheme: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeRide: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
+    isCoinseller: { type: Boolean, default: false },
+    coinSellerCoins: { type: Number, default: 0 },
+    videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
+    videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
   },
   {
     timestamps: true,

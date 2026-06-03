@@ -11,9 +11,11 @@ import Story from '../../../models/Story';
 import CoinHistory from '../../../models/CoinHistory';
 import { ResponseWrapper } from '../../responseWrapper';
 import { LevelService } from '../../../services/app/LevelService';
+import { UserService } from '../../../services/admin/UserService';
 
 export default (router: Router) => {
   const userRouter = Router();
+  const userService = Container.get(UserService);
 
   router.use('/users', userRouter);
 
@@ -102,7 +104,8 @@ export default (router: Router) => {
         .populate('album')
         .populate('careerId')
         .populate('hobbies')
-        .populate('countryId');
+        .populate('countryId')
+        .populate('videoVerificationVideo');
 
       if (!user) {
         throw new Error('User not found');
@@ -312,6 +315,150 @@ export default (router: Router) => {
       });
 
       return ResponseWrapper.success(res, user, `${type} balance updated successfully`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/coinsellers/list:
+   *   get:
+   *     summary: Get all coin sellers
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer }
+   *     responses:
+   *       200:
+   *         description: Coin sellers fetched successfully
+   */
+  userRouter.get('/coinsellers/list', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      
+      const query = { isCoinseller: true };
+      const users = await User.find(query)
+        .populate('profileImage')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      const total = await User.countDocuments(query);
+
+      return ResponseWrapper.success(res, {
+        users,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      }, 'Coin sellers fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/{id}/coinseller:
+   *   put:
+   *     summary: Toggle coin seller status
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: User coin seller status toggled
+   */
+  userRouter.put('/:id/coinseller', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.toggleCoinseller(userId);
+      return ResponseWrapper.success(res, user, `User coin seller status toggled successfully`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/{id}/coinseller-coins:
+   *   put:
+   *     summary: Adjust user coinseller coins balance
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               amount:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Coinseller balance updated successfully
+   */
+  userRouter.put('/:id/coinseller-coins', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { amount } = req.body;
+      const user = await userService.adjustCoinsellerCoins(userId, amount);
+      return ResponseWrapper.success(res, user, `Coinseller balance updated successfully`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/{id}/video-verification:
+   *   put:
+   *     summary: Approve or reject user video verification
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               status:
+   *                 type: string
+   *                 enum: [approved, rejected]
+   *     responses:
+   *       200:
+   *         description: Video verification status updated
+   */
+  userRouter.put('/:id/video-verification', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { status } = req.body;
+      if (!['approved', 'rejected'].includes(status)) {
+        throw new Error('Status must be approved or rejected');
+      }
+      const user = await userService.updateVideoVerificationStatus(userId, status);
+      return ResponseWrapper.success(res, user, `Video verification status updated to ${status}`);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
