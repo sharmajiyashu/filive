@@ -9,6 +9,7 @@ import story from './story';
 import dashboard from './dashboard';
 import appSetting from './appSetting';
 import store from './store';
+import agency from './agency';
 
 export default (router: Router): Router => {
   auth(router);
@@ -21,5 +22,6 @@ export default (router: Router): Router => {
   dashboard(router);
   appSetting(router);
   store(router);
+  agency(router);
   return router;
 };
