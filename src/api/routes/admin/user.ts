@@ -53,6 +53,11 @@ export default (router: Router) => {
           { email: { $regex: search, $options: 'i' } },
           { mobile: { $regex: search, $options: 'i' } }
         ];
+        
+        const searchNumber = Number(search);
+        if (!isNaN(searchNumber)) {
+          query.$or.push({ userId: searchNumber });
+        }
       }
 
       const users = await User.find(query)

@@ -12,7 +12,13 @@ export class UserService {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
+        { mobile: { $regex: search, $options: 'i' } }
       ];
+
+      const searchNumber = Number(search);
+      if (!isNaN(searchNumber)) {
+        query.$or.push({ userId: searchNumber });
+      }
     }
     if (city) query['location.city'] = city;
     if (state) query['location.state'] = state;
