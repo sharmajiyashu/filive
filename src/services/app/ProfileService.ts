@@ -52,12 +52,16 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-    const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
-    let agency = null;
+    let agency: any = await mongoose.model('Agency').findOne({ creatorId: userId });
     let isAgencyHost = false;
-    if (agencyHost && agencyHost.agencyId) {
-      agency = agencyHost.agencyId;
+    if (agency) {
       isAgencyHost = true;
+    } else {
+      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
+      if (agencyHost && agencyHost.agencyId) {
+        agency = agencyHost.agencyId;
+        isAgencyHost = true;
+      }
     }
 
     return {
@@ -199,12 +203,16 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-    const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
-    let agency = null;
+    let agency: any = await mongoose.model('Agency').findOne({ creatorId: userId });
     let isAgencyHost = false;
-    if (agencyHost && agencyHost.agencyId) {
-      agency = agencyHost.agencyId;
+    if (agency) {
       isAgencyHost = true;
+    } else {
+      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
+      if (agencyHost && agencyHost.agencyId) {
+        agency = agencyHost.agencyId;
+        isAgencyHost = true;
+      }
     }
 
     return {
