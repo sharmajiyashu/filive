@@ -290,6 +290,82 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/verify-user/{userId}:
+   *   post:
+   *     summary: Verify user details for agency host addition and optionally add them
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema: { type: number }
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               agencyId: { type: string }
+   *     responses:
+   *       200:
+   *         description: User verified and added successfully
+   */
+  agencyRouter.post('/verify-user/:userId', async (req: any, res: Response) => {
+    try {
+      const adminUserId = req.user.id;
+      const targetUserId = parseInt(req.params.userId);
+      const { agencyId } = req.body || {};
+      
+      if (isNaN(targetUserId)) {
+        throw new Error('userId must be a valid number');
+      }
+      
+      const result = await agencyService.verifyUserForHost(targetUserId, adminUserId, agencyId);
+      return ResponseWrapper.success(res, result, 'User details fetched and host added successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/become-host:
+   *   post:
+   *     summary: Become a host by joining an agency with its ID
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               agentId: { type: string }
+   *     responses:
+   *       200:
+   *         description: Joined agency successfully
+   */
+  agencyRouter.post('/become-host', async (req: any, res: Response) => {
+    try {
+      const currentUserId = req.user.id;
+      const { agentId } = req.body;
+      if (!agentId) {
+        throw new Error('agentId is required');
+      }
+      const result = await agencyService.userJoinAgency(currentUserId, agentId);
+      return ResponseWrapper.success(res, result, 'Joined agency successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/{id}:
    *   get:
    *     summary: Get agency details

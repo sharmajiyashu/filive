@@ -273,4 +273,78 @@ export class AgencyService {
       totalPages: Math.ceil(total / limit)
     };
   }
+
+  public async verifyUserForHost(userId: number, adminUserId: string, agencyId: string) {
+    const targetUser = await User.findOne({ userId });
+    if (!targetUser) throw new Error('User not found');
+    
+    if (agencyId) {
+      const agencyQuery = mongoose.Types.ObjectId.isValid(agencyId) ? { _id: agencyId } : { creatorId: agencyId };
+      const agency = await Agency.findOne(agencyQuery);
+      if (!agency || agency.creatorId.toString() !== adminUserId) {
+        throw new Error('Unauthorized or agency not found');
+      }
+
+      const existing = await AgencyHost.findOne({ agencyId: agency._id, userId: targetUser._id });
+      if (existing && existing.status === 'ACCEPTED') {
+        throw new Error('User is already a host in this agency');
+      }
+
+      if (existing) {
+        existing.status = 'ACCEPTED';
+        existing.requestedBy = 'AGENCY';
+        await existing.save();
+      } else {
+        await AgencyHost.create({
+          agencyId: agency._id,
+          userId: targetUser._id,
+          status: 'ACCEPTED',
+          requestedBy: 'AGENCY'
+        });
+      }
+    }
+
+    return {
+      id: targetUser._id,
+      userId: targetUser.userId,
+      name: targetUser.name,
+      profileImage: targetUser.profileImage,
+      email: targetUser.email,
+      mobile: targetUser.mobile,
+      countryId: targetUser.countryId,
+      isPremium: targetUser.isPremium,
+    };
+  }
+
+  public async userJoinAgency(currentUserId: string, agentId: string) {
+    const agencyQuery = mongoose.Types.ObjectId.isValid(agentId) ? { _id: agentId } : { creatorId: agentId }; // In case agentId refers to agency _id or creator's _id. Usually _id.
+    const agency = await Agency.findOne(agencyQuery);
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+
+    const agencyId = agency._id;
+    const existing = await AgencyHost.findOne({ agencyId, userId: currentUserId });
+    
+    if (existing && existing.status === 'ACCEPTED') {
+      throw new Error('You are already a host in this agency');
+    }
+
+    if (existing) {
+      existing.status = 'ACCEPTED';
+      existing.requestedBy = 'USER';
+      await existing.save();
+      const popExisting = await existing.populate('userId');
+      return this.mapHostResponse(popExisting);
+    }
+
+    const host = await AgencyHost.create({
+      agencyId,
+      userId: new mongoose.Types.ObjectId(currentUserId),
+      status: 'ACCEPTED',
+      requestedBy: 'USER'
+    });
+    const populated = await host.populate('userId');
+    return this.mapHostResponse(populated);
+  }
 }
