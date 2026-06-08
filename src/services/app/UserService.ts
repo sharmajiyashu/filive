@@ -199,6 +199,7 @@ export class UserService {
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
     let isChatCreated = false;
+    let chatId = null;
     if (currentUserId && user._id) {
       const existingChat = await Chat.findOne({
         type: 'private',
@@ -206,6 +207,7 @@ export class UserService {
       });
       if (existingChat) {
         isChatCreated = true;
+        chatId = existingChat._id;
       }
     }
 
@@ -216,10 +218,12 @@ export class UserService {
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
         charmLevelInfo,
-        isChatCreated
+        isChatCreated,
+        chatId
       },
       isFollowing: isFollowingAuthor,
       isChatCreated,
+      chatId,
       followersCount,
       followingCount,
       friendsCount,
