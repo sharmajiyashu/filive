@@ -61,7 +61,15 @@ const baseDefinition = {
           agencyId: { type: 'string' },
           status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
           requestedBy: { type: 'string', enum: ['USER', 'AGENCY'] },
+          messageId: { type: 'string', nullable: true },
+          chatId: { type: 'string', nullable: true },
+          isOpened: { type: 'boolean', description: 'User opened chat or invite message' },
+          isVerified: { type: 'boolean', description: 'User viewed and verified agency host request details' },
+          openedAt: { type: 'string', format: 'date-time', nullable: true },
+          verifiedAt: { type: 'string', format: 'date-time', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
+          agency: { $ref: '#/components/schemas/AgencyDetail', nullable: true },
+          message: { $ref: '#/components/schemas/AgencyHostInviteMessage', nullable: true },
           user: {
             type: 'object',
             nullable: true,
@@ -112,6 +120,103 @@ const baseDefinition = {
             example: '100001',
           },
         },
+      },
+      AddHostRequest: {
+        type: 'object',
+        required: ['targetUserId', 'verificationCode'],
+        properties: {
+          targetUserId: {
+            type: 'number',
+            description: 'Target user numeric app user ID',
+            example: 100002,
+          },
+          verificationCode: {
+            type: 'string',
+            description: 'Target user host verification code (must match userId)',
+            example: 'HOST123',
+          },
+        },
+      },
+      HostInviteRespondRequest: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['ACCEPTED', 'REJECTED'],
+          },
+        },
+      },
+      AgencyHostInviteMetadata: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['agency_host_invite'] },
+          agencyHostRequestId: { type: 'string' },
+          agencyId: { type: 'string' },
+          agencyName: { type: 'string' },
+          status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
+          isOpened: { type: 'boolean' },
+          isVerified: { type: 'boolean' },
+          openedAt: { type: 'string', format: 'date-time', nullable: true },
+          verifiedAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      AgencyHostInviteMessage: {
+        type: 'object',
+        properties: {
+          _id: { type: 'string' },
+          chatId: { type: 'string' },
+          type: { type: 'string', enum: ['agency_host_invite'] },
+          text: { type: 'string' },
+          metadata: { $ref: '#/components/schemas/AgencyHostInviteMetadata' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      AgencyHostRequestSummary: {
+        type: 'object',
+        nullable: true,
+        description: 'Pending agency host invite in chat list',
+        properties: {
+          messageId: { type: 'string' },
+          messageType: { type: 'string', enum: ['agency_host_invite'] },
+          requestId: { type: 'string' },
+          agencyId: { type: 'string' },
+          agencyName: { type: 'string' },
+          status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
+          isOpened: { type: 'boolean' },
+          isVerified: { type: 'boolean' },
+          openedAt: { type: 'string', format: 'date-time', nullable: true },
+          verifiedAt: { type: 'string', format: 'date-time', nullable: true },
+          text: { type: 'string' },
+        },
+      },
+      HostInviteDetail: {
+        allOf: [{ $ref: '#/components/schemas/AgencyHostDetail' }],
+      },
+      HostInviteListResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/HostInviteDetail' },
+          },
+          total: { type: 'integer' },
+          page: { type: 'integer' },
+          limit: { type: 'integer' },
+          totalPages: { type: 'integer' },
+        },
+      },
+      AddHostResponse: {
+        type: 'object',
+        allOf: [
+          { $ref: '#/components/schemas/AgencyHostDetail' },
+          {
+            type: 'object',
+            properties: {
+              message: { $ref: '#/components/schemas/AgencyHostInviteMessage' },
+            },
+          },
+        ],
       },
     },
   },

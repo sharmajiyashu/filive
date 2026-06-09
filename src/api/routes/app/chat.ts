@@ -82,6 +82,11 @@ export default (router: Router) => {
    *                             type: boolean
    *                           isFollowed:
    *                             type: boolean
+   *                           lastMessageType:
+   *                             type: string
+   *                             description: Last message type e.g. text, agency_host_invite
+   *                           agencyHostRequest:
+   *                             $ref: '#/components/schemas/AgencyHostRequestSummary'
    *                           userId:
    *                             type: string
    *                           otherParticipant:
@@ -242,7 +247,23 @@ export default (router: Router) => {
    *           type: integer
    *     responses:
    *       200:
-   *         description: Messages retrieved successfully
+   *         description: Messages retrieved successfully. Messages may include type agency_host_invite with metadata for host requests.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     data:
+   *                       type: array
+   *                       items:
+   *                         oneOf:
+   *                           - type: object
+   *                             properties:
+   *                               type: { type: string, enum: [text, image, video, file, system] }
+   *                           - $ref: '#/components/schemas/AgencyHostInviteMessage'
    */
   appRouter.get('/:chatId/messages', async (req: any, res: Response) => {
     try {

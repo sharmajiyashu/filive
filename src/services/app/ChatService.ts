@@ -1,7 +1,7 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Chat from '../../models/Chat';
-import Message from '../../models/Message';
+import Message, { IAgencyHostInviteMetadata } from '../../models/Message';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 
@@ -103,6 +103,32 @@ export class ChatService {
 
         const isFollowed = otherParticipant && otherParticipant.userId && followedUserIds.has(otherParticipant.userId._id.toString());
 
+        const pendingHostInviteMessage = await Message.findOne({
+          chatId: chat._id,
+          type: 'agency_host_invite',
+          deletedAt: { $exists: false },
+          'metadata.status': 'PENDING',
+          senderId: { $ne: userObjectId },
+        }).sort({ createdAt: -1 });
+
+        let agencyHostRequest = null;
+        if (pendingHostInviteMessage?.metadata) {
+          const meta = pendingHostInviteMessage.metadata as IAgencyHostInviteMetadata;
+          agencyHostRequest = {
+            messageId: pendingHostInviteMessage._id.toString(),
+            messageType: 'agency_host_invite',
+            requestId: meta.agencyHostRequestId,
+            agencyId: meta.agencyId,
+            agencyName: meta.agencyName,
+            status: meta.status,
+            isOpened: meta.isOpened ?? false,
+            isVerified: meta.isVerified ?? false,
+            openedAt: meta.openedAt,
+            verifiedAt: meta.verifiedAt,
+            text: pendingHostInviteMessage.text,
+          };
+        }
+
         return {
           id: chat._id,
           type: chat.type,
@@ -118,6 +144,8 @@ export class ChatService {
           isOnline,
           isFollowed,
           lastMessage,
+          lastMessageType: lastMessage?.type || null,
+          agencyHostRequest,
           userId: otherParticipantIdStr || null,
           otherParticipant: otherParticipantDetails,
           participants: chat.participants,
