@@ -124,7 +124,8 @@ export default (router: Router) => {
    * @swagger
    * /app/agencies/{id}/join:
    *   post:
-   *     summary: Join an agency as a host
+   *     summary: Join an agency as host by agency MongoDB ID
+   *     description: Join as host using agency document MongoDB _id. Host is accepted immediately.
    *     tags: [Agencies]
    *     security:
    *       - bearerAuth: []
@@ -132,10 +133,21 @@ export default (router: Router) => {
    *       - in: path
    *         name: id
    *         required: true
-   *         schema: { type: string }
+   *         schema:
+   *           type: string
+   *         description: Agency MongoDB _id
    *     responses:
    *       200:
    *         description: Joined agency successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/AgencyHostDetail'
+   *       400:
+   *         description: Already a host or invalid agency
    */
   agencyRouter.post('/:id/join', async (req: any, res: Response) => {
     try {
@@ -334,7 +346,8 @@ export default (router: Router) => {
    * @swagger
    * /app/agencies/become-host:
    *   post:
-   *     summary: Become a host by joining an agency with its ID
+   *     summary: Become a host by joining an agency
+   *     description: Join as host using agency MongoDB _id, owner MongoDB _id, or owner numeric user ID. Host is accepted immediately.
    *     tags: [Agencies]
    *     security:
    *       - bearerAuth: []
@@ -343,12 +356,19 @@ export default (router: Router) => {
    *       content:
    *         application/json:
    *           schema:
-   *             type: object
-   *             properties:
-   *               agentId: { type: string }
+   *             $ref: '#/components/schemas/BecomeHostRequest'
    *     responses:
    *       200:
    *         description: Joined agency successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/AgencyHostDetail'
+   *       400:
+   *         description: Agency not found or already a host
    */
   agencyRouter.post('/become-host', async (req: any, res: Response) => {
     try {
@@ -358,6 +378,91 @@ export default (router: Router) => {
         throw new Error('agentId is required');
       }
       const result = await agencyService.userJoinAgency(currentUserId, agentId);
+      return ResponseWrapper.success(res, result, 'Joined agency successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/verify-agency-user/{userId}:
+   *   get:
+   *     summary: Verify agency owner user ID and get agency data
+   *     description: Check whether a numeric app user ID belongs to an agency owner and return agency details if found.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: userId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *           example: 100001
+   *         description: Agency owner numeric app user ID
+   *     responses:
+   *       200:
+   *         description: User verified successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/VerifyAgencyUserResponse'
+   *       400:
+   *         description: User not found or invalid userId
+   */
+  agencyRouter.get('/verify-agency-user/:userId', async (req: any, res: Response) => {
+    try {
+      const numericUserId = parseInt(req.params.userId);
+      if (isNaN(numericUserId)) {
+        throw new Error('userId must be a valid number');
+      }
+      const result = await agencyService.verifyAgencyUserId(numericUserId);
+      return ResponseWrapper.success(res, result, result.hasAgency ? 'Agency found for this user' : 'User found but has no agency');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/join-by-user-id:
+   *   post:
+   *     summary: Join agency as host using owner numeric user ID
+   *     description: Join an agency as host by providing the agency owner numeric app user ID. Agency must be verified and approved. Host is accepted immediately.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/JoinByUserIdRequest'
+   *     responses:
+   *       200:
+   *         description: Joined agency successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/AgencyHostDetail'
+   *       400:
+   *         description: Agency user not found, no agency, not verified, or already a host
+   */
+  agencyRouter.post('/join-by-user-id', async (req: any, res: Response) => {
+    try {
+      const currentUserId = req.user.id;
+      const agencyUserId = parseInt(req.body.agencyUserId);
+      if (isNaN(agencyUserId)) {
+        throw new Error('agencyUserId must be a valid number');
+      }
+      const result = await agencyService.joinAgencyByUserId(currentUserId, agencyUserId);
       return ResponseWrapper.success(res, result, 'Joined agency successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
