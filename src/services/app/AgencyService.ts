@@ -29,6 +29,52 @@ export interface IAgencyHostDetail {
 export class AgencyService {
   constructor() { }
 
+  private async findAgencyByIdentifier(identifier: string) {
+    if (mongoose.Types.ObjectId.isValid(identifier)) {
+      const agencyById = await Agency.findById(identifier);
+      if (agencyById) return agencyById;
+
+      const agencyByCreator = await Agency.findOne({ creatorId: identifier });
+      if (agencyByCreator) return agencyByCreator;
+    }
+
+    const numericId = Number(identifier);
+    if (!Number.isNaN(numericId)) {
+      const owner = await User.findOne({ userId: numericId });
+      if (owner) {
+        const agency = await Agency.findOne({ creatorId: owner._id });
+        if (agency) return agency;
+      }
+    }
+
+    return null;
+  }
+
+  private async acceptUserAsHost(userId: string, agencyId: mongoose.Types.ObjectId) {
+    const existing = await AgencyHost.findOne({ agencyId, userId });
+
+    if (existing && existing.status === 'ACCEPTED') {
+      throw new Error('You are already a host in this agency');
+    }
+
+    if (existing) {
+      existing.status = 'ACCEPTED';
+      existing.requestedBy = 'USER';
+      await existing.save();
+      const popExisting = await existing.populate('userId');
+      return this.mapHostResponse(popExisting);
+    }
+
+    const host = await AgencyHost.create({
+      agencyId,
+      userId: new mongoose.Types.ObjectId(userId),
+      status: 'ACCEPTED',
+      requestedBy: 'USER'
+    });
+    const populated = await host.populate('userId');
+    return this.mapHostResponse(populated);
+  }
+
   private mapHostResponse(host: any): IAgencyHostDetail {
     return {
       id: host._id,
@@ -317,34 +363,63 @@ export class AgencyService {
   }
 
   public async userJoinAgency(currentUserId: string, agentId: string) {
-    const agencyQuery = mongoose.Types.ObjectId.isValid(agentId) ? { _id: agentId } : { creatorId: agentId }; // In case agentId refers to agency _id or creator's _id. Usually _id.
-    const agency = await Agency.findOne(agencyQuery);
+    const agency = await this.findAgencyByIdentifier(agentId);
     if (!agency) {
       throw new Error('Agency not found');
     }
 
-    const agencyId = agency._id;
-    const existing = await AgencyHost.findOne({ agencyId, userId: currentUserId });
-    
-    if (existing && existing.status === 'ACCEPTED') {
-      throw new Error('You are already a host in this agency');
+    return this.acceptUserAsHost(currentUserId, agency._id);
+  }
+
+  public async verifyAgencyUserId(numericUserId: number) {
+    const user = await User.findOne({ userId: numericUserId }).populate('profileImage');
+    if (!user) {
+      throw new Error('User not found');
     }
 
-    if (existing) {
-      existing.status = 'ACCEPTED';
-      existing.requestedBy = 'USER';
-      await existing.save();
-      const popExisting = await existing.populate('userId');
-      return this.mapHostResponse(popExisting);
+    const agency = await Agency.findOne({ creatorId: user._id })
+      .populate('countryId')
+      .populate('creatorId', 'name profileImage userId');
+
+    const userInfo = {
+      id: user._id,
+      userId: user.userId,
+      name: user.name,
+      profileImage: user.profileImage,
+    };
+
+    if (!agency) {
+      return {
+        hasAgency: false,
+        user: userInfo,
+        agency: null,
+      };
     }
 
-    const host = await AgencyHost.create({
-      agencyId,
-      userId: new mongoose.Types.ObjectId(currentUserId),
-      status: 'ACCEPTED',
-      requestedBy: 'USER'
-    });
-    const populated = await host.populate('userId');
-    return this.mapHostResponse(populated);
+    return {
+      hasAgency: true,
+      user: userInfo,
+      agency,
+      isVerified: agency.isVerified,
+      isApproved: agency.status === 'approved',
+    };
+  }
+
+  public async joinAgencyByUserId(currentUserId: string, agencyUserId: number) {
+    const owner = await User.findOne({ userId: agencyUserId });
+    if (!owner) {
+      throw new Error('Agency user not found');
+    }
+
+    const agency = await Agency.findOne({ creatorId: owner._id });
+    if (!agency) {
+      throw new Error('No agency found for this user');
+    }
+
+    if (!agency.isVerified || agency.status !== 'approved') {
+      throw new Error('Agency is not verified or approved yet');
+    }
+
+    return this.acceptUserAsHost(currentUserId, agency._id);
   }
 }
