@@ -3,10 +3,10 @@ import Container from 'typedi';
 import { StoreService } from '../../../services/app/StoreService';
 import { CloudinaryService } from '../../../services/common/CloudinaryService';
 import { MediaService } from '../../../services/common/MediaService';
-import { MediaType } from '../../../constants/enum';
 import { ResponseWrapper } from '../../responseWrapper';
 import { adminAuthMiddleware } from '../../middleware/adminAuthMiddleware';
 import upload from '../../middleware/upload';
+import { resolveMediaType } from '../../../utils/mediaType';
 
 export default (router: Router) => {
   const storeService = Container.get(StoreService);
@@ -24,7 +24,8 @@ export default (router: Router) => {
       }
       
       if (req.file) {
-        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'stores');
+        const mediaType = resolveMediaType(req.file);
+        const uploadResults = await cloudinaryService.uploadMedia(mediaType, [req.file], 'stores');
         if (uploadResults.length > 0) {
           const media = await mediaService.createMedia({ ...uploadResults[0] });
           data.media = media._id;
@@ -46,7 +47,8 @@ export default (router: Router) => {
       }
 
       if (req.file) {
-        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [req.file], 'stores');
+        const mediaType = resolveMediaType(req.file);
+        const uploadResults = await cloudinaryService.uploadMedia(mediaType, [req.file], 'stores');
         if (uploadResults.length > 0) {
           const media = await mediaService.createMedia({ ...uploadResults[0] });
           data.media = media._id;

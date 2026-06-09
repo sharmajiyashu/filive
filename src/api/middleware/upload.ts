@@ -1,10 +1,12 @@
 import multer from 'multer';
 import { Request } from 'express';
+import { isSvgaFile, svgaMimeTypes } from '../../utils/mediaType';
 
 const storage = multer.memoryStorage();
 
 export const imageTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
 export const gifTypes = ['image/gif'];
+export const svgaTypes = svgaMimeTypes;
 export const stickerTypes = ['image/webp', 'image/svg+xml'];
 export const videoTypes = [
     'video/mp4',
@@ -39,20 +41,24 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
         ...audioTypes,
         ...gifTypes,
         ...stickerTypes,
-        ...documentTypes
+        ...documentTypes,
+        ...svgaTypes,
     ];
-    if (allowedTypes.includes(file.mimetype)) {
+    if (allowedTypes.includes(file.mimetype) || isSvgaFile(file)) {
         const isImage = imageTypes.includes(file.mimetype);
         const isVideo = videoTypes.includes(file.mimetype);
         const isAudio = audioTypes.includes(file.mimetype);
         const isGif = gifTypes.includes(file.mimetype);
         const isSticker = stickerTypes.includes(file.mimetype);
         const isDocument = documentTypes.includes(file.mimetype);
+        const isSvga = isSvgaFile(file);
         let maxSize: number;
         if (isImage) {
             maxSize = 5 * 1024 * 1024; // 5MB
         } else if (isGif) {
             maxSize = 1 * 1024 * 1024; // 1MB for GIFs
+        } else if (isSvga) {
+            maxSize = 10 * 1024 * 1024; // 10MB for SVGA animations
         } else if (isSticker) {
             maxSize = 1 * 1024 * 1024; // 1MB for stickers
         } else if (isVideo) {
@@ -69,6 +75,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
             let type = 'file';
             if (isImage) type = 'image';
             else if (isGif) type = 'gif';
+            else if (isSvga) type = 'svga';
             else if (isSticker) type = 'sticker';
             else if (isVideo) type = 'video';
             else if (isAudio) type = 'audio';
@@ -80,20 +87,17 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
 
         cb(null, true);
     } else {
-        const errorMessage = `Invalid file type for ${file.originalname} (${file.mimetype}). Only jpeg, png, jpg images, gif, webp, svg, mp4, avi, mov, wmv, flv, webm, video, audio, document are allowed.`;
+        const errorMessage = `Invalid file type for ${file.originalname} (${file.mimetype}). Only jpeg, png, jpg images, gif, webp, svg, svga, mp4, avi, mov, wmv, flv, webm, video, audio, document are allowed.`;
         cb(new Error(errorMessage));
     }
 };
 
 const upload = multer({
-    // storage: storage,
-    // limits: {
-    //     fileSize: 1024 * 1024 * 50
-    // },
-    // fileFilter: fileFilter
-
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB optional
+    storage: storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024,
+    },
+    fileFilter: fileFilter,
 });
 
 export default upload;

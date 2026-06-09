@@ -17,7 +17,7 @@ const MediaSchema: Schema = new Schema(
     mimetype: { type: String, required: true },
     type: { 
       type: String, 
-      enum: ['image', 'video', 'audio', 'document', 'other', 'gif', 'sticker'], 
+      enum: ['image', 'video', 'audio', 'document', 'other', 'gif', 'sticker', 'svga'], 
       required: true 
     },
     size: { type: Number },
