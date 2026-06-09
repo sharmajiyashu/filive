@@ -122,6 +122,147 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/host-requests/pending:
+   *   get:
+   *     summary: Get pending agency host invites for current user
+   *     description: Lists pending host invites received via chat from agencies.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer, default: 1 }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer, default: 10 }
+   *     responses:
+   *       200:
+   *         description: Pending host invites fetched successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/HostInviteListResponse'
+   */
+  agencyRouter.get('/host-requests/pending', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const page = req.query.page ? parseInt(req.query.page) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+      const result = await agencyService.getPendingHostInvites(userId, page, limit);
+      return ResponseWrapper.success(res, result, 'Pending host invites fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/host-requests/{requestId}:
+   *   get:
+   *     summary: Get agency host invite details
+   *     description: View full invite details including agency data, open and verify flags.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: requestId
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Host invite details fetched successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/HostInviteDetail'
+   */
+  agencyRouter.get('/host-requests/:requestId', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await agencyService.getHostInviteDetails(userId, req.params.requestId);
+      return ResponseWrapper.success(res, result, 'Host invite details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/host-requests/{requestId}/open:
+   *   post:
+   *     summary: Mark host invite as opened
+   *     description: Call when user opens the chat or invite message. Sets isOpened flag on request and chat message.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: requestId
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Host invite marked as opened
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/HostInviteDetail'
+   */
+  agencyRouter.post('/host-requests/:requestId/open', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await agencyService.markHostInviteOpened(userId, req.params.requestId);
+      return ResponseWrapper.success(res, result, 'Host invite marked as opened');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/host-requests/{requestId}/verify-view:
+   *   post:
+   *     summary: Mark host invite as verified/viewed
+   *     description: Call when user opens and verifies agency host request details. Sets isVerified and isOpened flags.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: requestId
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Host invite marked as verified
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/HostInviteDetail'
+   */
+  agencyRouter.post('/host-requests/:requestId/verify-view', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await agencyService.markHostInviteVerified(userId, req.params.requestId);
+      return ResponseWrapper.success(res, result, 'Host invite marked as verified');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/host-requests/{requestId}/respond:
    *   post:
    *     summary: Accept or reject agency host invite from chat
@@ -270,6 +411,13 @@ export default (router: Router) => {
    *     responses:
    *       200:
    *         description: Host invite sent successfully via chat
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/AddHostResponse'
    *       400:
    *         description: Invalid user ID or host code, or invite already pending
    */

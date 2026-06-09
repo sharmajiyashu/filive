@@ -70,6 +70,8 @@ export class ChatMessageService {
       agencyId: payload.agencyId,
       agencyName: payload.agencyName,
       status: 'PENDING',
+      isOpened: false,
+      isVerified: false,
     };
 
     const message = await Message.create({
@@ -170,6 +172,48 @@ export class ChatMessageService {
     }
 
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+
+    return populatedMessage;
+  }
+
+  async syncAgencyHostInviteFlags(
+    messageId: string,
+    flags: { isOpened?: boolean; isVerified?: boolean }
+  ) {
+    const messageObjectId = new mongoose.Types.ObjectId(messageId);
+    const message = await Message.findById(messageObjectId);
+
+    if (!message || message.type !== 'agency_host_invite' || !message.metadata) {
+      throw new Error('Host invite message not found');
+    }
+
+    const metadata = message.metadata as IAgencyHostInviteMetadata;
+
+    if (flags.isOpened) {
+      metadata.isOpened = true;
+      metadata.openedAt = new Date().toISOString();
+    }
+
+    if (flags.isVerified) {
+      metadata.isVerified = true;
+      metadata.verifiedAt = new Date().toISOString();
+    }
+
+    message.metadata = metadata;
+    await message.save();
+
+    const populatedMessage = await this.populateMessage(messageObjectId);
+    const chatId = message.chatId.toString();
+    const chat = await Chat.findById(message.chatId);
+
+    if (chat) {
+      for (const participant of chat.participants) {
+        if (participant.userId) {
+          this.emitSocketEvent('message_updated', `user_${participant.userId.toString()}`, populatedMessage);
+        }
+      }
+      this.emitSocketEvent('message_updated', `chat_${chatId}`, populatedMessage);
+    }
 
     return populatedMessage;
   }

@@ -1,6 +1,7 @@
 import { Service, Inject, Container } from 'typedi';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
+import Message from '../../models/Message';
 import User from '../../models/User';
 import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
@@ -16,7 +17,13 @@ export interface IAgencyHostDetail {
   requestedBy: string;
   messageId?: string;
   chatId?: string;
+  isOpened: boolean;
+  isVerified: boolean;
+  openedAt?: Date;
+  verifiedAt?: Date;
   createdAt: Date;
+  agency?: any;
+  message?: any;
   user: {
     id: string;
     userId: number;
@@ -82,7 +89,7 @@ export class AgencyService {
     return this.mapHostResponse(populated);
   }
 
-  private mapHostResponse(host: any, chatId?: string): IAgencyHostDetail {
+  private mapHostResponse(host: any, chatId?: string, agency?: any, message?: any): IAgencyHostDetail {
     return {
       id: host._id,
       agencyId: host.agencyId,
@@ -90,6 +97,12 @@ export class AgencyService {
       requestedBy: host.requestedBy,
       messageId: host.messageId?.toString(),
       chatId,
+      isOpened: host.isOpened ?? false,
+      isVerified: host.isVerified ?? false,
+      openedAt: host.openedAt,
+      verifiedAt: host.verifiedAt,
+      agency,
+      message,
       createdAt: host.createdAt,
       user: host.userId ? {
         id: host.userId._id,
@@ -261,6 +274,10 @@ export class AgencyService {
       existing.status = 'PENDING';
       existing.requestedBy = 'AGENCY';
       existing.messageId = undefined;
+      existing.isOpened = false;
+      existing.isVerified = false;
+      existing.openedAt = undefined;
+      existing.verifiedAt = undefined;
       await existing.save();
       hostRequest = existing;
     } else {
@@ -269,6 +286,8 @@ export class AgencyService {
         userId: targetUser._id,
         status: 'PENDING',
         requestedBy: 'AGENCY',
+        isOpened: false,
+        isVerified: false,
       });
     }
 
@@ -340,6 +359,155 @@ export class AgencyService {
 
     const populated = await request.populate('userId');
     return this.mapHostResponse(populated);
+  }
+
+  private async syncHostInviteFlags(
+    request: InstanceType<typeof AgencyHost>,
+    flags: { isOpened?: boolean; isVerified?: boolean }
+  ) {
+    if (flags.isOpened && !request.isOpened) {
+      request.isOpened = true;
+      request.openedAt = new Date();
+    }
+
+    if (flags.isVerified && !request.isVerified) {
+      request.isVerified = true;
+      request.verifiedAt = new Date();
+    }
+
+    await request.save();
+
+    if (request.messageId) {
+      await this.chatMessageService.syncAgencyHostInviteFlags(request.messageId.toString(), flags);
+    }
+  }
+
+  public async getPendingHostInvites(userId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const requests = await AgencyHost.find({
+      userId: userObjectId,
+      status: 'PENDING',
+      requestedBy: 'AGENCY',
+    })
+      .populate('agencyId', 'name description email mobile isVerified status countryId')
+      .populate('userId')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await AgencyHost.countDocuments({
+      userId: userObjectId,
+      status: 'PENDING',
+      requestedBy: 'AGENCY',
+    });
+
+    const chatIdMap = new Map<string, string>();
+    for (const req of requests) {
+      if (req.messageId) {
+        const msg = await Message.findById(req.messageId).select('chatId');
+        if (msg) chatIdMap.set(req._id.toString(), msg.chatId.toString());
+      }
+    }
+
+    return {
+      data: requests.map((r) => this.mapHostResponse(
+        r,
+        chatIdMap.get(r._id.toString()),
+        r.agencyId,
+      )),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  public async getHostInviteDetails(userId: string, requestId: string) {
+    const request = await AgencyHost.findById(requestId)
+      .populate('agencyId')
+      .populate('userId');
+
+    if (!request) {
+      throw new Error('Host invite not found');
+    }
+
+    const inviteUserId = (request.userId as any)._id?.toString() || request.userId.toString();
+    if (inviteUserId !== userId) {
+      throw new Error('Unauthorized to view this invite');
+    }
+
+    let chatId: string | undefined;
+    let message: any = null;
+
+    if (request.messageId) {
+      const msg = await Message.findById(request.messageId);
+      if (msg) {
+        chatId = msg.chatId.toString();
+        message = msg;
+      }
+    }
+
+    return this.mapHostResponse(request, chatId, request.agencyId, message);
+  }
+
+  public async markHostInviteOpened(userId: string, requestId: string) {
+    const request = await AgencyHost.findById(requestId);
+    if (!request) {
+      throw new Error('Host invite not found');
+    }
+
+    if (request.userId.toString() !== userId) {
+      throw new Error('Unauthorized to update this invite');
+    }
+
+    if (request.requestedBy !== 'AGENCY') {
+      throw new Error('Invalid host invite type');
+    }
+
+    await this.syncHostInviteFlags(request, { isOpened: true });
+
+    const populated = await AgencyHost.findById(requestId)
+      .populate('agencyId')
+      .populate('userId');
+
+    let chatId: string | undefined;
+    if (request.messageId) {
+      const msg = await Message.findById(request.messageId);
+      if (msg) chatId = msg.chatId.toString();
+    }
+
+    return this.mapHostResponse(populated!, chatId, populated!.agencyId);
+  }
+
+  public async markHostInviteVerified(userId: string, requestId: string) {
+    const request = await AgencyHost.findById(requestId);
+    if (!request) {
+      throw new Error('Host invite not found');
+    }
+
+    if (request.userId.toString() !== userId) {
+      throw new Error('Unauthorized to update this invite');
+    }
+
+    if (request.requestedBy !== 'AGENCY') {
+      throw new Error('Invalid host invite type');
+    }
+
+    await this.syncHostInviteFlags(request, { isOpened: true, isVerified: true });
+
+    const populated = await AgencyHost.findById(requestId)
+      .populate('agencyId')
+      .populate('userId');
+
+    let chatId: string | undefined;
+    if (request.messageId) {
+      const msg = await Message.findById(request.messageId);
+      if (msg) chatId = msg.chatId.toString();
+    }
+
+    return this.mapHostResponse(populated!, chatId, populated!.agencyId);
   }
 
   public async getAgencyHosts(agencyId: string, adminUserId: string, page: number = 1, limit: number = 10) {

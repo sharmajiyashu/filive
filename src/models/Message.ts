@@ -16,6 +16,10 @@ export interface IAgencyHostInviteMetadata {
   agencyId: string;
   agencyName: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  isOpened: boolean;
+  isVerified: boolean;
+  openedAt?: string;
+  verifiedAt?: string;
 }
 
 export interface IMessage extends Document {
