@@ -5,6 +5,7 @@ export interface IAgencyHost extends Document {
   userId: mongoose.Types.ObjectId;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   requestedBy: 'USER' | 'AGENCY';
+  messageId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,6 +16,7 @@ const AgencyHostSchema: Schema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     status: { type: String, enum: ['PENDING', 'ACCEPTED', 'REJECTED'], default: 'PENDING' },
     requestedBy: { type: String, enum: ['USER', 'AGENCY'], required: true },
+    messageId: { type: Schema.Types.ObjectId, ref: 'Message' },
   },
   {
     timestamps: true,

@@ -113,6 +113,49 @@ const baseDefinition = {
           },
         },
       },
+      AddHostRequest: {
+        type: 'object',
+        required: ['targetUserId', 'verificationCode'],
+        properties: {
+          targetUserId: {
+            type: 'number',
+            description: 'Target user numeric app user ID',
+            example: 100002,
+          },
+          verificationCode: {
+            type: 'string',
+            description: 'Target user host verification code (must match userId)',
+            example: 'HOST123',
+          },
+        },
+      },
+      HostInviteRespondRequest: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['ACCEPTED', 'REJECTED'],
+          },
+        },
+      },
+      AgencyHostInviteMessage: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['agency_host_invite'] },
+          text: { type: 'string' },
+          metadata: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['agency_host_invite'] },
+              agencyHostRequestId: { type: 'string' },
+              agencyId: { type: 'string' },
+              agencyName: { type: 'string' },
+              status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
+            },
+          },
+        },
+      },
     },
   },
   security: [

@@ -1,4 +1,4 @@
-import { Service, Inject } from 'typedi';
+import { Service, Inject, Container } from 'typedi';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
 import User from '../../models/User';
@@ -6,12 +6,16 @@ import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
 import AppLogger from '../../api/loaders/logger';
 import mongoose from 'mongoose';
+import { ChatService } from './ChatService';
+import { ChatMessageService } from './ChatMessageService';
 
 export interface IAgencyHostDetail {
   id: string;
   agencyId: string;
   status: string;
   requestedBy: string;
+  messageId?: string;
+  chatId?: string;
   createdAt: Date;
   user: {
     id: string;
@@ -27,7 +31,10 @@ export interface IAgencyHostDetail {
 
 @Service()
 export class AgencyService {
-  constructor() { }
+  constructor(
+    @Inject() private chatService: ChatService,
+    @Inject() private chatMessageService: ChatMessageService,
+  ) { }
 
   private async findAgencyByIdentifier(identifier: string) {
     if (mongoose.Types.ObjectId.isValid(identifier)) {
@@ -75,12 +82,14 @@ export class AgencyService {
     return this.mapHostResponse(populated);
   }
 
-  private mapHostResponse(host: any): IAgencyHostDetail {
+  private mapHostResponse(host: any, chatId?: string): IAgencyHostDetail {
     return {
       id: host._id,
       agencyId: host.agencyId,
       status: host.status,
       requestedBy: host.requestedBy,
+      messageId: host.messageId?.toString(),
+      chatId,
       createdAt: host.createdAt,
       user: host.userId ? {
         id: host.userId._id,
@@ -222,12 +231,14 @@ export class AgencyService {
       throw new Error('Unauthorized or agency not found');
     }
 
-    const userQuery = mongoose.Types.ObjectId.isValid(targetUserId) ? { _id: targetUserId } : { userId: Number(targetUserId) };
-    const targetUser = await User.findOne(userQuery);
-    if (!targetUser) throw new Error('User not found');
-    
-    if (targetUser.hostVerificationCode !== verificationCode) {
-      throw new Error('Invalid verification code');
+    const numericUserId = Number(targetUserId);
+    if (Number.isNaN(numericUserId)) {
+      throw new Error('targetUserId must be a valid numeric user ID');
+    }
+
+    const targetUser = await User.findOne({ userId: numericUserId });
+    if (!targetUser || targetUser.hostVerificationCode !== verificationCode) {
+      throw new Error('Invalid user ID or host verification code');
     }
 
     const existing = await AgencyHost.findOne({ agencyId, userId: targetUser._id });
@@ -235,21 +246,99 @@ export class AgencyService {
       throw new Error('User is already a host in this agency');
     }
 
-    if (existing) {
-      existing.status = 'ACCEPTED';
-      existing.requestedBy = 'AGENCY';
-      await existing.save();
-      const popExisting = await existing.populate('userId');
-      return this.mapHostResponse(popExisting);
+    if (existing && existing.status === 'PENDING' && existing.requestedBy === 'AGENCY') {
+      throw new Error('Host invite already pending for this user');
     }
 
-    const host = await AgencyHost.create({
-      agencyId: new mongoose.Types.ObjectId(agencyId),
-      userId: targetUser._id,
-      status: 'ACCEPTED',
-      requestedBy: 'AGENCY'
-    });
-    const populated = await host.populate('userId');
+    const chat = await this.chatService.getOrCreateSingleChat(adminUserId, targetUser._id.toString());
+    if (!chat) {
+      throw new Error('Failed to create chat with user');
+    }
+    const chatId = chat._id.toString();
+
+    let hostRequest;
+    if (existing) {
+      existing.status = 'PENDING';
+      existing.requestedBy = 'AGENCY';
+      existing.messageId = undefined;
+      await existing.save();
+      hostRequest = existing;
+    } else {
+      hostRequest = await AgencyHost.create({
+        agencyId: new mongoose.Types.ObjectId(agencyId),
+        userId: targetUser._id,
+        status: 'PENDING',
+        requestedBy: 'AGENCY',
+      });
+    }
+
+    const inviteText = `${agency.name} has invited you to become a host. Please accept or reject this request.`;
+    const message = await this.chatMessageService.createAgencyHostInviteMessage(
+      adminUserId,
+      chatId,
+      {
+        text: inviteText,
+        agencyHostRequestId: hostRequest._id.toString(),
+        agencyId: agency._id.toString(),
+        agencyName: agency.name,
+      }
+    );
+
+    hostRequest.messageId = message!._id;
+    await hostRequest.save();
+
+    try {
+      const io = Container.get('socket') as { to: (room: string) => { emit: (event: string, payload: unknown) => void } };
+      io.to(`user_${targetUser._id.toString()}`).emit('chat_created', chat);
+      io.to(`user_${adminUserId}`).emit('chat_created', chat);
+    } catch {
+      // Socket server not available
+    }
+
+    const populated = await hostRequest.populate('userId');
+    return {
+      ...this.mapHostResponse(populated, chatId),
+      message,
+    };
+  }
+
+  public async respondToHostInvite(userId: string, requestId: string, status: 'ACCEPTED' | 'REJECTED') {
+    const request = await AgencyHost.findById(requestId);
+    if (!request) {
+      throw new Error('Host invite not found');
+    }
+
+    if (request.userId.toString() !== userId) {
+      throw new Error('Unauthorized to respond to this invite');
+    }
+
+    if (request.requestedBy !== 'AGENCY') {
+      throw new Error('This request cannot be responded from chat');
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new Error('Host invite already responded');
+    }
+
+    const agency = await Agency.findById(request.agencyId).select('name');
+    const agencyName = agency?.name || 'Agency';
+    request.status = status;
+    await request.save();
+
+    if (request.messageId) {
+      const responseText = status === 'ACCEPTED'
+        ? `You accepted the host invitation from ${agencyName}.`
+        : `You rejected the host invitation from ${agencyName}.`;
+
+      await this.chatMessageService.updateAgencyHostInviteStatus(
+        request.messageId.toString(),
+        status,
+        responseText,
+        userId
+      );
+    }
+
+    const populated = await request.populate('userId');
     return this.mapHostResponse(populated);
   }
 

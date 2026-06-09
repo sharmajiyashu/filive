@@ -1,7 +1,7 @@
-import { Service, Inject } from 'typedi';
+import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Chat from '../../models/Chat';
-import Message from '../../models/Message';
+import Message, { IAgencyHostInviteMetadata } from '../../models/Message';
 import User from '../../models/User';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
@@ -15,6 +15,164 @@ export class ChatMessageService {
     @Inject() private mediaService: MediaService,
     @Inject() private pushService: FirebasePushService,
   ) {}
+
+  private emitSocketEvent(event: string, room: string, payload: unknown) {
+    try {
+      const io = Container.get('socket') as { to: (room: string) => { emit: (event: string, payload: unknown) => void } };
+      io.to(room).emit(event, payload);
+    } catch {
+      // Socket server not available
+    }
+  }
+
+  private async populateMessage(messageId: mongoose.Types.ObjectId) {
+    return Message.findById(messageId)
+      .populate({
+        path: 'senderId',
+        select: 'name email profileImage userRole',
+        populate: { path: 'profileImage' }
+      })
+      .populate('medias')
+      .populate({
+        path: 'replyToId',
+        populate: [
+          { path: 'senderId', select: 'name email profileImage userRole' },
+          { path: 'medias' }
+        ]
+      });
+  }
+
+  async createAgencyHostInviteMessage(
+    senderId: string,
+    chatId: string,
+    payload: {
+      text: string;
+      agencyHostRequestId: string;
+      agencyId: string;
+      agencyName: string;
+    }
+  ) {
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+    const senderObjectId = new mongoose.Types.ObjectId(senderId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': senderObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Not a participant of this chat');
+    }
+
+    const metadata: IAgencyHostInviteMetadata = {
+      type: 'agency_host_invite',
+      agencyHostRequestId: payload.agencyHostRequestId,
+      agencyId: payload.agencyId,
+      agencyName: payload.agencyName,
+      status: 'PENDING',
+    };
+
+    const message = await Message.create({
+      chatId: chatObjectId,
+      senderId: senderObjectId,
+      type: 'agency_host_invite',
+      text: payload.text,
+      metadata,
+      seenBy: [{ userId: senderObjectId, seenAt: new Date() }],
+      reactions: [],
+    });
+
+    const populatedMessage = await this.populateMessage(message._id as mongoose.Types.ObjectId);
+
+    const otherParticipants = chat.participants.filter(
+      (p) => p.userId && p.userId.toString() !== senderId
+    );
+
+    const sender = await User.findById(senderId).select('name email');
+    const senderName = sender?.name || sender?.email || 'Agency';
+
+    for (const participant of otherParticipants) {
+      const targetUserId = participant.userId.toString();
+      await this.pushService.notifyUser(targetUserId, {
+        title: senderName,
+        body: payload.text,
+        data: {
+          type: 'agency_host_invite',
+          chatId,
+          agencyHostRequestId: payload.agencyHostRequestId,
+          agencyId: payload.agencyId,
+        },
+      });
+      this.emitSocketEvent('new_message', `user_${targetUserId}`, populatedMessage);
+    }
+
+    this.emitSocketEvent('new_message', `chat_${chatId}`, populatedMessage);
+    await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+
+    return populatedMessage;
+  }
+
+  async updateAgencyHostInviteStatus(
+    messageId: string,
+    status: 'ACCEPTED' | 'REJECTED',
+    responseText: string,
+    responderId: string
+  ) {
+    const messageObjectId = new mongoose.Types.ObjectId(messageId);
+    const message = await Message.findById(messageObjectId);
+
+    if (!message || message.type !== 'agency_host_invite' || !message.metadata) {
+      throw new Error('Host invite message not found');
+    }
+
+    const metadata = message.metadata as IAgencyHostInviteMetadata;
+    if (metadata.status !== 'PENDING') {
+      throw new Error('Host invite already responded');
+    }
+
+    metadata.status = status;
+    message.metadata = metadata;
+    message.text = responseText;
+    await message.save();
+
+    const populatedMessage = await this.populateMessage(messageObjectId);
+    const chatId = message.chatId.toString();
+
+    const chat = await Chat.findById(message.chatId);
+    if (chat) {
+      for (const participant of chat.participants) {
+        if (participant.userId) {
+          this.emitSocketEvent('message_updated', `user_${participant.userId.toString()}`, populatedMessage);
+        }
+      }
+      this.emitSocketEvent('message_updated', `chat_${chatId}`, populatedMessage);
+    }
+
+    const responderObjectId = new mongoose.Types.ObjectId(responderId);
+    const systemMessage = await Message.create({
+      chatId: message.chatId,
+      senderId: responderObjectId,
+      type: 'system',
+      text: responseText,
+      seenBy: [{ userId: responderObjectId, seenAt: new Date() }],
+      reactions: [],
+    });
+
+    const populatedSystemMessage = await this.populateMessage(systemMessage._id as mongoose.Types.ObjectId);
+    this.emitSocketEvent('new_message', `chat_${chatId}`, populatedSystemMessage);
+
+    if (chat) {
+      for (const participant of chat.participants) {
+        if (participant.userId) {
+          this.emitSocketEvent('new_message', `user_${participant.userId.toString()}`, populatedSystemMessage);
+        }
+      }
+    }
+
+    await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+
+    return populatedMessage;
+  }
 
   async getConversation(userId: string, chatId: string, page: number = 1, limit: number = 50) {
     const skip = (page - 1) * limit;
