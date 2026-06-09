@@ -32,7 +32,7 @@ export class CloudinaryService {
       results.push({
         type: type,
         key: result.public_id,
-        mimetype: file.mimetype,
+        mimetype: type === MediaType.svga ? 'application/svga' : file.mimetype,
         url: result.secure_url,
         size: result.bytes,
         width: result.width,
@@ -43,17 +43,26 @@ export class CloudinaryService {
     return results;
   }
 
+  private getCloudinaryResourceType(type: MediaType): 'video' | 'raw' | 'auto' {
+    if (type === MediaType.video) return 'video';
+    if (type === MediaType.svga) return 'raw';
+    return 'auto';
+  }
+
   private async uploadToCloudinary(
     buffer: Buffer,
     folder: string,
     type: MediaType
   ): Promise<UploadApiResponse> {
+    const resourceType = this.getCloudinaryResourceType(type);
+    const publicId = type === MediaType.svga ? `${randomUUID()}.svga` : randomUUID();
+
     return new Promise((resolve, reject) => {
       const uploadStream = this.cloudinaryClient.uploader.upload_stream(
         {
           folder: folder,
-          resource_type: type === MediaType.video ? 'video' : 'auto',
-          public_id: randomUUID()
+          resource_type: resourceType,
+          public_id: publicId,
         },
         (error, result) => {
           if (error) {

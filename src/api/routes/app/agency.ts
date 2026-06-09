@@ -124,7 +124,7 @@ export default (router: Router) => {
    * @swagger
    * /app/agencies/{id}/join:
    *   post:
-   *     summary: Request to join an agency
+   *     summary: Join an agency as a host
    *     tags: [Agencies]
    *     security:
    *       - bearerAuth: []
@@ -135,14 +135,14 @@ export default (router: Router) => {
    *         schema: { type: string }
    *     responses:
    *       200:
-   *         description: Join request sent successfully
+   *         description: Joined agency successfully
    */
   agencyRouter.post('/:id/join', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
       const agencyId = req.params.id;
       const result = await agencyService.requestToJoinAgency(userId, agencyId);
-      return ResponseWrapper.success(res, result, 'Join request sent successfully');
+      return ResponseWrapper.success(res, result, 'Joined agency successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

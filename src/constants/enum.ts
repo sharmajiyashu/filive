@@ -11,7 +11,8 @@ export enum MediaType {
     document = 'document',
     other = 'other',
     gif = 'gif',
-    sticker = 'sticker'
+    sticker = 'sticker',
+    svga = 'svga'
 }
 
 export enum UserStatus {

@@ -135,18 +135,18 @@ export class AgencyService {
   public async requestToJoinAgency(userId: string, agencyId: string) {
     const existing = await AgencyHost.findOne({ agencyId, userId });
     if (existing) {
-      if (existing.status === 'PENDING') throw new Error('Join request already pending');
       if (existing.status === 'ACCEPTED') throw new Error('Already a host in this agency');
-      existing.status = 'PENDING';
+      existing.status = 'ACCEPTED';
       existing.requestedBy = 'USER';
       await existing.save();
-      return existing;
+      const popExisting = await existing.populate('userId');
+      return this.mapHostResponse(popExisting);
     }
 
     const request = await AgencyHost.create({
       agencyId: new mongoose.Types.ObjectId(agencyId),
       userId: new mongoose.Types.ObjectId(userId),
-      status: 'PENDING',
+      status: 'ACCEPTED',
       requestedBy: 'USER'
     });
     const populated = await request.populate('userId');
