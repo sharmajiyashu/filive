@@ -9,6 +9,7 @@ import AppLogger from '../../api/loaders/logger';
 import mongoose from 'mongoose';
 import { ChatService } from './ChatService';
 import { ChatMessageService } from './ChatMessageService';
+import { LevelService } from './LevelService';
 
 export interface IAgencyHostDetail {
   id: string;
@@ -33,14 +34,23 @@ export interface IAgencyHostDetail {
     mobile: string;
     countryId: string;
     isPremium: boolean;
+    levelInfo?: any;
+    richLevelInfo?: any;
+    charmLevelInfo?: any;
   } | null;
 }
 
 @Service()
 export class AgencyService {
+  private readonly hostUserPopulate = {
+    path: 'userId',
+    populate: { path: 'profileImage' },
+  };
+
   constructor(
     @Inject() private chatService: ChatService,
     @Inject() private chatMessageService: ChatMessageService,
+    @Inject() private levelService: LevelService,
   ) { }
 
   private async findAgencyByIdentifier(identifier: string) {
@@ -115,6 +125,36 @@ export class AgencyService {
         isPremium: host.userId.isPremium,
       } : null
     };
+  }
+
+  private async mapHostResponseWithUser(host: any, chatId?: string, agency?: any, message?: any): Promise<IAgencyHostDetail> {
+    const base = this.mapHostResponse(host, chatId, agency, message);
+
+    if (!host.userId) {
+      return base;
+    }
+
+    const user = host.userId;
+    const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
+    const charmCoins = user.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+
+    base.user = {
+      id: user._id,
+      userId: user.userId,
+      name: user.name,
+      profileImage: user.profileImage,
+      email: user.email,
+      mobile: user.mobile,
+      countryId: user.countryId,
+      isPremium: user.isPremium,
+      levelInfo: richLevelInfo,
+      richLevelInfo,
+      charmLevelInfo,
+    };
+
+    return base;
   }
 
   private generateOTP(digits: number = 4): string {
@@ -517,14 +557,14 @@ export class AgencyService {
     }
     const skip = (page - 1) * limit;
     const hosts = await AgencyHost.find({ agencyId, status: 'ACCEPTED' })
-      .populate('userId')
+      .populate(this.hostUserPopulate)
       .skip(skip)
       .limit(limit);
       
     const total = await AgencyHost.countDocuments({ agencyId, status: 'ACCEPTED' });
 
     return {
-      data: hosts.map(h => this.mapHostResponse(h)),
+      data: await Promise.all(hosts.map((h) => this.mapHostResponseWithUser(h))),
       total,
       page,
       limit,
