@@ -118,7 +118,7 @@ export default (router: Router) => {
    *           type: integer
    *     responses:
    *       200:
-   *         description: User details retrieved successfully
+   *         description: User details retrieved successfully with country and level objects
    */
   sellerRouter.get('/check-user/:userId', async (req: any, res: Response) => {
     try {

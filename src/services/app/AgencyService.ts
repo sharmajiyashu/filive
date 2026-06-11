@@ -5,7 +5,7 @@ import AgencyCommission from '../../models/AgencyCommission';
 import HostVerifiedEarning from '../../models/HostVerifiedEarning';
 import Message from '../../models/Message';
 import User from '../../models/User';
-import Country from '../../models/Country';
+import { getUserCountryAndLevels, toPlainObject } from '../../utils/userLookup';
 import { subDays } from 'date-fns';
 import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
@@ -225,40 +225,6 @@ export class AgencyService {
     };
 
     return base;
-  }
-
-  private toPlainObject(doc: any) {
-    if (!doc) return null;
-    return doc.toObject ? doc.toObject() : doc;
-  }
-
-  private formatLevelInfo(levelInfo: any) {
-    if (!levelInfo) return null;
-    return {
-      ...levelInfo,
-      level: levelInfo.currentLevel ?? null,
-    };
-  }
-
-  private async resolveCountryObject(user: InstanceType<typeof User>) {
-    const populated = user.countryId as any;
-    if (populated && typeof populated === 'object' && populated._id) {
-      return this.toPlainObject(populated);
-    }
-
-    if (user.countryId) {
-      const country = await Country.findById(user.countryId);
-      if (country) return this.toPlainObject(country);
-    }
-
-    if (user.country) {
-      const country = await Country.findOne({
-        name: { $regex: new RegExp(`^${String(user.country).trim()}$`, 'i') },
-      });
-      if (country) return this.toPlainObject(country);
-    }
-
-    return null;
   }
 
   private generateOTP(digits: number = 4): string {
@@ -760,10 +726,8 @@ export class AgencyService {
 
     if (!targetUser) throw new Error('User not found');
 
-    const richCoins = targetUser.wealthCoins !== undefined ? targetUser.wealthCoins : (targetUser.coins || 0);
-    const charmCoins = targetUser.charmCoins || 0;
-    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
-    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+    const { country, countryId, level, levelInfo, richLevelInfo, charmLevel, charmLevelInfo } =
+      await getUserCountryAndLevels(targetUser, this.levelService);
 
     let agency: any = null;
     let hostStatus = {
@@ -808,26 +772,22 @@ export class AgencyService {
       }
     }
 
-    const country = await this.resolveCountryObject(targetUser);
-    const levelInfo = this.formatLevelInfo(richLevelInfo);
-    const charmLevel = this.formatLevelInfo(charmLevelInfo);
-
     return {
       id: targetUser._id,
       userId: targetUser.userId,
       name: targetUser.name,
-      profileImage: this.toPlainObject(targetUser.profileImage),
+      profileImage: toPlainObject(targetUser.profileImage),
       email: targetUser.email,
       mobile: targetUser.mobile,
-      countryId: country?._id ?? targetUser.countryId ?? null,
+      countryId,
       country,
       isPremium: targetUser.isPremium,
-      level: levelInfo?.level ?? null,
+      level,
       levelInfo,
-      richLevelInfo: levelInfo,
-      charmLevelInfo: charmLevel,
-      charmLevel: charmLevel?.level ?? null,
-      agency: agency ? this.toPlainObject(agency) : null,
+      richLevelInfo,
+      charmLevelInfo,
+      charmLevel,
+      agency: agency ? toPlainObject(agency) : null,
       hostStatus,
     };
   }
