@@ -1,12 +1,14 @@
-import { Service, Container } from 'typedi';
+import { Service, Container, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import { AppSettingService } from '../common/AppSettingService';
+import { LevelService } from './LevelService';
+import { getUserCountryAndLevels, toPlainObject } from '../../utils/userLookup';
 
 @Service()
 export class CoinSellerService {
-  constructor() { }
+  constructor(@Inject() private levelService: LevelService) { }
 
   async transferCoins(senderId: string, targetUserId: number, amount: number) {
     if (!amount || amount <= 0) {
@@ -309,19 +311,29 @@ export class CoinSellerService {
   async checkUser(userId: number) {
     const user = await User.findOne({ userId })
       .populate('profileImage')
-      .select('userId name email profileImage isPremium location country');
+      .populate('countryId');
     if (!user) {
       throw new Error('Recipient user with specified ID not found');
     }
+
+    const { country, countryId, level, levelInfo, richLevelInfo, charmLevel, charmLevelInfo } =
+      await getUserCountryAndLevels(user, this.levelService);
+
     return {
       id: user._id,
       userId: user.userId,
       name: user.name,
       email: user.email,
-      profileImage: user.profileImage,
+      profileImage: toPlainObject(user.profileImage),
       isPremium: user.isPremium,
       location: user.location,
-      country: user.country
+      countryId,
+      country,
+      level,
+      levelInfo,
+      richLevelInfo,
+      charmLevel,
+      charmLevelInfo,
     };
   }
 }

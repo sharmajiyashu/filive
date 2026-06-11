@@ -89,7 +89,17 @@ Filter: `type === "agency_commission"`
 
 ---
 
-### D) Add Host — User Check (FIXED)
+### D) Coin Seller — User Check (FIXED)
+
+```http
+GET /app/coin-seller/check-user/{numericUserId}
+```
+
+**Ab ye fields aati hain:** `country`, `countryId`, `level`, `levelInfo`, `richLevelInfo`, `charmLevel`, `charmLevelInfo`
+
+---
+
+### E) Add Host — User Check (FIXED)
 
 ```http
 POST /app/agencies/verify-user/{numericUserId}
@@ -115,7 +125,7 @@ POST /app/agencies/verify-user/{numericUserId}
 
 ---
 
-### E) Store Purchase — Multiple Buy (UPDATED)
+### F) Store Purchase — Multiple Buy (UPDATED)
 
 ```http
 POST /app/store/purchase
@@ -231,8 +241,9 @@ pendingCommission = 0, naya week start
 | 2 | GET | `/app/agencies/my` | **UPDATED** — commissionDetails expanded |
 | 3 | GET | `/app/coins/wallet` | Use for owner beans after settlement |
 | 4 | GET | `/app/coins/history` | Settlement entries `agency_commission` |
-| 5 | POST | `/app/agencies/verify-user/{userId}` | **FIXED** — country + level objects |
-| 6 | POST | `/app/store/purchase` | **UPDATED** — `quantity` param |
+| 5 | GET | `/app/coin-seller/check-user/{userId}` | **FIXED** — country + level objects |
+| 6 | POST | `/app/agencies/verify-user/{userId}` | **FIXED** — country + level objects |
+| 7 | POST | `/app/store/purchase` | **UPDATED** — `quantity` param |
 
 ---
 
