@@ -10,16 +10,47 @@ export interface IMessageSeen {
   seenAt: Date;
 }
 
+export type AgencyHostInviteFlag = 'pending' | 'accept' | 'reject';
+
 export interface IAgencyHostInviteMetadata {
   type: 'agency_host_invite';
   agencyHostRequestId: string;
   agencyId: string;
   agencyName: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  flag: AgencyHostInviteFlag;
   isOpened: boolean;
   isVerified: boolean;
   openedAt?: string;
   verifiedAt?: string;
+}
+
+export function toInviteFlag(status: 'PENDING' | 'ACCEPTED' | 'REJECTED'): AgencyHostInviteFlag {
+  const map: Record<'PENDING' | 'ACCEPTED' | 'REJECTED', AgencyHostInviteFlag> = {
+    PENDING: 'pending',
+    ACCEPTED: 'accept',
+    REJECTED: 'reject',
+  };
+  return map[status];
+}
+
+export function formatAgencyHostInviteMessage<T extends { type?: string; metadata?: unknown }>(message: T) {
+  if (!message || message.type !== 'agency_host_invite') {
+    return message;
+  }
+
+  const obj = (message as any).toObject ? (message as any).toObject() : { ...message };
+  const meta = obj.metadata as IAgencyHostInviteMetadata | undefined;
+  const flag = meta?.flag ?? (meta?.status ? toInviteFlag(meta.status) : 'pending');
+
+  return {
+    ...obj,
+    type: 'agency_host_invite',
+    flag,
+    metadata: meta
+      ? { ...meta, type: 'agency_host_invite', flag }
+      : { type: 'agency_host_invite', flag },
+  };
 }
 
 export interface IMessage extends Document {

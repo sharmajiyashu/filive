@@ -399,11 +399,13 @@ Each chat item may include:
   "lastMessageType": "agency_host_invite",
   "agencyHostRequest": {
     "messageId": "...",
+    "type": "agency_host_invite",
     "messageType": "agency_host_invite",
     "requestId": "...",
     "agencyId": "...",
     "agencyName": "Agency Name",
     "status": "PENDING",
+    "flag": "pending",
     "isOpened": false,
     "isVerified": false,
     "text": "Agency Name has invited you to become a host..."
@@ -425,6 +427,7 @@ GET /app/chats/{chatId}/messages?page=1&limit=50
 {
   "_id": "...",
   "type": "agency_host_invite",
+  "flag": "pending",
   "text": "Agency Name has invited you to become a host. Please accept or reject this request.",
   "metadata": {
     "type": "agency_host_invite",
@@ -432,11 +435,15 @@ GET /app/chats/{chatId}/messages?page=1&limit=50
     "agencyId": "...",
     "agencyName": "Agency Name",
     "status": "PENDING",
+    "flag": "pending",
     "isOpened": false,
     "isVerified": false
   }
 }
 ```
+
+**`flag` values:** `pending` | `accept` | `reject`  
+On **reject** → message chat se delete ho jata hai.
 
 ### 5.3 User opened chat (optional tracking)
 
@@ -490,8 +497,24 @@ or
 
 | Action | Chat behavior |
 |--------|----------------|
-| **ACCEPT** | Invite message `metadata.status` → `ACCEPTED`, text updated. User becomes host. Refresh profile → `isBecomeHost: true`. |
-| **REJECT** | Invite message **removed from chat** (soft deleted). Socket: `message_deleted`. |
+| **ACCEPT** | Invite message `metadata.status` → `ACCEPTED`, text updated. Socket: `message_updated` + `agency_host_invite_responded`. User becomes host. Refresh profile → `isBecomeHost: true`. |
+| **REJECT** | Invite message **deleted from chat** (hard removed). Socket: `message_deleted` + `agency_host_invite_responded`. |
+
+**Response includes:**
+
+```json
+{
+  "id": "request_id",
+  "status": "ACCEPTED",
+  "inviteStatus": "ACCEPTED",
+  "messageAction": "updated",
+  "messageId": "...",
+  "chatId": "...",
+  "message": { ... updated invite message ... }
+}
+```
+
+On **REJECT**: `messageAction: "deleted"`, `message: null`
 
 ---
 
@@ -571,14 +594,144 @@ POST /app/store/purchase
 
 ## 8. Socket events (real-time)
 
-Connect to app socket with auth. Listen for:
+### 8.1 Connect
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('https://filive.vercel.app', {
+  transports: ['websocket', 'polling'],
+  auth: { token: '<JWT_TOKEN>' },
+});
+
+socket.on('connect', () => {
+  console.log('Socket connected');
+  // User auto-joins room: user_{mongoUserId}
+});
+```
+
+**Important:** Open chat screen par ye bhi emit karo:
+
+```javascript
+socket.emit('join_chat', { chatId: '<chat_mongo_id>' });
+// User joins room: chat_{chatId}
+```
+
+---
+
+### 8.2 `message_updated` listener (IMPORTANT)
+
+Jab bhi message update ho (host invite accept, open, verify-view), ye event aata hai.
+
+```javascript
+socket.on('message_updated', (updatedMessage) => {
+  // updatedMessage = full message object
+  console.log('Message updated:', updatedMessage._id);
+
+  if (updatedMessage.type === 'agency_host_invite') {
+    const flag = updatedMessage.flag; // pending | accept | reject
+
+    // Chat screen: list mein message replace karo
+    updateMessageInChatList(updatedMessage.chatId, updatedMessage);
+
+    if (flag === 'accept') {
+      // Hide accept/reject buttons, show accepted UI
+      hideInviteActions(updatedMessage._id);
+    }
+  }
+});
+```
+
+**`message_updated` payload example (host invite accepted):**
+
+```json
+{
+  "_id": "message_id",
+  "chatId": "chat_id",
+  "type": "agency_host_invite",
+  "flag": "accept",
+  "text": "You accepted the host invitation from Agency Name.",
+  "metadata": {
+    "type": "agency_host_invite",
+    "status": "ACCEPTED",
+    "flag": "accept",
+    "agencyHostRequestId": "request_id",
+    "agencyId": "...",
+    "agencyName": "Agency Name",
+    "isOpened": true,
+    "isVerified": false
+  },
+  "senderId": { "name": "...", "profileImage": { "url": "..." } },
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+**Kab fire hota hai:**
+
+| Action | API | `message_updated` |
+|--------|-----|-------------------|
+| User accept invite | `POST /host-requests/{id}/respond` `ACCEPTED` | Yes — `flag: accept` |
+| User open invite | `POST /host-requests/{id}/open` | Yes — `isOpened: true` |
+| User verify-view | `POST /host-requests/{id}/verify-view` | Yes — `isVerified: true` |
+| User reject invite | `POST /host-requests/{id}/respond` `REJECTED` | No — use `message_deleted` |
+
+---
+
+### 8.3 `message_deleted` listener
+
+Reject par message chat se delete hota hai:
+
+```javascript
+socket.on('message_deleted', (payload) => {
+  // payload = { messageId, chatId, type, status, flag, requestId }
+  removeMessageFromChatList(payload.chatId, payload.messageId);
+
+  if (payload.flag === 'reject') {
+    clearAgencyHostRequestBadge(payload.chatId);
+  }
+});
+```
+
+---
+
+### 8.4 All socket events
 
 | Event | When | Payload |
 |-------|------|---------|
 | `chat_created` | New chat (e.g. host invite) | Chat object |
 | `new_message` | New message in chat | Message object |
-| `message_updated` | Invite accepted (status change) | Updated message |
-| `message_deleted` | Invite rejected | `{ messageId, chatId }` |
+| `message_updated` | Message changed (accept / open / verify) | **Full updated message** |
+| `message_deleted` | Invite rejected (message removed) | `{ messageId, chatId, type, flag, status, requestId }` |
+| `agency_host_invite_responded` | Accept or reject summary | `{ messageId, chatId, type, flag, status, requestId, message }` |
+
+**Rooms you receive events on:**
+
+| Room | How to join | Events |
+|------|-------------|--------|
+| `user_{mongoUserId}` | Auto on socket connect | All events |
+| `chat_{chatId}` | `socket.emit('join_chat', { chatId })` | All events for that chat |
+
+---
+
+### 8.5 Flutter example (socket_io_client)
+
+```dart
+socket.on('message_updated', (data) {
+  final message = Map<String, dynamic>.from(data);
+  if (message['type'] == 'agency_host_invite') {
+    chatController.updateMessage(message['chatId'], message);
+    if (message['flag'] == 'accept') {
+      chatController.hideInviteButtons(message['_id']);
+    }
+  }
+});
+
+socket.on('message_deleted', (data) {
+  final payload = Map<String, dynamic>.from(data);
+  chatController.removeMessage(payload['chatId'], payload['messageId']);
+});
+```
 
 **Push notification data (FCM):**
 

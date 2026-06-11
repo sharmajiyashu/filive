@@ -1,7 +1,7 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Chat from '../../models/Chat';
-import Message, { IAgencyHostInviteMetadata } from '../../models/Message';
+import Message, { IAgencyHostInviteMetadata, toInviteFlag } from '../../models/Message';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 
@@ -116,11 +116,13 @@ export class ChatService {
           const meta = pendingHostInviteMessage.metadata as IAgencyHostInviteMetadata;
           agencyHostRequest = {
             messageId: pendingHostInviteMessage._id.toString(),
+            type: 'agency_host_invite',
             messageType: 'agency_host_invite',
             requestId: meta.agencyHostRequestId,
             agencyId: meta.agencyId,
             agencyName: meta.agencyName,
             status: meta.status,
+            flag: meta.flag ?? toInviteFlag(meta.status),
             isOpened: meta.isOpened ?? false,
             isVerified: meta.isVerified ?? false,
             openedAt: meta.openedAt,
