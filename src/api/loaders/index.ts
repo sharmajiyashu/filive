@@ -5,6 +5,7 @@ import dbLoader from './db';
 import dependencyInjector from './di';
 import cloudinaryLoader from './cloudinary';
 import firebaseLoader from './firebase';
+import { startAgencySettlementJob } from '../../jobs/agencySettlementJob';
 // import smtpLoader from './smtp';
 
 export default async (expressApp: Express): Promise<void> => {
@@ -21,5 +22,6 @@ export default async (expressApp: Express): Promise<void> => {
     });
 
     expressLoader(expressApp);
+    startAgencySettlementJob();
     AppLogger.info('✌️ Express Loaded Successfully');
 };

@@ -1,5 +1,6 @@
 import { Service } from 'typedi';
 import User from '../../models/User';
+import AgencyHost from '../../models/AgencyHost';
 
 @Service()
 export class UserService {
@@ -48,6 +49,21 @@ export class UserService {
     user.isCoinseller = !user.isCoinseller;
     await user.save();
     return user;
+  }
+
+  public async setCoinsellerAndRemoveFromAgencies(userId: string, isCoinseller: boolean = true) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    user.isCoinseller = isCoinseller;
+    await user.save();
+
+    const removedHosts = await AgencyHost.deleteMany({ userId: user._id });
+
+    return {
+      user,
+      agencyHostsRemoved: removedHosts.deletedCount ?? 0,
+    };
   }
 
   public async adjustCoinsellerCoins(userId: string, amount: number) {

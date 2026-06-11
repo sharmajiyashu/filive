@@ -6,7 +6,11 @@ export class AppSettingService {
   private defaultSettings = {
     coin_to_bean_rate: 1,
     min_coin_to_bean_transfer: 100,
-    marital_statuses: ['single', 'divorced', 'married', 'secret', 'inlove']
+    marital_statuses: ['single', 'divorced', 'married', 'secret', 'inlove'],
+    agency_global_commission_rate: 10,
+    agency_use_commission_slabs: true,
+    agency_auto_settlement_enabled: true,
+    agency_settlement_day: 1,
   };
 
   async getSettings() {

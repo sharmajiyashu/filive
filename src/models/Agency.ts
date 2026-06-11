@@ -10,7 +10,16 @@ export interface IAgency extends Document {
   isVerified: boolean;
   status: 'pending' | 'approved' | 'rejected';
   commissionRate: number;
+  useAgencyCommissionRate: boolean;
   totalEarnings: number;
+  pendingCommission: number;
+  thisWeekHostEarnings: number;
+  thisWeekCommission: number;
+  currentCycleStart: Date;
+  lastSettlementDate?: Date;
+  nextSettlementDate?: Date;
+  isFrozen: boolean;
+  isCommissionHeld: boolean;
   otp?: string;
   otpExpires?: Date;
   createdAt: Date;
@@ -28,7 +37,16 @@ const AgencySchema: Schema = new Schema(
     isVerified: { type: Boolean, default: false },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     commissionRate: { type: Number, default: 10 },
+    useAgencyCommissionRate: { type: Boolean, default: false },
     totalEarnings: { type: Number, default: 0 },
+    pendingCommission: { type: Number, default: 0 },
+    thisWeekHostEarnings: { type: Number, default: 0 },
+    thisWeekCommission: { type: Number, default: 0 },
+    currentCycleStart: { type: Date, default: () => new Date() },
+    lastSettlementDate: { type: Date },
+    nextSettlementDate: { type: Date },
+    isFrozen: { type: Boolean, default: false },
+    isCommissionHeld: { type: Boolean, default: false },
     otp: { type: String },
     otpExpires: { type: Date },
   },

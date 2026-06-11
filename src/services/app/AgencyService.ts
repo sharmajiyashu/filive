@@ -2,6 +2,7 @@ import { Service, Inject, Container } from 'typedi';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
 import AgencyCommission from '../../models/AgencyCommission';
+import HostVerifiedEarning from '../../models/HostVerifiedEarning';
 import Message from '../../models/Message';
 import User from '../../models/User';
 import { subDays } from 'date-fns';
@@ -12,6 +13,7 @@ import mongoose from 'mongoose';
 import { ChatService } from './ChatService';
 import { ChatMessageService } from './ChatMessageService';
 import { LevelService } from './LevelService';
+import { AgencyCommissionService } from './AgencyCommissionService';
 
 export interface IAgencyHostDetail {
   id: string;
@@ -53,6 +55,7 @@ export class AgencyService {
     @Inject() private chatService: ChatService,
     @Inject() private chatMessageService: ChatMessageService,
     @Inject() private levelService: LevelService,
+    @Inject() private agencyCommissionService: AgencyCommissionService,
   ) { }
 
   private async findAgencyByIdentifier(identifier: string) {
@@ -77,33 +80,55 @@ export class AgencyService {
   }
 
   private async getCommissionDetails(agency: InstanceType<typeof Agency>) {
-    const thirtyDaysAgo = subDays(new Date(), 30);
-    const agencyObjectId = agency._id;
+    const ownerId = (agency.creatorId as any)._id?.toString() || agency.creatorId.toString();
+    const dashboard = await this.agencyCommissionService.getDashboardStats(
+      agency._id.toString(),
+      ownerId
+    );
 
-    const [last30Agg, totalAgg] = await Promise.all([
-      AgencyCommission.aggregate([
-        { $match: { agencyId: agencyObjectId, createdAt: { $gte: thirtyDaysAgo } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
+    const thirtyDaysAgo = subDays(new Date(), 30);
+    const [last30EarningsAgg, settledCommissionAgg] = await Promise.all([
+      HostVerifiedEarning.aggregate([
+        {
+          $match: {
+            agencyId: agency._id,
+            isValid: true,
+            createdAt: { $gte: thirtyDaysAgo },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$beansAmount' } } },
       ]),
       AgencyCommission.aggregate([
-        { $match: { agencyId: agencyObjectId } },
+        {
+          $match: {
+            agencyId: agency._id,
+            type: 'settlement',
+            status: 'settled',
+            createdAt: { $gte: thirtyDaysAgo },
+          },
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
     ]);
 
-    const last30DaysEarnings = last30Agg[0]?.total || 0;
-    const totalEarnings = totalAgg[0]?.total || agency.totalEarnings || 0;
-    const commissionRate = agency.commissionRate ?? 10;
-    const last30DaysCommission = Number(((last30DaysEarnings * commissionRate) / 100).toFixed(2));
-    const myCommission = Number(((totalEarnings * commissionRate) / 100).toFixed(2));
+    const last30DaysEarnings = last30EarningsAgg[0]?.total || 0;
+    const last30DaysCommission = settledCommissionAgg[0]?.total || 0;
+    const myCommission = dashboard.thisWeekCommission;
 
     return {
-      commissionRate,
+      ...dashboard,
+      commissionRate: dashboard.currentCommissionRate,
       last30DaysCommission,
-      totalEarnings,
+      totalEarnings: dashboard.totalHostEarnings,
       myCommission,
       last30DaysEarnings,
     };
+  }
+
+  public async getAgencyDashboard(userId: string) {
+    const agency = await Agency.findOne({ creatorId: userId });
+    if (!agency) throw new Error('Agency not found for this user');
+    return this.agencyCommissionService.getDashboardStats(agency._id.toString(), userId);
   }
 
   private async buildBecomeHostResult(host: any, agencyId: mongoose.Types.ObjectId) {
