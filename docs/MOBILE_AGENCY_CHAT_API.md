@@ -137,7 +137,34 @@ POST /app/agencies/verify
 }
 ```
 
-### 2.3 My agency (dashboard + commission)
+### 2.3 Agency commission dashboard
+
+```http
+GET /app/agencies/dashboard
+```
+
+**Auth:** Agency owner only. Primary endpoint for the commission dashboard screen.
+
+**Response `data`:**
+
+```json
+{
+  "totalHosts": 20,
+  "activeHosts": 12,
+  "totalHostEarnings": 2000000,
+  "currentCommissionRate": 15,
+  "pendingCommission": 300000,
+  "thisWeekCommission": 300000,
+  "lastSettlementDate": "2026-06-02T10:00:00.000Z",
+  "nextSettlementDate": "2026-06-09T00:00:00.000Z",
+  "isFrozen": false,
+  "isCommissionHeld": false
+}
+```
+
+**Full commission docs:** [MOBILE_AGENCY_COMMISSION_API.md](./MOBILE_AGENCY_COMMISSION_API.md)
+
+### 2.4 My agency (profile + commission)
 
 ```http
 GET /app/agencies/my
@@ -150,18 +177,28 @@ GET /app/agencies/my
   "_id": "...",
   "name": "My Agency",
   "commissionRate": 10,
-  "totalEarnings": 0,
+  "pendingCommission": 300000,
+  "thisWeekHostEarnings": 2000000,
+  "thisWeekCommission": 300000,
   "commissionDetails": {
-    "commissionRate": 10,
-    "last30DaysCommission": 0,
-    "totalEarnings": 0,
-    "myCommission": 0,
-    "last30DaysEarnings": 0
+    "totalHosts": 20,
+    "activeHosts": 12,
+    "totalHostEarnings": 2000000,
+    "currentCommissionRate": 15,
+    "pendingCommission": 300000,
+    "thisWeekCommission": 300000,
+    "lastSettlementDate": "2026-06-02T10:00:00.000Z",
+    "nextSettlementDate": "2026-06-09T00:00:00.000Z",
+    "commissionRate": 15,
+    "last30DaysCommission": 850000,
+    "totalEarnings": 2000000,
+    "myCommission": 300000,
+    "last30DaysEarnings": 5500000
   }
 }
 ```
 
-### 2.4 Agency details by ID
+### 2.5 Agency details by ID
 
 ```http
 GET /app/agencies/{agencyId}
@@ -266,10 +303,33 @@ POST /app/agencies/verify-user/{numericUserId}
   "userId": 100002,
   "name": "User Name",
   "profileImage": { "url": "..." },
-  "country": { "_id", "name", ... },
-  "countryId": { ... },
-  "levelInfo": { "currentLevel", "nextLevel", "progressPercentage" },
+  "countryId": "country_mongo_id",
+  "country": {
+    "_id": "...",
+    "name": "India",
+    "code": "IN",
+    "flag": "https://...",
+    "currencySymbol": "₹",
+    "currencyCode": "INR"
+  },
+  "level": {
+    "_id": "...",
+    "levelNumber": 5,
+    "name": "Gold",
+    "minCoins": 1000,
+    "maxCoins": 5000,
+    "color": "#FFD700",
+    "image": { "url": "..." },
+    "levelRange": "1-5"
+  },
+  "levelInfo": {
+    "level": { ... },
+    "currentLevel": { ... },
+    "nextLevel": { ... },
+    "progressPercentage": 45.5
+  },
   "richLevelInfo": { ... },
+  "charmLevel": { ... },
   "charmLevelInfo": { ... },
   "agency": { ... },
   "hostStatus": {
@@ -571,24 +631,27 @@ Connect to app socket with auth. Listen for:
 | 1 | GET | `/app/profile` | Profile + agency flags |
 | 2 | POST | `/app/agencies/create` | Create agency |
 | 3 | POST | `/app/agencies/verify` | Verify OTP |
-| 4 | GET | `/app/agencies/my` | Owner agency + commission |
-| 5 | GET | `/app/agencies/{id}` | Agency details |
-| 6 | GET | `/app/agencies/verify-agency-user/{userId}` | Verify owner has agency |
-| 7 | POST | `/app/agencies/join-by-user-id` | Join as host |
-| 8 | POST | `/app/agencies/become-host` | Join as host (flexible ID) |
-| 9 | POST | `/app/agencies/{id}/join` | Join by agency ID |
-| 10 | POST | `/app/agencies/verify-user/{userId}` | Check user for invite |
-| 11 | POST | `/app/agencies/{id}/add-host` | Send host invite via chat |
-| 12 | GET | `/app/agencies/{id}/hosts` | Active hosts (paginated) |
-| 13 | GET | `/app/agencies/{id}/host-history` | Add host history |
-| 14 | GET | `/app/agencies/host-requests/pending` | User pending invites |
-| 15 | GET | `/app/agencies/host-requests/{id}` | Invite details |
-| 16 | POST | `/app/agencies/host-requests/{id}/open` | Mark opened |
-| 17 | POST | `/app/agencies/host-requests/{id}/verify-view` | Mark verified |
-| 18 | POST | `/app/agencies/host-requests/{id}/respond` | Accept / Reject |
-| 19 | GET | `/app/chats` | Chat list + agencyHostRequest |
-| 20 | GET | `/app/chats/{chatId}/messages` | Messages incl. invites |
-| 21 | POST | `/app/store/purchase` | Buy store item (quantity) |
+| 4 | GET | `/app/agencies/dashboard` | Commission dashboard stats |
+| 5 | GET | `/app/agencies/my` | Owner agency + commission |
+| 6 | GET | `/app/agencies/{id}` | Agency details |
+| 7 | GET | `/app/agencies/verify-agency-user/{userId}` | Verify owner has agency |
+| 8 | POST | `/app/agencies/join-by-user-id` | Join as host |
+| 9 | POST | `/app/agencies/become-host` | Join as host (flexible ID) |
+| 10 | POST | `/app/agencies/{id}/join` | Join by agency ID |
+| 11 | POST | `/app/agencies/verify-user/{userId}` | Check user for invite |
+| 12 | POST | `/app/agencies/{id}/add-host` | Send host invite via chat |
+| 13 | GET | `/app/agencies/{id}/hosts` | Active hosts (paginated) |
+| 14 | GET | `/app/agencies/{id}/host-history` | Add host history |
+| 15 | GET | `/app/agencies/host-requests/pending` | User pending invites |
+| 16 | GET | `/app/agencies/host-requests/{id}` | Invite details |
+| 17 | POST | `/app/agencies/host-requests/{id}/open` | Mark opened |
+| 18 | POST | `/app/agencies/host-requests/{id}/verify-view` | Mark verified |
+| 19 | POST | `/app/agencies/host-requests/{id}/respond` | Accept / Reject |
+| 20 | GET | `/app/coins/wallet` | Owner beans balance |
+| 21 | GET | `/app/coins/history` | Settlement history |
+| 22 | GET | `/app/chats` | Chat list + agencyHostRequest |
+| 23 | GET | `/app/chats/{chatId}/messages` | Messages incl. invites |
+| 24 | POST | `/app/store/purchase` | Buy store item (quantity) |
 
 ---
 
@@ -603,5 +666,7 @@ Connect to app socket with auth. Listen for:
 | `Agency is not verified or approved yet` | join-by-user-id on unapproved agency |
 
 ---
+
+**Commission docs:** [MOBILE_AGENCY_COMMISSION_API.md](./MOBILE_AGENCY_COMMISSION_API.md)
 
 **Questions / Swagger:** Open `{BASE_URL}/api-docs/app` → tag **Agencies** and **Chats**.

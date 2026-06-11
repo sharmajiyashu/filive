@@ -5,6 +5,7 @@ import AgencyCommission from '../../models/AgencyCommission';
 import HostVerifiedEarning from '../../models/HostVerifiedEarning';
 import Message from '../../models/Message';
 import User from '../../models/User';
+import Country from '../../models/Country';
 import { subDays } from 'date-fns';
 import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
@@ -224,6 +225,40 @@ export class AgencyService {
     };
 
     return base;
+  }
+
+  private toPlainObject(doc: any) {
+    if (!doc) return null;
+    return doc.toObject ? doc.toObject() : doc;
+  }
+
+  private formatLevelInfo(levelInfo: any) {
+    if (!levelInfo) return null;
+    return {
+      ...levelInfo,
+      level: levelInfo.currentLevel ?? null,
+    };
+  }
+
+  private async resolveCountryObject(user: InstanceType<typeof User>) {
+    const populated = user.countryId as any;
+    if (populated && typeof populated === 'object' && populated._id) {
+      return this.toPlainObject(populated);
+    }
+
+    if (user.countryId) {
+      const country = await Country.findById(user.countryId);
+      if (country) return this.toPlainObject(country);
+    }
+
+    if (user.country) {
+      const country = await Country.findOne({
+        name: { $regex: new RegExp(`^${String(user.country).trim()}$`, 'i') },
+      });
+      if (country) return this.toPlainObject(country);
+    }
+
+    return null;
   }
 
   private generateOTP(digits: number = 4): string {
@@ -773,20 +808,26 @@ export class AgencyService {
       }
     }
 
+    const country = await this.resolveCountryObject(targetUser);
+    const levelInfo = this.formatLevelInfo(richLevelInfo);
+    const charmLevel = this.formatLevelInfo(charmLevelInfo);
+
     return {
       id: targetUser._id,
       userId: targetUser.userId,
       name: targetUser.name,
-      profileImage: targetUser.profileImage,
+      profileImage: this.toPlainObject(targetUser.profileImage),
       email: targetUser.email,
       mobile: targetUser.mobile,
-      countryId: targetUser.countryId,
-      country: targetUser.countryId,
+      countryId: country?._id ?? targetUser.countryId ?? null,
+      country,
       isPremium: targetUser.isPremium,
-      levelInfo: richLevelInfo,
-      richLevelInfo,
-      charmLevelInfo,
-      agency,
+      level: levelInfo?.level ?? null,
+      levelInfo,
+      richLevelInfo: levelInfo,
+      charmLevelInfo: charmLevel,
+      charmLevel: charmLevel?.level ?? null,
+      agency: agency ? this.toPlainObject(agency) : null,
       hostStatus,
     };
   }
