@@ -397,6 +397,35 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /admin/users/{id}/coinseller-promote:
+   *   put:
+   *     summary: Set user as coin seller and remove from all agency host links
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Coin seller set and agency host links removed
+   */
+  userRouter.put('/:id/coinseller-promote', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const result = await userService.setCoinsellerAndRemoveFromAgencies(userId, true);
+      return ResponseWrapper.success(
+        res,
+        result,
+        `User set as coin seller. Removed ${result.agencyHostsRemoved} agency host link(s).`
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /admin/users/{id}/coinseller-coins:
    *   put:
    *     summary: Adjust user coinseller coins balance

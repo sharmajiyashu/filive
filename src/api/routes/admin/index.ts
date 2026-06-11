@@ -10,6 +10,7 @@ import dashboard from './dashboard';
 import appSetting from './appSetting';
 import store from './store';
 import agency from './agency';
+import agencyCommission from './agencyCommission';
 
 export default (router: Router): Router => {
   auth(router);
@@ -23,5 +24,6 @@ export default (router: Router): Router => {
   appSetting(router);
   store(router);
   agency(router);
+  agencyCommission(router);
   return router;
 };

@@ -119,6 +119,27 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/dashboard:
+   *   get:
+   *     summary: Get agency commission dashboard stats
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Agency dashboard stats fetched successfully
+   */
+  agencyRouter.get('/dashboard', async (req: any, res: Response) => {
+    try {
+      const result = await agencyService.getAgencyDashboard(req.user.id);
+      return ResponseWrapper.success(res, result, 'Agency dashboard fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/requests/my:
    *   get:
    *     summary: Get user's agency join requests
@@ -583,6 +604,20 @@ export default (router: Router) => {
    *     responses:
    *       200:
    *         description: User checked successfully for host invite
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 country:
+   *                   type: object
+   *                   description: Full country object (name, code, flag, etc.)
+   *                 level:
+   *                   type: object
+   *                   description: Current rich level object
+   *                 levelInfo:
+   *                   type: object
+   *                   description: Rich level info with currentLevel, nextLevel, progressPercentage
    */
   agencyRouter.post('/verify-user/:userId', async (req: any, res: Response) => {
     try {

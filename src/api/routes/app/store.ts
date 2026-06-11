@@ -34,14 +34,58 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /app/store/purchase:
+   *   post:
+   *     summary: Purchase store item (supports quantity)
+   *     tags: [Store]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - storeItemId
+   *               - validityIndex
+   *             properties:
+   *               storeItemId:
+   *                 type: string
+   *               validityIndex:
+   *                 type: integer
+   *                 description: Index of price option on the store item
+   *               quantity:
+   *                 type: integer
+   *                 minimum: 1
+   *                 default: 1
+   *                 description: Number of items to buy in one request
+   *     responses:
+   *       200:
+   *         description: Store item purchased successfully
+   */
   storeRouter.post('/purchase', async (req: any, res: Response) => {
     try {
       const { storeItemId, validityIndex, quantity } = req.body;
+
+      if (!storeItemId) {
+        throw new Error('storeItemId is required');
+      }
+      if (validityIndex === undefined || validityIndex === null) {
+        throw new Error('validityIndex is required');
+      }
+
+      const parsedQuantity = quantity !== undefined && quantity !== null
+        ? parseInt(String(quantity), 10)
+        : 1;
+
       const result = await storeService.purchaseStoreItem(
         req.user.id,
         storeItemId,
-        validityIndex,
-        quantity ? parseInt(quantity) : 1
+        Number(validityIndex),
+        parsedQuantity
       );
       return ResponseWrapper.success(res, result, 'Store item purchased successfully');
     } catch (error: any) {
