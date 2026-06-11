@@ -106,7 +106,7 @@ export class ChatService {
         const pendingHostInviteMessage = await Message.findOne({
           chatId: chat._id,
           type: 'agency_host_invite',
-          deletedAt: { $exists: false },
+          $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }],
           'metadata.status': 'PENDING',
           senderId: { $ne: userObjectId },
         }).sort({ createdAt: -1 });

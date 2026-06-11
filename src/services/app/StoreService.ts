@@ -77,9 +77,19 @@ export class StoreService {
     };
   }
 
-  public async purchaseStoreItem(userId: string, storeItemId: string, validityIndex: number) {
+  public async purchaseStoreItem(
+    userId: string,
+    storeItemId: string,
+    validityIndex: number,
+    quantity: number = 1
+  ) {
     const user = await User.findById(userId);
     if (!user) throw new Error('User not found');
+
+    const purchaseQuantity = Number(quantity);
+    if (!Number.isInteger(purchaseQuantity) || purchaseQuantity < 1) {
+      throw new Error('quantity must be a positive integer');
+    }
 
     const item = await StoreItem.findById(storeItemId);
     if (!item || !item.isActive) throw new Error('Store item not available');
@@ -87,15 +97,14 @@ export class StoreService {
     const priceOption = item.priceOptions[validityIndex];
     if (!priceOption) throw new Error('Invalid price option');
 
-    if (user.coins < priceOption.coins) {
+    const totalCoins = priceOption.coins * purchaseQuantity;
+    if (user.coins < totalCoins) {
       throw new Error('Insufficient coins');
     }
 
-    // Deduct coins
-    user.coins -= priceOption.coins;
+    user.coins -= totalCoins;
     await user.save();
 
-    // Calculate expiry date
     let expiresAt = new Date();
     if (priceOption.validityType === 'days') {
       expiresAt = addDays(expiresAt, priceOption.validity);
@@ -105,14 +114,22 @@ export class StoreService {
       expiresAt = addYears(expiresAt, priceOption.validity);
     }
 
-    // Add to User's store items
-    const userStoreItem = await UserStoreItem.create({
-      userId: new mongoose.Types.ObjectId(userId),
-      storeItemId: new mongoose.Types.ObjectId(storeItemId),
-      expiresAt
-    });
+    const purchasedItems = [];
+    for (let i = 0; i < purchaseQuantity; i++) {
+      const userStoreItem = await UserStoreItem.create({
+        userId: new mongoose.Types.ObjectId(userId),
+        storeItemId: new mongoose.Types.ObjectId(storeItemId),
+        expiresAt,
+      });
+      purchasedItems.push(userStoreItem);
+    }
 
-    return userStoreItem;
+    return {
+      quantity: purchaseQuantity,
+      totalCoinsSpent: totalCoins,
+      items: purchasedItems,
+      item: purchasedItems[0],
+    };
   }
 
   public async getUserPurchasedItems(userId: string, type?: string, page: number = 1, limit: number = 20) {

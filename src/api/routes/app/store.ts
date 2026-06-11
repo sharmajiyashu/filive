@@ -36,8 +36,13 @@ export default (router: Router) => {
 
   storeRouter.post('/purchase', async (req: any, res: Response) => {
     try {
-      const { storeItemId, validityIndex } = req.body;
-      const result = await storeService.purchaseStoreItem(req.user.id, storeItemId, validityIndex);
+      const { storeItemId, validityIndex, quantity } = req.body;
+      const result = await storeService.purchaseStoreItem(
+        req.user.id,
+        storeItemId,
+        validityIndex,
+        quantity ? parseInt(quantity) : 1
+      );
       return ResponseWrapper.success(res, result, 'Store item purchased successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

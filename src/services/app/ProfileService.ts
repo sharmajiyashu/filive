@@ -10,6 +10,8 @@ import Hobby from '../../models/Hobby';
 import { LevelService } from './LevelService';
 import UserVisitor from '../../models/UserVisitor';
 import AgencyHost from '../../models/AgencyHost';
+import Agency from '../../models/Agency';
+import { applyProfileDefaults } from './profileDefaults';
 
 @Service()
 export class ProfileService {
@@ -52,30 +54,42 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-    let agency: any = await mongoose.model('Agency').findOne({ creatorId: userId });
-    let isAgencyHost = false;
-    if (agency) {
-      isAgencyHost = true;
-    } else {
-      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
-      if (agencyHost && agencyHost.agencyId) {
-        agency = agencyHost.agencyId;
-        isAgencyHost = true;
+    const ownedAgency = await Agency.findOne({ creatorId: userId })
+      .populate('countryId')
+      .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+
+    let agency: any = ownedAgency || null;
+    let isAgencyHost = !!ownedAgency;
+    let isBecomeHost = false;
+    let becomeHostMessage: string | null = null;
+
+    if (!ownedAgency) {
+      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' });
+      if (agencyHost) {
+        const joinedAgency = await Agency.findById(agencyHost.agencyId).select('name');
+        isBecomeHost = true;
+        becomeHostMessage = joinedAgency
+          ? `You are a host under ${joinedAgency.name}.`
+          : 'You have joined as an agency host.';
       }
     }
 
+    const profileData = applyProfileDefaults(profile);
+
     return {
-      ...profile.toObject(),
+      ...profileData,
       career: profile.careerId,
       followersCount,
       followingCount,
       friendsCount,
       visitorsCount,
-      levelInfo: richLevelInfo, // backward compatibility
+      levelInfo: richLevelInfo,
       richLevelInfo,
       charmLevelInfo,
       agency,
-      isAgencyHost
+      isAgencyHost,
+      isBecomeHost,
+      becomeHostMessage,
     };
   }
 
@@ -203,31 +217,43 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-    let agency: any = await mongoose.model('Agency').findOne({ creatorId: userId });
-    let isAgencyHost = false;
-    if (agency) {
-      isAgencyHost = true;
-    } else {
-      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' }).populate('agencyId');
-      if (agencyHost && agencyHost.agencyId) {
-        agency = agencyHost.agencyId;
-        isAgencyHost = true;
+    const ownedAgency = await Agency.findOne({ creatorId: userId })
+      .populate('countryId')
+      .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+
+    let agency: any = ownedAgency || null;
+    let isAgencyHost = !!ownedAgency;
+    let isBecomeHost = false;
+    let becomeHostMessage: string | null = null;
+
+    if (!ownedAgency) {
+      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' });
+      if (agencyHost) {
+        const joinedAgency = await Agency.findById(agencyHost.agencyId).select('name');
+        isBecomeHost = true;
+        becomeHostMessage = joinedAgency
+          ? `You are a host under ${joinedAgency.name}.`
+          : 'You have joined as an agency host.';
       }
     }
 
+    const profileData = applyProfileDefaults(updatedUser);
+
     return {
       profile: {
-        ...updatedUser.toObject(),
+        ...profileData,
         career: updatedUser.careerId,
         followersCount,
         followingCount,
         friendsCount,
         visitorsCount,
-        levelInfo: richLevelInfo, // backward compatibility
+        levelInfo: richLevelInfo,
         richLevelInfo,
         charmLevelInfo,
         agency,
-        isAgencyHost
+        isAgencyHost,
+        isBecomeHost,
+        becomeHostMessage,
       },
       message: 'PROFILE_UPDATED'
     };
