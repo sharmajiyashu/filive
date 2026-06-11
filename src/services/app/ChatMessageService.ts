@@ -1,7 +1,11 @@
 import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Chat from '../../models/Chat';
-import Message, { IAgencyHostInviteMetadata } from '../../models/Message';
+import Message, {
+  IAgencyHostInviteMetadata,
+  formatAgencyHostInviteMessage,
+  toInviteFlag,
+} from '../../models/Message';
 import User from '../../models/User';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
@@ -26,7 +30,7 @@ export class ChatMessageService {
   }
 
   private async populateMessage(messageId: mongoose.Types.ObjectId) {
-    return Message.findById(messageId)
+    const message = await Message.findById(messageId)
       .populate({
         path: 'senderId',
         select: 'name email profileImage userRole',
@@ -40,6 +44,8 @@ export class ChatMessageService {
           { path: 'medias' }
         ]
       });
+
+    return message ? formatAgencyHostInviteMessage(message) : null;
   }
 
   async createAgencyHostInviteMessage(
@@ -70,6 +76,7 @@ export class ChatMessageService {
       agencyId: payload.agencyId,
       agencyName: payload.agencyName,
       status: 'PENDING',
+      flag: 'pending',
       isOpened: false,
       isVerified: false,
     };
@@ -149,11 +156,70 @@ export class ChatMessageService {
     return populatedMessage;
   }
 
+  async findAgencyHostInviteMessage(agencyHostRequestId: string, messageId?: string) {
+    if (messageId) {
+      const byId = await Message.findOne({
+        _id: messageId,
+        type: 'agency_host_invite',
+        deletedAt: { $exists: false },
+      });
+      if (byId) return byId;
+    }
+
+    return Message.findOne({
+      type: 'agency_host_invite',
+      'metadata.agencyHostRequestId': agencyHostRequestId,
+      deletedAt: { $exists: false },
+    }).sort({ createdAt: -1 });
+  }
+
+  private emitInviteResponseEvents(
+    chat: (mongoose.Document & { participants: { userId?: mongoose.Types.ObjectId }[] }) | null,
+    chatId: string,
+    payload: {
+      messageId: string;
+      status: 'ACCEPTED' | 'REJECTED';
+      requestId: string;
+      message?: unknown;
+    }
+  ) {
+    if (!chat) return;
+
+    const eventPayload = {
+      messageId: payload.messageId,
+      chatId,
+      type: 'agency_host_invite',
+      status: payload.status,
+      flag: toInviteFlag(payload.status),
+      requestId: payload.requestId,
+      message: payload.message ?? null,
+    };
+
+    for (const participant of chat.participants) {
+      if (participant.userId) {
+        const room = `user_${participant.userId.toString()}`;
+        if (payload.status === 'REJECTED') {
+          this.emitSocketEvent('message_deleted', room, eventPayload);
+        } else {
+          this.emitSocketEvent('message_updated', room, payload.message);
+        }
+        this.emitSocketEvent('agency_host_invite_responded', room, eventPayload);
+      }
+    }
+
+    if (payload.status === 'REJECTED') {
+      this.emitSocketEvent('message_deleted', `chat_${chatId}`, eventPayload);
+    } else {
+      this.emitSocketEvent('message_updated', `chat_${chatId}`, payload.message);
+    }
+    this.emitSocketEvent('agency_host_invite_responded', `chat_${chatId}`, eventPayload);
+  }
+
   async updateAgencyHostInviteStatus(
     messageId: string,
     status: 'ACCEPTED' | 'REJECTED',
     responseText: string,
-    responderId: string
+    _responderId: string
   ) {
     const messageObjectId = new mongoose.Types.ObjectId(messageId);
     const message = await Message.findById(messageObjectId);
@@ -162,51 +228,45 @@ export class ChatMessageService {
       throw new Error('Host invite message not found');
     }
 
-    const metadata = message.metadata as IAgencyHostInviteMetadata;
+    const metadata = { ...(message.metadata as IAgencyHostInviteMetadata) };
     if (metadata.status !== 'PENDING') {
       throw new Error('Host invite already responded');
     }
 
     const chatId = message.chatId.toString();
     const chat = await Chat.findById(message.chatId);
-
     metadata.status = status;
+    metadata.flag = toInviteFlag(status);
 
     if (status === 'REJECTED') {
-      message.deletedAt = new Date();
-      message.metadata = metadata;
-      await message.save();
+      await Message.findByIdAndDelete(messageObjectId);
 
-      if (chat) {
-        for (const participant of chat.participants) {
-          if (participant.userId) {
-            this.emitSocketEvent('message_deleted', `user_${participant.userId.toString()}`, { messageId, chatId });
-          }
-        }
-        this.emitSocketEvent('message_deleted', `chat_${chatId}`, { messageId, chatId });
-      }
+      this.emitInviteResponseEvents(chat, chatId, {
+        messageId,
+        status,
+        requestId: metadata.agencyHostRequestId,
+      });
 
       await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
-      return null;
+      return { action: 'deleted' as const, messageId, chatId, status };
     }
 
-    message.metadata = metadata;
+    message.set('metadata', metadata);
+    message.markModified('metadata');
     message.text = responseText;
     await message.save();
 
     const populatedMessage = await this.populateMessage(messageObjectId);
 
-    if (chat) {
-      for (const participant of chat.participants) {
-        if (participant.userId) {
-          this.emitSocketEvent('message_updated', `user_${participant.userId.toString()}`, populatedMessage);
-        }
-      }
-      this.emitSocketEvent('message_updated', `chat_${chatId}`, populatedMessage);
-    }
+    this.emitInviteResponseEvents(chat, chatId, {
+      messageId,
+      status,
+      requestId: metadata.agencyHostRequestId,
+      message: populatedMessage,
+    });
 
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
-    return populatedMessage;
+    return { action: 'updated' as const, messageId, chatId, status, message: populatedMessage };
   }
 
   async syncAgencyHostInviteFlags(
@@ -220,7 +280,7 @@ export class ChatMessageService {
       throw new Error('Host invite message not found');
     }
 
-    const metadata = message.metadata as IAgencyHostInviteMetadata;
+    const metadata = { ...(message.metadata as IAgencyHostInviteMetadata) };
 
     if (flags.isOpened) {
       metadata.isOpened = true;
@@ -232,7 +292,8 @@ export class ChatMessageService {
       metadata.verifiedAt = new Date().toISOString();
     }
 
-    message.metadata = metadata;
+    message.set('metadata', metadata);
+    message.markModified('metadata');
     await message.save();
 
     const populatedMessage = await this.populateMessage(messageObjectId);
@@ -289,7 +350,7 @@ export class ChatMessageService {
     await this.markChatAsRead(userId, chatId);
 
     return {
-      data: messages,
+      data: messages.map((msg) => formatAgencyHostInviteMessage(msg)),
       pagination: {
         page,
         limit,

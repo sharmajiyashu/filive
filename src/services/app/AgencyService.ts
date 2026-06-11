@@ -482,24 +482,50 @@ export class AgencyService {
 
     const agency = await Agency.findById(request.agencyId).select('name');
     const agencyName = agency?.name || 'Agency';
-    request.status = status;
-    await request.save();
 
-    if (request.messageId) {
-      const responseText = status === 'ACCEPTED'
-        ? `You accepted the host invitation from ${agencyName}.`
-        : `You rejected the host invitation from ${agencyName}.`;
+    const inviteMessage = await this.chatMessageService.findAgencyHostInviteMessage(
+      requestId,
+      request.messageId?.toString()
+    );
 
-      await this.chatMessageService.updateAgencyHostInviteStatus(
-        request.messageId.toString(),
-        status,
-        responseText,
-        userId
-      );
+    if (!inviteMessage) {
+      throw new Error('Host invite message not found in chat');
     }
 
+    if (!request.messageId) {
+      request.messageId = inviteMessage._id as mongoose.Types.ObjectId;
+    }
+
+    const responseText = status === 'ACCEPTED'
+      ? `You accepted the host invitation from ${agencyName}.`
+      : `You rejected the host invitation from ${agencyName}.`;
+
+    const messageResult = await this.chatMessageService.updateAgencyHostInviteStatus(
+      inviteMessage._id.toString(),
+      status,
+      responseText,
+      userId
+    );
+
+    request.status = status;
+    if (status === 'REJECTED') {
+      request.messageId = undefined;
+    }
+    await request.save();
+
     const populated = await request.populate('userId');
-    return this.mapHostResponse(populated);
+    const mapped = this.mapHostResponse(populated);
+
+    return {
+      ...mapped,
+      type: 'agency_host_invite',
+      inviteStatus: status,
+      flag: status === 'ACCEPTED' ? 'accept' : 'reject',
+      messageAction: messageResult.action,
+      messageId: inviteMessage._id.toString(),
+      chatId: inviteMessage.chatId.toString(),
+      message: messageResult.action === 'updated' ? messageResult.message : null,
+    };
   }
 
   private async syncHostInviteFlags(
