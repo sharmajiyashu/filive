@@ -1,14 +1,17 @@
 import { Service, Inject, Container } from 'typedi';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
+import AgencyCommission from '../../models/AgencyCommission';
 import Message from '../../models/Message';
 import User from '../../models/User';
+import { subDays } from 'date-fns';
 import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
 import AppLogger from '../../api/loaders/logger';
 import mongoose from 'mongoose';
 import { ChatService } from './ChatService';
 import { ChatMessageService } from './ChatMessageService';
+import { LevelService } from './LevelService';
 
 export interface IAgencyHostDetail {
   id: string;
@@ -33,14 +36,23 @@ export interface IAgencyHostDetail {
     mobile: string;
     countryId: string;
     isPremium: boolean;
+    levelInfo?: any;
+    richLevelInfo?: any;
+    charmLevelInfo?: any;
   } | null;
 }
 
 @Service()
 export class AgencyService {
+  private readonly hostUserPopulate = {
+    path: 'userId',
+    populate: { path: 'profileImage' },
+  };
+
   constructor(
     @Inject() private chatService: ChatService,
     @Inject() private chatMessageService: ChatMessageService,
+    @Inject() private levelService: LevelService,
   ) { }
 
   private async findAgencyByIdentifier(identifier: string) {
@@ -64,6 +76,49 @@ export class AgencyService {
     return null;
   }
 
+  private async getCommissionDetails(agency: InstanceType<typeof Agency>) {
+    const thirtyDaysAgo = subDays(new Date(), 30);
+    const agencyObjectId = agency._id;
+
+    const [last30Agg, totalAgg] = await Promise.all([
+      AgencyCommission.aggregate([
+        { $match: { agencyId: agencyObjectId, createdAt: { $gte: thirtyDaysAgo } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      AgencyCommission.aggregate([
+        { $match: { agencyId: agencyObjectId } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+    ]);
+
+    const last30DaysEarnings = last30Agg[0]?.total || 0;
+    const totalEarnings = totalAgg[0]?.total || agency.totalEarnings || 0;
+    const commissionRate = agency.commissionRate ?? 10;
+    const last30DaysCommission = Number(((last30DaysEarnings * commissionRate) / 100).toFixed(2));
+    const myCommission = Number(((totalEarnings * commissionRate) / 100).toFixed(2));
+
+    return {
+      commissionRate,
+      last30DaysCommission,
+      totalEarnings,
+      myCommission,
+      last30DaysEarnings,
+    };
+  }
+
+  private async buildBecomeHostResult(host: any, agencyId: mongoose.Types.ObjectId) {
+    const agency = await Agency.findById(agencyId).select('name');
+    const populated = await host.populate('userId');
+    const mapped = this.mapHostResponse(populated);
+    return {
+      ...mapped,
+      isBecomeHost: true,
+      becomeHostMessage: agency
+        ? `You have successfully joined ${agency.name} as a host.`
+        : 'You have successfully joined as an agency host.',
+    };
+  }
+
   private async acceptUserAsHost(userId: string, agencyId: mongoose.Types.ObjectId) {
     const existing = await AgencyHost.findOne({ agencyId, userId });
 
@@ -75,18 +130,17 @@ export class AgencyService {
       existing.status = 'ACCEPTED';
       existing.requestedBy = 'USER';
       await existing.save();
-      const popExisting = await existing.populate('userId');
-      return this.mapHostResponse(popExisting);
+      return this.buildBecomeHostResult(existing, agencyId);
     }
 
     const host = await AgencyHost.create({
       agencyId,
       userId: new mongoose.Types.ObjectId(userId),
       status: 'ACCEPTED',
-      requestedBy: 'USER'
+      requestedBy: 'USER',
     });
-    const populated = await host.populate('userId');
-    return this.mapHostResponse(populated);
+
+    return this.buildBecomeHostResult(host, agencyId);
   }
 
   private mapHostResponse(host: any, chatId?: string, agency?: any, message?: any): IAgencyHostDetail {
@@ -117,6 +171,36 @@ export class AgencyService {
     };
   }
 
+  private async mapHostResponseWithUser(host: any, chatId?: string, agency?: any, message?: any): Promise<IAgencyHostDetail> {
+    const base = this.mapHostResponse(host, chatId, agency, message);
+
+    if (!host.userId) {
+      return base;
+    }
+
+    const user = host.userId;
+    const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
+    const charmCoins = user.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+
+    base.user = {
+      id: user._id,
+      userId: user.userId,
+      name: user.name,
+      profileImage: user.profileImage,
+      email: user.email,
+      mobile: user.mobile,
+      countryId: user.countryId,
+      isPremium: user.isPremium,
+      levelInfo: richLevelInfo,
+      richLevelInfo,
+      charmLevelInfo,
+    };
+
+    return base;
+  }
+
   private generateOTP(digits: number = 4): string {
     if (digits === 4) return '1234'; // Default as per previous pattern
     const min = Math.pow(10, digits - 1);
@@ -128,8 +212,8 @@ export class AgencyService {
     name: string;
     countryId: string;
     mobile: string;
-    email: string;
-    description: string;
+    email?: string;
+    description?: string;
   }) {
     const existing = await Agency.findOne({ mobile: data.mobile });
     if (existing && existing.isVerified) {
@@ -144,8 +228,8 @@ export class AgencyService {
       // Update existing unverified agency
       existing.name = data.name;
       existing.countryId = new mongoose.Types.ObjectId(data.countryId);
-      existing.email = data.email;
-      existing.description = data.description;
+      existing.email = data.email || '';
+      existing.description = data.description || '';
       existing.otp = otp;
       existing.otpExpires = otpExpires;
       existing.creatorId = new mongoose.Types.ObjectId(userId);
@@ -153,12 +237,15 @@ export class AgencyService {
       agency = existing;
     } else {
       agency = await Agency.create({
-        ...data,
+        name: data.name,
         countryId: new mongoose.Types.ObjectId(data.countryId),
+        mobile: data.mobile,
+        email: data.email || '',
+        description: data.description || '',
         creatorId: new mongoose.Types.ObjectId(userId),
         otp,
         otpExpires,
-        isVerified: false
+        isVerified: false,
       });
     }
 
@@ -194,10 +281,34 @@ export class AgencyService {
     return await Agency.find({ ...filter, isVerified: true, status: 'approved' }).populate('countryId').populate('creatorId', 'name profileImage');
   }
 
-  public async getAgency(id: string) {
-    const agency = await Agency.findById(id).populate('countryId').populate('creatorId', 'name profileImage');
+  public async getAgency(id: string, requesterId?: string) {
+    const agency = await Agency.findById(id)
+      .populate('countryId')
+      .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
     if (!agency) throw new Error('Agency not found');
-    return agency;
+
+    const result: any = agency.toObject();
+
+    const creatorId = (agency.creatorId as any)._id?.toString() || agency.creatorId.toString();
+    if (requesterId && creatorId === requesterId) {
+      result.commissionDetails = await this.getCommissionDetails(agency);
+    }
+
+    return result;
+  }
+
+  public async getMyAgency(userId: string) {
+    const agency = await Agency.findOne({ creatorId: userId })
+      .populate('countryId')
+      .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+
+    if (!agency) {
+      throw new Error('Agency not found for this user');
+    }
+
+    const result: any = agency.toObject();
+    result.commissionDetails = await this.getCommissionDetails(agency);
+    return result;
   }
 
   public async requestToJoinAgency(userId: string, agencyId: string) {
@@ -306,6 +417,9 @@ export class AgencyService {
     hostRequest.messageId = message!._id;
     await hostRequest.save();
 
+    const adminConfirmText = `Host invitation sent to ${targetUser.name || 'User'} (ID: ${targetUser.userId}). Waiting for their response.`;
+    await this.chatMessageService.createSystemChatMessage(adminUserId, chatId, adminConfirmText);
+
     try {
       const io = Container.get('socket') as { to: (room: string) => { emit: (event: string, payload: unknown) => void } };
       io.to(`user_${targetUser._id.toString()}`).emit('chat_created', chat);
@@ -318,6 +432,7 @@ export class AgencyService {
     return {
       ...this.mapHostResponse(populated, chatId),
       message,
+      adminMessage: adminConfirmText,
     };
   }
 
@@ -517,14 +632,15 @@ export class AgencyService {
     }
     const skip = (page - 1) * limit;
     const hosts = await AgencyHost.find({ agencyId, status: 'ACCEPTED' })
-      .populate('userId')
+      .populate(this.hostUserPopulate)
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
       
     const total = await AgencyHost.countDocuments({ agencyId, status: 'ACCEPTED' });
 
     return {
-      data: hosts.map(h => this.mapHostResponse(h)),
+      data: await Promise.all(hosts.map((h) => this.mapHostResponseWithUser(h))),
       total,
       page,
       limit,
@@ -577,33 +693,58 @@ export class AgencyService {
     };
   }
 
-  public async verifyUserForHost(userId: number, adminUserId: string, agencyId: string) {
-    const targetUser = await User.findOne({ userId });
+  public async verifyUserForHost(userId: number, adminUserId: string, agencyId?: string) {
+    const targetUser = await User.findOne({ userId })
+      .populate('profileImage')
+      .populate('countryId');
+
     if (!targetUser) throw new Error('User not found');
-    
+
+    const richCoins = targetUser.wealthCoins !== undefined ? targetUser.wealthCoins : (targetUser.coins || 0);
+    const charmCoins = targetUser.charmCoins || 0;
+    const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
+    const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+
+    let agency: any = null;
+    let hostStatus = {
+      canInvite: true,
+      isAlreadyHost: false,
+      isPending: false,
+      message: 'User can be invited as host',
+    };
+
     if (agencyId) {
       const agencyQuery = mongoose.Types.ObjectId.isValid(agencyId) ? { _id: agencyId } : { creatorId: agencyId };
-      const agency = await Agency.findOne(agencyQuery);
-      if (!agency || agency.creatorId.toString() !== adminUserId) {
+      const agencyDoc = await Agency.findOne(agencyQuery)
+        .populate('countryId')
+        .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+
+      if (!agencyDoc) {
         throw new Error('Unauthorized or agency not found');
       }
 
-      const existing = await AgencyHost.findOne({ agencyId: agency._id, userId: targetUser._id });
-      if (existing && existing.status === 'ACCEPTED') {
-        throw new Error('User is already a host in this agency');
+      const agencyCreatorId = (agencyDoc.creatorId as any)._id?.toString() || agencyDoc.creatorId.toString();
+      if (agencyCreatorId !== adminUserId) {
+        throw new Error('Unauthorized or agency not found');
       }
 
-      if (existing) {
-        existing.status = 'ACCEPTED';
-        existing.requestedBy = 'AGENCY';
-        await existing.save();
-      } else {
-        await AgencyHost.create({
-          agencyId: agency._id,
-          userId: targetUser._id,
-          status: 'ACCEPTED',
-          requestedBy: 'AGENCY'
-        });
+      agency = agencyDoc;
+
+      const existing = await AgencyHost.findOne({ agencyId: agencyDoc._id, userId: targetUser._id });
+      if (existing?.status === 'ACCEPTED') {
+        hostStatus = {
+          canInvite: false,
+          isAlreadyHost: true,
+          isPending: false,
+          message: 'User is already a host in this agency',
+        };
+      } else if (existing?.status === 'PENDING' && existing.requestedBy === 'AGENCY') {
+        hostStatus = {
+          canInvite: false,
+          isAlreadyHost: false,
+          isPending: true,
+          message: 'Host invite already pending for this user',
+        };
       }
     }
 
@@ -615,7 +756,37 @@ export class AgencyService {
       email: targetUser.email,
       mobile: targetUser.mobile,
       countryId: targetUser.countryId,
+      country: targetUser.countryId,
       isPremium: targetUser.isPremium,
+      levelInfo: richLevelInfo,
+      richLevelInfo,
+      charmLevelInfo,
+      agency,
+      hostStatus,
+    };
+  }
+
+  public async getHostAddHistory(agencyId: string, adminUserId: string, page: number = 1, limit: number = 10) {
+    const agency = await Agency.findById(agencyId);
+    if (!agency || agency.creatorId.toString() !== adminUserId) {
+      throw new Error('Unauthorized or agency not found');
+    }
+
+    const skip = (page - 1) * limit;
+    const history = await AgencyHost.find({ agencyId, requestedBy: 'AGENCY' })
+      .populate(this.hostUserPopulate)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await AgencyHost.countDocuments({ agencyId, requestedBy: 'AGENCY' });
+
+    return {
+      data: await Promise.all(history.map((h) => this.mapHostResponseWithUser(h))),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

@@ -98,6 +98,27 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/my:
+   *   get:
+   *     summary: Get my agency details with commission info
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Agency details with commission fetched successfully
+   */
+  agencyRouter.get('/my', async (req: any, res: Response) => {
+    try {
+      const result = await agencyService.getMyAgency(req.user.id);
+      return ResponseWrapper.success(res, result, 'Agency details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/requests/my:
    *   get:
    *     summary: Get user's agency join requests
@@ -449,9 +470,15 @@ export default (router: Router) => {
    *         name: id
    *         required: true
    *         schema: { type: string }
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer, default: 1 }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer, default: 10 }
    *     responses:
    *       200:
-   *         description: Agency hosts fetched successfully
+   *         description: Agency hosts fetched successfully with pagination
    */
   agencyRouter.get('/:id/hosts', async (req: any, res: Response) => {
     try {
@@ -498,9 +525,45 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/{id}/host-history:
+   *   get:
+   *     summary: Get agency host add history
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer, default: 1 }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer, default: 10 }
+   *     responses:
+   *       200:
+   *         description: Host add history fetched successfully
+   */
+  agencyRouter.get('/:id/host-history', async (req: any, res: Response) => {
+    try {
+      const adminUserId = req.user.id;
+      const agencyId = req.params.id;
+      const page = req.query.page ? parseInt(req.query.page) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+      const result = await agencyService.getHostAddHistory(agencyId, adminUserId, page, limit);
+      return ResponseWrapper.success(res, result, 'Host add history fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/verify-user/{userId}:
    *   post:
-   *     summary: Verify user details for agency host addition and optionally add them
+   *     summary: Check user for host invite (country, level, agency status)
    *     tags: [Agencies]
    *     security:
    *       - bearerAuth: []
@@ -519,7 +582,7 @@ export default (router: Router) => {
    *               agencyId: { type: string }
    *     responses:
    *       200:
-   *         description: User verified and added successfully
+   *         description: User checked successfully for host invite
    */
   agencyRouter.post('/verify-user/:userId', async (req: any, res: Response) => {
     try {
@@ -532,7 +595,7 @@ export default (router: Router) => {
       }
       
       const result = await agencyService.verifyUserForHost(targetUserId, adminUserId, agencyId);
-      return ResponseWrapper.success(res, result, 'User details fetched and host added successfully');
+      return ResponseWrapper.success(res, result, 'User checked successfully for host invite');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -684,7 +747,7 @@ export default (router: Router) => {
    */
   agencyRouter.get('/:id', async (req: any, res: Response) => {
     try {
-      const result = await agencyService.getAgency(req.params.id);
+      const result = await agencyService.getAgency(req.params.id, req.user.id);
       return ResponseWrapper.success(res, result, 'Agency details fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

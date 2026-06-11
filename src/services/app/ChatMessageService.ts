@@ -114,6 +114,41 @@ export class ChatMessageService {
     return populatedMessage;
   }
 
+  async createSystemChatMessage(senderId: string, chatId: string, text: string) {
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+    const senderObjectId = new mongoose.Types.ObjectId(senderId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': senderObjectId,
+    });
+
+    if (!chat) {
+      throw new Error('Not a participant of this chat');
+    }
+
+    const message = await Message.create({
+      chatId: chatObjectId,
+      senderId: senderObjectId,
+      type: 'system',
+      text,
+      seenBy: [{ userId: senderObjectId, seenAt: new Date() }],
+      reactions: [],
+    });
+
+    const populatedMessage = await this.populateMessage(message._id as mongoose.Types.ObjectId);
+    this.emitSocketEvent('new_message', `chat_${chatId}`, populatedMessage);
+
+    for (const participant of chat.participants) {
+      if (participant.userId) {
+        this.emitSocketEvent('new_message', `user_${participant.userId.toString()}`, populatedMessage);
+      }
+    }
+
+    await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+    return populatedMessage;
+  }
+
   async updateAgencyHostInviteStatus(
     messageId: string,
     status: 'ACCEPTED' | 'REJECTED',
@@ -132,15 +167,35 @@ export class ChatMessageService {
       throw new Error('Host invite already responded');
     }
 
+    const chatId = message.chatId.toString();
+    const chat = await Chat.findById(message.chatId);
+
     metadata.status = status;
+
+    if (status === 'REJECTED') {
+      message.deletedAt = new Date();
+      message.metadata = metadata;
+      await message.save();
+
+      if (chat) {
+        for (const participant of chat.participants) {
+          if (participant.userId) {
+            this.emitSocketEvent('message_deleted', `user_${participant.userId.toString()}`, { messageId, chatId });
+          }
+        }
+        this.emitSocketEvent('message_deleted', `chat_${chatId}`, { messageId, chatId });
+      }
+
+      await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+      return null;
+    }
+
     message.metadata = metadata;
     message.text = responseText;
     await message.save();
 
     const populatedMessage = await this.populateMessage(messageObjectId);
-    const chatId = message.chatId.toString();
 
-    const chat = await Chat.findById(message.chatId);
     if (chat) {
       for (const participant of chat.participants) {
         if (participant.userId) {
@@ -150,29 +205,7 @@ export class ChatMessageService {
       this.emitSocketEvent('message_updated', `chat_${chatId}`, populatedMessage);
     }
 
-    const responderObjectId = new mongoose.Types.ObjectId(responderId);
-    const systemMessage = await Message.create({
-      chatId: message.chatId,
-      senderId: responderObjectId,
-      type: 'system',
-      text: responseText,
-      seenBy: [{ userId: responderObjectId, seenAt: new Date() }],
-      reactions: [],
-    });
-
-    const populatedSystemMessage = await this.populateMessage(systemMessage._id as mongoose.Types.ObjectId);
-    this.emitSocketEvent('new_message', `chat_${chatId}`, populatedSystemMessage);
-
-    if (chat) {
-      for (const participant of chat.participants) {
-        if (participant.userId) {
-          this.emitSocketEvent('new_message', `user_${participant.userId.toString()}`, populatedSystemMessage);
-        }
-      }
-    }
-
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
-
     return populatedMessage;
   }
 
