@@ -498,7 +498,8 @@ or
 | Action | Chat behavior |
 |--------|----------------|
 | **ACCEPT** | Invite message `metadata.status` → `ACCEPTED`, text updated. Socket: `message_updated` + `agency_host_invite_responded`. User becomes host. Refresh profile → `isBecomeHost: true`. |
-| **REJECT** | Invite message **deleted from chat** (hard removed). Socket: `message_deleted` + `agency_host_invite_responded`. |
+| **REJECT** | Invite message **deleted from chat** (hard removed). Socket: `message_deleted` + `agency_host_invite_responded` + `agency_host_invite_deleted`. |
+| **DELETE/CANCEL** | `DELETE /host-requests/{id}` — same socket events as reject. |
 
 **Response includes:**
 
@@ -680,17 +681,27 @@ socket.on('message_updated', (updatedMessage) => {
 
 ### 8.3 `message_deleted` listener
 
-Reject par message chat se delete hota hai:
+Reject / delete par message chat se delete hota hai:
 
 ```javascript
 socket.on('message_deleted', (payload) => {
-  // payload = { messageId, chatId, type, status, flag, requestId }
-  removeMessageFromChatList(payload.chatId, payload.messageId);
+  if (payload.type !== 'agency_host_invite') return;
 
-  if (payload.flag === 'reject') {
-    clearAgencyHostRequestBadge(payload.chatId);
-  }
+  // payload = { messageId, _id, chatId, type, status, flag, requestId, reason, message }
+  const messageId = payload.messageId || payload._id;
+  removeMessageFromChatList(payload.chatId, messageId);
+  clearAgencyHostRequestBadge(payload.chatId);
+  removePendingInvite(payload.requestId);
 });
+```
+
+**Important:** Reject API ke baad bhi API response se local UI update karo (socket backup ke liye):
+
+```javascript
+// POST /host-requests/{id}/respond with REJECTED
+if (response.data.messageAction === 'deleted') {
+  removeMessageFromChatList(response.data.chatId, response.data.messageId);
+}
 ```
 
 ---
@@ -702,8 +713,9 @@ socket.on('message_deleted', (payload) => {
 | `chat_created` | New chat (e.g. host invite) | Chat object |
 | `new_message` | New message in chat | Message object |
 | `message_updated` | Message changed (accept / open / verify) | **Full updated message** |
-| `message_deleted` | Invite rejected (message removed) | `{ messageId, chatId, type, flag, status, requestId }` |
-| `agency_host_invite_responded` | Accept or reject summary | `{ messageId, chatId, type, flag, status, requestId, message }` |
+| `message_deleted` | Invite rejected/deleted (message removed) | `{ messageId, _id, chatId, type, flag, status, requestId, reason, message }` |
+| `agency_host_invite_responded` | Accept, reject, or delete summary | `{ messageId, _id, chatId, type, flag, status, requestId, reason, message }` |
+| `agency_host_invite_deleted` | Invite cancelled/deleted | `{ messageId, _id, chatId, type, flag, status, requestId, reason, message }` |
 
 **Rooms you receive events on:**
 
@@ -729,7 +741,15 @@ socket.on('message_updated', (data) {
 
 socket.on('message_deleted', (data) {
   final payload = Map<String, dynamic>.from(data);
-  chatController.removeMessage(payload['chatId'], payload['messageId']);
+  if (payload['type'] != 'agency_host_invite') return;
+  final messageId = payload['messageId'] ?? payload['_id'];
+  chatController.removeMessage(payload['chatId'], messageId);
+});
+
+socket.on('agency_host_invite_deleted', (data) {
+  final payload = Map<String, dynamic>.from(data);
+  final messageId = payload['messageId'] ?? payload['_id'];
+  chatController.removeMessage(payload['chatId'], messageId);
 });
 ```
 
