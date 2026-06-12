@@ -583,7 +583,8 @@ export class AgencyService {
     let messageResult: { action: 'deleted'; messageId: string; chatId: string } | null = null;
     if (inviteMessage) {
       messageResult = await this.chatMessageService.deleteAgencyHostInviteMessage(
-        inviteMessage._id.toString()
+        inviteMessage._id.toString(),
+        actorUserId
       );
     }
 

@@ -1,5 +1,6 @@
 import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
+import { Server } from 'socket.io';
 import Chat from '../../models/Chat';
 import Message, {
   IAgencyHostInviteMetadata,
@@ -7,6 +8,7 @@ import Message, {
   toInviteFlag,
 } from '../../models/Message';
 import User from '../../models/User';
+import AppLogger from '../../api/loaders/logger';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { FirebasePushService } from '../common/FirebasePushService';
@@ -20,13 +22,99 @@ export class ChatMessageService {
     @Inject() private pushService: FirebasePushService,
   ) {}
 
-  private emitSocketEvent(event: string, room: string, payload: unknown) {
-    try {
-      const io = Container.get('socket') as { to: (room: string) => { emit: (event: string, payload: unknown) => void } };
-      io.to(room).emit(event, payload);
-    } catch {
-      // Socket server not available
+  private resolveUserId(value: unknown): string | null {
+    if (!value) return null;
+    if (typeof value === 'string') return value;
+    if (value instanceof mongoose.Types.ObjectId) return value.toString();
+
+    if (typeof value === 'object') {
+      const obj = value as { _id?: unknown; id?: unknown };
+      if (obj._id) return this.resolveUserId(obj._id);
+      if (obj.id) return this.resolveUserId(obj.id);
+      if (typeof (value as { toString?: () => string }).toString === 'function') {
+        const str = (value as { toString: () => string }).toString();
+        if (str && str !== '[object Object]' && mongoose.Types.ObjectId.isValid(str)) {
+          return str;
+        }
+      }
     }
+
+    return null;
+  }
+
+  private getSocketIo(): Server | null {
+    try {
+      return Container.get('socket') as Server;
+    } catch {
+      return null;
+    }
+  }
+
+  private emitSocketEvent(event: string, room: string, payload: unknown) {
+    const io = this.getSocketIo();
+    if (!io) {
+      AppLogger.warn(`Socket unavailable, skipped event: ${event} room: ${room}`);
+      return;
+    }
+    io.to(room).emit(event, payload);
+  }
+
+  private collectChatParticipantUserIds(
+    chat: { participants?: { userId?: unknown }[] } | null,
+    extraUserIds: string[] = []
+  ): string[] {
+    const ids = new Set<string>();
+
+    for (const extra of extraUserIds) {
+      const resolved = this.resolveUserId(extra);
+      if (resolved) ids.add(resolved);
+    }
+
+    for (const participant of chat?.participants ?? []) {
+      const resolved = this.resolveUserId(participant.userId);
+      if (resolved) ids.add(resolved);
+    }
+
+    return Array.from(ids);
+  }
+
+  private emitInviteMessageRemoved(payload: {
+    chatId: string;
+    messageId: string;
+    requestId: string;
+    chat: { participants?: { userId?: unknown }[] } | null;
+    notifyUserIds: string[];
+    reason: 'rejected' | 'cancelled';
+  }) {
+    const eventPayload = {
+      messageId: payload.messageId,
+      _id: payload.messageId,
+      chatId: payload.chatId,
+      type: 'agency_host_invite',
+      requestId: payload.requestId,
+      status: 'REJECTED',
+      flag: 'reject',
+      reason: payload.reason,
+      message: null,
+    };
+
+    const userIds = this.collectChatParticipantUserIds(payload.chat, payload.notifyUserIds);
+    if (userIds.length === 0) {
+      AppLogger.warn(
+        `No socket recipients for invite message delete. chatId=${payload.chatId} messageId=${payload.messageId}`
+      );
+    }
+
+    for (const userId of userIds) {
+      const room = `user_${userId}`;
+      this.emitSocketEvent('message_deleted', room, eventPayload);
+      this.emitSocketEvent('agency_host_invite_responded', room, eventPayload);
+      this.emitSocketEvent('agency_host_invite_deleted', room, eventPayload);
+    }
+
+    this.emitSocketEvent('message_deleted', `chat_${payload.chatId}`, eventPayload);
+    this.emitSocketEvent('agency_host_invite_responded', `chat_${payload.chatId}`, eventPayload);
+    this.emitSocketEvent('agency_host_invite_deleted', `chat_${payload.chatId}`, eventPayload);
   }
 
   private async populateMessage(messageId: mongoose.Types.ObjectId) {
@@ -174,19 +262,31 @@ export class ChatMessageService {
   }
 
   private emitInviteResponseEvents(
-    chat: (mongoose.Document & { participants: { userId?: mongoose.Types.ObjectId }[] }) | null,
+    chat: { participants?: { userId?: unknown }[] } | null,
     chatId: string,
     payload: {
       messageId: string;
       status: 'ACCEPTED' | 'REJECTED';
       requestId: string;
       message?: unknown;
+      notifyUserIds?: string[];
     }
   ) {
-    if (!chat) return;
+    if (payload.status === 'REJECTED') {
+      this.emitInviteMessageRemoved({
+        chatId,
+        messageId: payload.messageId,
+        requestId: payload.requestId,
+        chat,
+        notifyUserIds: payload.notifyUserIds ?? [],
+        reason: 'rejected',
+      });
+      return;
+    }
 
     const eventPayload = {
       messageId: payload.messageId,
+      _id: payload.messageId,
       chatId,
       type: 'agency_host_invite',
       status: payload.status,
@@ -195,53 +295,18 @@ export class ChatMessageService {
       message: payload.message ?? null,
     };
 
-    for (const participant of chat.participants) {
-      if (participant.userId) {
-        const room = `user_${participant.userId.toString()}`;
-        if (payload.status === 'REJECTED') {
-          this.emitSocketEvent('message_deleted', room, eventPayload);
-        } else {
-          this.emitSocketEvent('message_updated', room, payload.message);
-        }
-        this.emitSocketEvent('agency_host_invite_responded', room, eventPayload);
-      }
+    const userIds = this.collectChatParticipantUserIds(chat, payload.notifyUserIds ?? []);
+    for (const userId of userIds) {
+      const room = `user_${userId}`;
+      this.emitSocketEvent('message_updated', room, payload.message);
+      this.emitSocketEvent('agency_host_invite_responded', room, eventPayload);
     }
 
-    if (payload.status === 'REJECTED') {
-      this.emitSocketEvent('message_deleted', `chat_${chatId}`, eventPayload);
-    } else {
-      this.emitSocketEvent('message_updated', `chat_${chatId}`, payload.message);
-    }
+    this.emitSocketEvent('message_updated', `chat_${chatId}`, payload.message);
     this.emitSocketEvent('agency_host_invite_responded', `chat_${chatId}`, eventPayload);
   }
 
-  private emitInviteDeletedEvents(
-    chat: (mongoose.Document & { participants: { userId?: mongoose.Types.ObjectId }[] }) | null,
-    chatId: string,
-    payload: { messageId: string; requestId: string }
-  ) {
-    if (!chat) return;
-
-    const eventPayload = {
-      messageId: payload.messageId,
-      chatId,
-      type: 'agency_host_invite',
-      requestId: payload.requestId,
-    };
-
-    for (const participant of chat.participants) {
-      if (participant.userId) {
-        const room = `user_${participant.userId.toString()}`;
-        this.emitSocketEvent('message_deleted', room, eventPayload);
-        this.emitSocketEvent('agency_host_invite_deleted', room, eventPayload);
-      }
-    }
-
-    this.emitSocketEvent('message_deleted', `chat_${chatId}`, eventPayload);
-    this.emitSocketEvent('agency_host_invite_deleted', `chat_${chatId}`, eventPayload);
-  }
-
-  async deleteAgencyHostInviteMessage(messageId: string) {
+  async deleteAgencyHostInviteMessage(messageId: string, actorUserId: string) {
     const messageObjectId = new mongoose.Types.ObjectId(messageId);
     const message = await Message.findById(messageObjectId);
 
@@ -255,13 +320,18 @@ export class ChatMessageService {
     }
 
     const chatId = message.chatId.toString();
+    const senderId = this.resolveUserId(message.senderId);
     const chat = await Chat.findById(message.chatId);
 
     await Message.findByIdAndDelete(messageObjectId);
 
-    this.emitInviteDeletedEvents(chat, chatId, {
+    this.emitInviteMessageRemoved({
+      chatId,
       messageId,
       requestId: metadata.agencyHostRequestId,
+      chat,
+      notifyUserIds: [actorUserId, ...(senderId ? [senderId] : [])],
+      reason: 'cancelled',
     });
 
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
@@ -272,7 +342,7 @@ export class ChatMessageService {
     messageId: string,
     status: 'ACCEPTED' | 'REJECTED',
     responseText: string,
-    _responderId: string
+    responderId: string
   ) {
     const messageObjectId = new mongoose.Types.ObjectId(messageId);
     const message = await Message.findById(messageObjectId);
@@ -287,9 +357,11 @@ export class ChatMessageService {
     }
 
     const chatId = message.chatId.toString();
+    const senderId = this.resolveUserId(message.senderId);
     const chat = await Chat.findById(message.chatId);
     metadata.status = status;
     metadata.flag = toInviteFlag(status);
+    const notifyUserIds = [responderId, ...(senderId ? [senderId] : [])];
 
     if (status === 'REJECTED') {
       await Message.findByIdAndDelete(messageObjectId);
@@ -298,6 +370,7 @@ export class ChatMessageService {
         messageId,
         status,
         requestId: metadata.agencyHostRequestId,
+        notifyUserIds,
       });
 
       await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
@@ -316,6 +389,7 @@ export class ChatMessageService {
       status,
       requestId: metadata.agencyHostRequestId,
       message: populatedMessage,
+      notifyUserIds,
     });
 
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
