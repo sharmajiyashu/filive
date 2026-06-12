@@ -215,6 +215,59 @@ export class ChatMessageService {
     this.emitSocketEvent('agency_host_invite_responded', `chat_${chatId}`, eventPayload);
   }
 
+  private emitInviteDeletedEvents(
+    chat: (mongoose.Document & { participants: { userId?: mongoose.Types.ObjectId }[] }) | null,
+    chatId: string,
+    payload: { messageId: string; requestId: string }
+  ) {
+    if (!chat) return;
+
+    const eventPayload = {
+      messageId: payload.messageId,
+      chatId,
+      type: 'agency_host_invite',
+      requestId: payload.requestId,
+    };
+
+    for (const participant of chat.participants) {
+      if (participant.userId) {
+        const room = `user_${participant.userId.toString()}`;
+        this.emitSocketEvent('message_deleted', room, eventPayload);
+        this.emitSocketEvent('agency_host_invite_deleted', room, eventPayload);
+      }
+    }
+
+    this.emitSocketEvent('message_deleted', `chat_${chatId}`, eventPayload);
+    this.emitSocketEvent('agency_host_invite_deleted', `chat_${chatId}`, eventPayload);
+  }
+
+  async deleteAgencyHostInviteMessage(messageId: string) {
+    const messageObjectId = new mongoose.Types.ObjectId(messageId);
+    const message = await Message.findById(messageObjectId);
+
+    if (!message || message.type !== 'agency_host_invite' || !message.metadata) {
+      throw new Error('Host invite message not found');
+    }
+
+    const metadata = message.metadata as IAgencyHostInviteMetadata;
+    if (metadata.status !== 'PENDING') {
+      throw new Error('Host invite already responded');
+    }
+
+    const chatId = message.chatId.toString();
+    const chat = await Chat.findById(message.chatId);
+
+    await Message.findByIdAndDelete(messageObjectId);
+
+    this.emitInviteDeletedEvents(chat, chatId, {
+      messageId,
+      requestId: metadata.agencyHostRequestId,
+    });
+
+    await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
+    return { action: 'deleted' as const, messageId, chatId };
+  }
+
   async updateAgencyHostInviteStatus(
     messageId: string,
     status: 'ACCEPTED' | 'REJECTED',
