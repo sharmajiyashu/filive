@@ -117,6 +117,91 @@ export class ChatMessageService {
     this.emitSocketEvent('agency_host_invite_deleted', `chat_${payload.chatId}`, eventPayload);
   }
 
+  private normalizeInviteMessageForSocket(message: unknown) {
+    if (!message) return null;
+
+    const raw =
+      typeof (message as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+        ? (message as mongoose.Document).toObject({ virtuals: true })
+        : { ...(message as Record<string, unknown>) };
+
+    const formatted = formatAgencyHostInviteMessage(raw) as Record<string, unknown>;
+    const metadata = (formatted.metadata ?? {}) as IAgencyHostInviteMetadata;
+    const flag = (formatted.flag as string) ?? metadata.flag ?? toInviteFlag(metadata.status ?? 'PENDING');
+
+    return {
+      ...formatted,
+      _id: this.resolveUserId(formatted._id) ?? formatted._id,
+      chatId: this.resolveUserId(formatted.chatId) ?? formatted.chatId,
+      type: 'agency_host_invite',
+      flag,
+      metadata: {
+        ...metadata,
+        type: 'agency_host_invite',
+        flag,
+      },
+    };
+  }
+
+  private emitInviteMessageUpdated(
+    chat: { participants?: { userId?: unknown }[] } | null,
+    chatId: string,
+    updatedMessage: unknown,
+    notifyUserIds: string[] = []
+  ) {
+    const socketMessage = this.normalizeInviteMessageForSocket(updatedMessage);
+    if (!socketMessage) return;
+
+    const userIds = this.collectChatParticipantUserIds(chat, notifyUserIds);
+    for (const userId of userIds) {
+      this.emitSocketEvent('message_updated', `user_${userId}`, socketMessage);
+    }
+
+    this.emitSocketEvent('message_updated', `chat_${chatId}`, socketMessage);
+    return socketMessage;
+  }
+
+  private emitInviteMessageAccepted(payload: {
+    chatId: string;
+    messageId: string;
+    requestId: string;
+    chat: { participants?: { userId?: unknown }[] } | null;
+    notifyUserIds: string[];
+    updatedMessage: unknown;
+  }) {
+    const socketMessage = this.emitInviteMessageUpdated(
+      payload.chat,
+      payload.chatId,
+      payload.updatedMessage,
+      payload.notifyUserIds
+    );
+
+    if (!socketMessage) {
+      AppLogger.warn(
+        `Skipped invite accept socket emit, message missing. messageId=${payload.messageId}`
+      );
+      return;
+    }
+
+    const summaryPayload = {
+      messageId: payload.messageId,
+      _id: payload.messageId,
+      chatId: payload.chatId,
+      type: 'agency_host_invite',
+      status: 'ACCEPTED',
+      flag: 'accept',
+      requestId: payload.requestId,
+      message: socketMessage,
+    };
+
+    const userIds = this.collectChatParticipantUserIds(payload.chat, payload.notifyUserIds);
+    for (const userId of userIds) {
+      this.emitSocketEvent('agency_host_invite_responded', `user_${userId}`, summaryPayload);
+    }
+
+    this.emitSocketEvent('agency_host_invite_responded', `chat_${payload.chatId}`, summaryPayload);
+  }
+
   private async populateMessage(messageId: mongoose.Types.ObjectId) {
     const message = await Message.findById(messageId)
       .populate({
@@ -284,26 +369,14 @@ export class ChatMessageService {
       return;
     }
 
-    const eventPayload = {
-      messageId: payload.messageId,
-      _id: payload.messageId,
+    this.emitInviteMessageAccepted({
       chatId,
-      type: 'agency_host_invite',
-      status: payload.status,
-      flag: toInviteFlag(payload.status),
+      messageId: payload.messageId,
       requestId: payload.requestId,
-      message: payload.message ?? null,
-    };
-
-    const userIds = this.collectChatParticipantUserIds(chat, payload.notifyUserIds ?? []);
-    for (const userId of userIds) {
-      const room = `user_${userId}`;
-      this.emitSocketEvent('message_updated', room, payload.message);
-      this.emitSocketEvent('agency_host_invite_responded', room, eventPayload);
-    }
-
-    this.emitSocketEvent('message_updated', `chat_${chatId}`, payload.message);
-    this.emitSocketEvent('agency_host_invite_responded', `chat_${chatId}`, eventPayload);
+      chat,
+      notifyUserIds: payload.notifyUserIds ?? [],
+      updatedMessage: payload.message,
+    });
   }
 
   async deleteAgencyHostInviteMessage(messageId: string, actorUserId: string) {
@@ -383,17 +456,24 @@ export class ChatMessageService {
     await message.save();
 
     const populatedMessage = await this.populateMessage(messageObjectId);
+    const socketMessage = this.normalizeInviteMessageForSocket(populatedMessage);
 
     this.emitInviteResponseEvents(chat, chatId, {
       messageId,
       status,
       requestId: metadata.agencyHostRequestId,
-      message: populatedMessage,
+      message: socketMessage ?? populatedMessage,
       notifyUserIds,
     });
 
     await Chat.findByIdAndUpdate(chatId, { updatedAt: new Date() });
-    return { action: 'updated' as const, messageId, chatId, status, message: populatedMessage };
+    return {
+      action: 'updated' as const,
+      messageId,
+      chatId,
+      status,
+      message: socketMessage ?? populatedMessage,
+    };
   }
 
   async syncAgencyHostInviteFlags(
@@ -426,15 +506,14 @@ export class ChatMessageService {
     const populatedMessage = await this.populateMessage(messageObjectId);
     const chatId = message.chatId.toString();
     const chat = await Chat.findById(message.chatId);
+    const senderId = this.resolveUserId(message.senderId);
 
-    if (chat) {
-      for (const participant of chat.participants) {
-        if (participant.userId) {
-          this.emitSocketEvent('message_updated', `user_${participant.userId.toString()}`, populatedMessage);
-        }
-      }
-      this.emitSocketEvent('message_updated', `chat_${chatId}`, populatedMessage);
-    }
+    this.emitInviteMessageUpdated(
+      chat,
+      chatId,
+      populatedMessage,
+      senderId ? [senderId] : []
+    );
 
     return populatedMessage;
   }
