@@ -210,6 +210,20 @@ const baseDefinition = {
           totalPages: { type: 'integer' },
         },
       },
+      HostInviteDeleteResponse: {
+        type: 'object',
+        properties: {
+          requestId: { type: 'string', description: 'Deleted agency host request ID' },
+          agencyId: { type: 'string', description: 'Agency MongoDB _id' },
+          messageAction: {
+            type: 'string',
+            enum: ['deleted', 'none'],
+            description: 'Whether the related chat invite message was deleted',
+          },
+          messageId: { type: 'string', nullable: true, description: 'Deleted invite message ID' },
+          chatId: { type: 'string', nullable: true, description: 'Chat ID where invite message was sent' },
+        },
+      },
       AddHostResponse: {
         type: 'object',
         allOf: [

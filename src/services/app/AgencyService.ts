@@ -549,6 +549,55 @@ export class AgencyService {
     }
   }
 
+  public async deleteHostInvite(actorUserId: string, requestId: string) {
+    const request = await AgencyHost.findById(requestId);
+    if (!request) {
+      throw new Error('Host invite not found');
+    }
+
+    if (request.requestedBy !== 'AGENCY') {
+      throw new Error('Invalid host invite type');
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new Error('Only pending host invites can be deleted');
+    }
+
+    const agency = await Agency.findById(request.agencyId);
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+
+    const isInvitedUser = request.userId.toString() === actorUserId;
+    const isAgencyAdmin = agency.creatorId.toString() === actorUserId;
+
+    if (!isInvitedUser && !isAgencyAdmin) {
+      throw new Error('Unauthorized to delete this invite');
+    }
+
+    const inviteMessage = await this.chatMessageService.findAgencyHostInviteMessage(
+      requestId,
+      request.messageId?.toString()
+    );
+
+    let messageResult: { action: 'deleted'; messageId: string; chatId: string } | null = null;
+    if (inviteMessage) {
+      messageResult = await this.chatMessageService.deleteAgencyHostInviteMessage(
+        inviteMessage._id.toString()
+      );
+    }
+
+    await AgencyHost.findByIdAndDelete(requestId);
+
+    return {
+      requestId,
+      agencyId: request.agencyId.toString(),
+      messageAction: messageResult?.action ?? 'none',
+      messageId: inviteMessage?._id.toString() ?? null,
+      chatId: inviteMessage?.chatId.toString() ?? null,
+    };
+  }
+
   public async getPendingHostInvites(userId: string, page: number = 1, limit: number = 10) {
     const skip = (page - 1) * limit;
     const userObjectId = new mongoose.Types.ObjectId(userId);

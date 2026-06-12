@@ -348,6 +348,49 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/agencies/host-requests/{requestId}:
+   *   delete:
+   *     summary: Delete a pending agency host invite
+   *     description: |
+   *       Cancels and removes a pending host invitation. Allowed for the invited user or the agency admin who sent the invite.
+   *       Deletes the AgencyHost request and the related agency_host_invite chat message.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: requestId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Agency host request ID from invite metadata
+   *     responses:
+   *       200:
+   *         description: Host invite deleted successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 data:
+   *                   $ref: '#/components/schemas/HostInviteDeleteResponse'
+   *       400:
+   *         description: Invite not found, already responded, or not pending
+   *       403:
+   *         description: Unauthorized to delete this invite
+   */
+  agencyRouter.delete('/host-requests/:requestId', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await agencyService.deleteHostInvite(userId, req.params.requestId);
+      return ResponseWrapper.success(res, result, 'Host invite deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/agencies/{id}/join:
    *   post:
    *     summary: Join an agency as host by agency MongoDB ID
