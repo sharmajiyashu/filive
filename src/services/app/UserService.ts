@@ -7,6 +7,7 @@ import Comment from '../../models/Comment';
 import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
 import Chat from '../../models/Chat';
+import LiveStream from '../../models/LiveStream';
 import mongoose from 'mongoose';
 
 import { LevelService } from './LevelService';
@@ -211,6 +212,9 @@ export class UserService {
       }
     }
 
+    // Check if the user has an active livestream
+    const activeLive = await LiveStream.findOne({ hostId: user._id, status: 'live' });
+
     return {
       user: {
         ...user.toObject(),
@@ -219,7 +223,9 @@ export class UserService {
         richLevelInfo,
         charmLevelInfo,
         isChatCreated,
-        chatId
+        chatId,
+        isLive: !!activeLive,
+        liveStream: activeLive ? activeLive.toObject() : null
       },
       isFollowing: isFollowingAuthor,
       isChatCreated,
