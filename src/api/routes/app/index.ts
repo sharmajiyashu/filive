@@ -15,6 +15,7 @@ import ranking from './ranking';
 import chat from './chat';
 import coinSeller from './coinSeller';
 import store from './store';
+import liveStream from './liveStream';
 
 export default (router: Router): Router => {
   profile(router);
@@ -33,5 +34,6 @@ export default (router: Router): Router => {
   chat(router);
   coinSeller(router);
   store(router);
+  liveStream(router);
   return router;
 };

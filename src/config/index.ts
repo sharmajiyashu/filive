@@ -67,5 +67,9 @@ export default {
         baseUrl: process.env.DIGIVERIFICATION_BASE_URL || 'https://api.digiverification.com',
         partnerCode: process.env.DIGIVERIFICATION_PARTNER_CODE || 'ESP00116',
         tokenKey: process.env.DIGIVERIFICATION_TOKEN_KEY || '735c6e47fe346bdec8c9fead340e1f911b5fcf9f'
+    },
+    agora: {
+        appId: process.env.AGORA_APP_ID || 'ca641267ba3648fa8c2f2474e9eeac72',
+        appCertificate: process.env.AGORA_APP_CERTIFICATE || '256cb89b013645978d1f6af54899d414'
     }
 };
