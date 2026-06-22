@@ -13,9 +13,9 @@ export class LiveStreamService {
   public generateAgoraToken(channelName: string, uid: number, role: 'publisher' | 'subscriber'): string {
     const appId = config.agora.appId;
     const appCertificate = config.agora.appCertificate;
-    
+
     const rtcRole = role === 'publisher' ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
-    
+
     // Set token expiration to 2 hours (7200 seconds)
     const expirationTimeInSeconds = 7200;
     const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -43,7 +43,13 @@ export class LiveStreamService {
     // Check if the user is already hosting a live stream
     const activeStream = await LiveStream.findOne({ hostId, status: 'live' });
     if (activeStream) {
-      return activeStream;
+      const populatedStream = await LiveStream.findById(activeStream._id).populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      });
+      return populatedStream || activeStream;
     }
 
     const host = await User.findById(hostId);
@@ -53,7 +59,7 @@ export class LiveStreamService {
 
     // Generate unique channel name, e.g. live_hostId_timestamp
     const channelName = `live_${hostId}_${Date.now()}`;
-    
+
     // Generate Agora RTC token for the host (broadcaster/publisher).
     // Host RTC UID can be 0 (default/auto-assign)
     const token = this.generateAgoraToken(channelName, 0, 'publisher');
@@ -69,7 +75,14 @@ export class LiveStreamService {
       startedAt: new Date()
     });
 
-    return liveStream;
+    const populatedStream = await LiveStream.findById(liveStream._id).populate({
+      path: 'hostId',
+      populate: {
+        path: 'profileImage'
+      }
+    });
+
+    return populatedStream || liveStream;
   }
 
   /**
@@ -96,7 +109,14 @@ export class LiveStreamService {
     liveStream.viewerCount = 0;
     await liveStream.save();
 
-    return liveStream;
+    const populatedStream = await LiveStream.findById(liveStream._id).populate({
+      path: 'hostId',
+      populate: {
+        path: 'profileImage'
+      }
+    });
+
+    return populatedStream || liveStream;
   }
 
   /**
@@ -113,7 +133,7 @@ export class LiveStreamService {
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    
+
     // Avoid duplicate entries in viewers list
     if (!liveStream.viewers.some(id => id.toString() === userId)) {
       liveStream.viewers.push(userObjectId);
@@ -121,7 +141,14 @@ export class LiveStreamService {
       await liveStream.save();
     }
 
-    return liveStream;
+    const populatedStream = await LiveStream.findById(liveStream._id).populate({
+      path: 'hostId',
+      populate: {
+        path: 'profileImage'
+      }
+    });
+
+    return populatedStream || liveStream;
   }
 
   /**
@@ -141,7 +168,14 @@ export class LiveStreamService {
     liveStream.viewerCount = liveStream.viewers.length;
     await liveStream.save();
 
-    return liveStream;
+    const populatedStream = await LiveStream.findById(liveStream._id).populate({
+      path: 'hostId',
+      populate: {
+        path: 'profileImage'
+      }
+    });
+
+    return populatedStream || liveStream;
   }
 
   /**
@@ -149,9 +183,14 @@ export class LiveStreamService {
    */
   public async getActiveLiveStreams(page: number = 1, limit: number = 10) {
     const query = { status: 'live' };
-    
+
     const streams = await LiveStream.find(query)
-      .populate('hostId', 'userId name email profileImage bio location isPremium gender country')
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
       .sort({ viewerCount: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
