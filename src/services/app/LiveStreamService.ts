@@ -1,4 +1,4 @@
-import { Service } from 'typedi';
+import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import LiveStream from '../../models/LiveStream';
@@ -85,6 +85,14 @@ export class LiveStreamService {
     return populatedStream || liveStream;
   }
 
+  private getSocketIo() {
+    try {
+      return Container.get('socket') as any;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Ends an active live stream
    */
@@ -108,6 +116,15 @@ export class LiveStreamService {
     liveStream.viewers = [];
     liveStream.viewerCount = 0;
     await liveStream.save();
+
+    // Emit live_ended event to notifying all socket clients in the room
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`live_${liveStream.channelName}`).emit('live_ended', {
+        channelName: liveStream.channelName,
+        message: 'Livestream has been ended by the host'
+      });
+    }
 
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
       path: 'hostId',
