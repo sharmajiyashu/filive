@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import Container from 'typedi';
 import { LiveStreamService } from '../../../services/app/LiveStreamService';
 import { ResponseWrapper } from '../../responseWrapper';
+import AppLogger from '../../loaders/logger';
 
 export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
@@ -33,15 +34,19 @@ export default (router: Router) => {
    *         description: Livestream started successfully
    */
   liveRouter.post('/start', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/live/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { title } = req.body;
       if (!title) {
+        AppLogger.warn(`[HTTP POST /app/live/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream');
       }
-      const userId = req.user.id;
       const result = await liveStreamService.startLiveStream(userId, title);
+      AppLogger.info(`[HTTP POST /app/live/start] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream started successfully');
     } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/live/start] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -59,11 +64,14 @@ export default (router: Router) => {
    *         description: Livestream ended successfully
    */
   liveRouter.post('/end', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/live/end] Request received. userId=${userId}`);
     try {
-      const userId = req.user.id;
       const result = await liveStreamService.endLiveStream(userId);
+      AppLogger.info(`[HTTP POST /app/live/end] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream ended successfully');
     } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/live/end] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -90,12 +98,16 @@ export default (router: Router) => {
    *         description: Active live streams fetched successfully
    */
   liveRouter.get('/list', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP GET /app/live/list] Request received. userId=${userId}, query=${JSON.stringify(req.query)}`);
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const result = await liveStreamService.getActiveLiveStreams(page, limit);
+      AppLogger.info(`[HTTP GET /app/live/list] Success. Found ${result.streams?.length || 0} active streams.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/live/list] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });

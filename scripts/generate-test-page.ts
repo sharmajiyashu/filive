@@ -1,0 +1,643 @@
+import 'reflect-metadata';
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import dns from 'node:dns';
+import * as jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
+
+dns.setDefaultResultOrder('ipv4first');
+try {
+    dns.setServers(['8.8.8.8', '8.8.4.4']);
+} catch {
+    // ignore
+}
+
+dotenv.config();
+
+import config from '../src/config';
+import User from '../src/models/User';
+
+function generateToken(userId: string, role: string): string {
+    const payload = { userId, role };
+    const secret = config.auth.secret;
+    const options: jwt.SignOptions = {
+        expiresIn: '30d' // Long expiry for testing
+    };
+    return jwt.sign(payload, secret, options) as string;
+}
+
+async function run() {
+    console.log('Connecting to database...');
+    await mongoose.connect(process.env.MONGODB_URI || '');
+    console.log('Connected to database.');
+
+    // Find or create dummy host and viewer with requested emails
+    let host = await User.findOne({ email: 'testhost@gmail.com' });
+    if (!host) {
+        host = await User.create({
+            name: 'Test Host',
+            email: 'testhost@gmail.com',
+            mobile: '1111111112',
+            userRole: 'user',
+        });
+    }
+
+    let viewer = await User.findOne({ email: 'testviewer@gmail.com' });
+    if (!viewer) {
+        viewer = await User.create({
+            name: 'Test Viewer',
+            email: 'testviewer@gmail.com',
+            mobile: '2222222223',
+            userRole: 'user',
+        });
+    }
+
+    const hostToken = generateToken(host._id.toString(), host.userRole);
+    const viewerToken = generateToken(viewer._id.toString(), viewer.userRole);
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filive Step-by-Step Testing Suite</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --sidebar-bg: #0f172a;
+            --text-color: #f1f5f9;
+            --accent-primary: #6366f1;
+            --accent-secondary: #06b6d4;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --border-color: #334155;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0b0f19;
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar / Left Column */
+        .sidebar {
+            width: 320px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        /* Main Workspace / Right Column */
+        .workspace {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .main-header {
+            padding: 15px 30px;
+            background-color: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .main-header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--accent-secondary);
+        }
+
+        .dashboard-content {
+            padding: 20px 30px;
+            flex-grow: 1;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .host-panel h2 { color: #f43f5e; border-bottom-color: #f43f5e; }
+        .viewer-panel h2 { color: #3b82f6; border-bottom-color: #3b82f6; }
+
+        .step-card {
+            background: #131e35;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .step-title {
+            font-weight: bold;
+            color: var(--accent-secondary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.85em;
+            color: #94a3b8;
+        }
+
+        .form-group input, .form-group textarea {
+            width: 100%;
+            background: #090d16;
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 0.9em;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 8px 14px;
+            border-radius: 4px;
+            border: none;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary { background-color: var(--accent-primary); color: white; }
+        .btn-primary:hover { background-color: #4f46e5; }
+        
+        .btn-secondary { background-color: #475569; color: white; }
+        .btn-secondary:hover { background-color: #334155; }
+
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-success:hover { background-color: #059669; }
+
+        .btn-danger { background-color: var(--danger); color: white; }
+        .btn-danger:hover { background-color: #dc2626; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .status-disconnected { background-color: var(--danger); color: white; }
+        .status-connected { background-color: var(--success); color: white; }
+
+        /* Log console */
+        .console-container {
+            height: 250px;
+            background-color: #050b14;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .console-header {
+            padding: 8px 20px;
+            background: #0b1320;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .console-header h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .console-logs {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 6px;
+            border-bottom: 1px dashed #111a2e;
+            padding-bottom: 3px;
+        }
+
+        .log-time { color: #475569; }
+        .log-info { color: #cbd5e1; }
+        .log-event { color: #f59e0b; }
+        .log-success { color: var(--success); }
+        .log-error { color: var(--danger); }
+    </style>
+</head>
+<body>
+    <!-- Sidebar / Left Panel -->
+    <div class="sidebar">
+        <h2 style="color: var(--accent-secondary); font-size: 1.3rem; margin-top: 0;">Configuration</h2>
+        
+        <div class="form-group">
+            <label>Server URL</label>
+            <input type="text" id="serverUrl" value="http://localhost:3000">
+        </div>
+
+        <div class="form-group">
+            <label>Active Channel Name</label>
+            <input type="text" id="channelInput" value="live_test_channel">
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); width: 100%;">
+
+        <div style="background: #111a2e; padding: 10px; border-radius: 6px; font-size: 0.8em; border: 1px solid var(--border-color);">
+            <strong style="color: #f43f5e;">Host (testhost@gmail.com)</strong>
+            <p style="margin: 4px 0 8px 0; color: #94a3b8; word-break: break-all;">ID: ${host._id.toString()}</p>
+            <textarea id="hostToken" style="width: 100%; height: 60px; font-size: 0.75em; background: #050b14; border: 1px solid var(--border-color); color: #cbd5e1; resize: none;" readonly>${hostToken}</textarea>
+        </div>
+
+        <div style="background: #111a2e; padding: 10px; border-radius: 6px; font-size: 0.8em; border: 1px solid var(--border-color);">
+            <strong style="color: #3b82f6;">Viewer (testviewer@gmail.com)</strong>
+            <p style="margin: 4px 0 8px 0; color: #94a3b8; word-break: break-all;">ID: ${viewer._id.toString()}</p>
+            <textarea id="viewerToken" style="width: 100%; height: 60px; font-size: 0.75em; background: #050b14; border: 1px solid var(--border-color); color: #cbd5e1; resize: none;" readonly>${viewerToken}</textarea>
+        </div>
+    </div>
+
+    <!-- Workspace / Right Panel -->
+    <div class="workspace">
+        <div class="main-header">
+            <h1>Filive Step-by-Step Testing Suite 🎬</h1>
+            <div>
+                <span style="font-size: 0.85em; color: #64748b;">DB: MongoDB Atlas</span>
+            </div>
+        </div>
+
+        <div class="dashboard-content">
+            <!-- HOST PANEL -->
+            <div class="panel host-panel">
+                <h2>1. Host (Streamer) <span id="hostStatus" class="status-badge status-disconnected">OFFLINE</span></h2>
+                
+                <!-- Step 1: Connect Socket -->
+                <div class="step-card">
+                    <div class="step-title">Step 1.1: Connect Host Socket</div>
+                    <p style="font-size: 0.8em; color: #94a3b8; margin: 0 0 10px 0;">Establish live socket link using host's credentials.</p>
+                    <div class="btn-group">
+                        <button class="btn-primary" onclick="connectHost()">Connect Host Socket</button>
+                        <button class="btn-secondary" onclick="disconnectHost()">Disconnect</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Start Stream API -->
+                <div class="step-card">
+                    <div class="step-title">Step 1.2: Start Stream via API</div>
+                    <p style="font-size: 0.8em; color: #94a3b8; margin: 0 0 10px 0;">Host calls start API to generate Agora token and channel. The socket will auto-join the room.</p>
+                    <div class="btn-group">
+                        <button class="btn-success" onclick="startStreamAPI()">Start Stream (POST)</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: End Stream API -->
+                <div class="step-card">
+                    <div class="step-title">Step 1.3: End Stream (Closes Stream)</div>
+                    <p style="font-size: 0.8em; color: #94a3b8; margin: 0 0 10px 0;">Host stops streaming. Back-end will automatically send live_ended to all viewers.</p>
+                    <div class="btn-group">
+                        <button class="btn-danger" onclick="endStreamAPI()">End Stream (POST)</button>
+                    </div>
+                </div>
+
+                <div style="flex-grow: 1; display: flex; flex-direction: column;">
+                    <span style="font-size: 0.8em; color: #64748b; margin-bottom: 4px;">Start API Response:</span>
+                    <pre id="apiResponse" style="margin: 0; background: #070b13; padding: 10px; border-radius: 4px; font-size: 0.8em; color: #38bdf8; overflow-y: auto; flex-grow: 1; min-height: 80px;"></pre>
+                </div>
+            </div>
+
+            <!-- VIEWER PANEL -->
+            <div class="panel viewer-panel">
+                <h2>2. Viewer <span id="viewerStatus" class="status-badge status-disconnected">OFFLINE</span></h2>
+
+                <!-- Step 1: Connect Socket -->
+                <div class="step-card">
+                    <div class="step-title">Step 2.1: Connect Viewer Socket</div>
+                    <p style="font-size: 0.8em; color: #94a3b8; margin: 0 0 10px 0;">Connect the viewer using their authenticated socket token.</p>
+                    <div class="btn-group">
+                        <button class="btn-primary" onclick="connectViewer()">Connect Viewer Socket</button>
+                        <button class="btn-secondary" onclick="disconnectViewer()">Disconnect</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Join Stream Room -->
+                <div class="step-card">
+                    <div class="step-title">Step 2.2: Join Active Stream</div>
+                    <p style="font-size: 0.8em; color: #94a3b8; margin: 0 0 10px 0;">Join the room matching host's active channel name.</p>
+                    <div class="btn-group">
+                        <button class="btn-success" onclick="joinStream()">Join Channel Room</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Interactive Chat and Exit -->
+                <div class="step-card">
+                    <div class="step-title">Step 2.3: Chat & Leave Stream</div>
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <input type="text" id="commentText" value="Superb Quality! 🔥">
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn-primary" onclick="sendComment()">Send Chat Comment</button>
+                        <button class="btn-danger" onclick="leaveStream()">Leave Live Room</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs console at the bottom -->
+        <div class="console-container">
+            <div class="console-header">
+                <h3>Live Activity & Event Logs</h3>
+                <button class="btn-secondary" onclick="clearLogs()" style="padding: 4px 8px; font-size: 0.75em;">Clear Console</button>
+            </div>
+            <div class="console-logs" id="logConsole">
+                <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">Harness initialized. Please follow Step 1.1 first.</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let hostSocket = null;
+        let viewerSocket = null;
+
+        function log(message, type = 'info') {
+            const consoleEl = document.getElementById('logConsole');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            let typeClass = 'log-info';
+            if (type === 'success') typeClass = 'log-success';
+            if (type === 'error') typeClass = 'log-error';
+            if (type === 'event') typeClass = 'log-event';
+
+            entry.innerHTML = \`<span class="log-time">[\${time}]</span> <span class="\${typeClass}">\${message}</span>\`;
+            consoleEl.appendChild(entry);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logConsole').innerHTML = '';
+        }
+
+        // --- HOST ACTIONS ---
+        function connectHost() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('hostToken').value;
+
+            if (hostSocket) {
+                hostSocket.disconnect();
+            }
+
+            log('Connecting Host socket...', 'info');
+            hostSocket = io(serverUrl, {
+                auth: { token },
+                transports: ['websocket']
+            });
+
+            hostSocket.on('connect', () => {
+                document.getElementById('hostStatus').className = 'status-badge status-connected';
+                document.getElementById('hostStatus').innerText = 'CONNECTED';
+                log('Host socket connected with ID: ' + hostSocket.id, 'success');
+            });
+
+            hostSocket.on('connect_error', (err) => {
+                log('Host connection error: ' + err.message, 'error');
+            });
+
+            hostSocket.on('disconnect', () => {
+                document.getElementById('hostStatus').className = 'status-badge status-disconnected';
+                document.getElementById('hostStatus').innerText = 'OFFLINE';
+                log('Host socket disconnected', 'error');
+            });
+
+            // Listen for user join/leave
+            hostSocket.on('viewer_joined', (data) => {
+                log('📢 Host Event [viewer_joined]: ' + JSON.stringify(data), 'event');
+            });
+            hostSocket.on('viewer_left', (data) => {
+                log('📢 Host Event [viewer_left]: ' + JSON.stringify(data), 'event');
+            });
+            hostSocket.on('new_live_comment', (data) => {
+                log('💬 Host Event [new_live_comment] from ' + data.name + ': ' + data.message, 'event');
+            });
+        }
+
+        function disconnectHost() {
+            if (hostSocket) {
+                hostSocket.disconnect();
+            }
+        }
+
+        async function startStreamAPI() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('hostToken').value;
+
+            log('Calling Start Stream API...', 'info');
+            try {
+                const response = await fetch(\`\${serverUrl}/v1/api/app/live/start\`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ title: 'Visual Test Stream ' + Date.now() })
+                });
+                
+                const data = await response.json();
+                document.getElementById('apiResponse').innerText = JSON.stringify(data, null, 2);
+                
+                if (data.success && data.data) {
+                    const channelName = data.data.channelName;
+                    document.getElementById('channelInput').value = channelName;
+                    log('Stream created on Agora channel: ' + channelName, 'success');
+                    
+                    // Host joins the socket room
+                    if (hostSocket && hostSocket.connected) {
+                        log('Host automatically joining socket room: ' + channelName, 'info');
+                        hostSocket.emit('join_live', { channelName });
+                    } else {
+                        log('⚠️ Host socket not connected. Connect socket first to join room!', 'error');
+                    }
+                } else {
+                    log('API error: ' + (data.message || 'Failed'), 'error');
+                }
+            } catch (err) {
+                log('Failed to reach Start API: ' + err.message, 'error');
+            }
+        }
+
+        async function endStreamAPI() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('hostToken').value;
+
+            log('Calling End Stream API...', 'info');
+            try {
+                const response = await fetch(\`\${serverUrl}/v1/api/app/live/end\`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                
+                const data = await response.json();
+                document.getElementById('apiResponse').innerText = JSON.stringify(data, null, 2);
+                if (data.success) {
+                    log('Stream ended successfully via API.', 'success');
+                } else {
+                    log('API error: ' + (data.message || 'Failed'), 'error');
+                }
+            } catch (err) {
+                log('Failed to reach End API: ' + err.message, 'error');
+            }
+        }
+
+        // --- VIEWER ACTIONS ---
+        function connectViewer() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('viewerToken').value;
+
+            if (viewerSocket) {
+                viewerSocket.disconnect();
+            }
+
+            log('Connecting Viewer socket...', 'info');
+            viewerSocket = io(serverUrl, {
+                auth: { token },
+                transports: ['websocket']
+            });
+
+            viewerSocket.on('connect', () => {
+                document.getElementById('viewerStatus').className = 'status-badge status-connected';
+                document.getElementById('viewerStatus').innerText = 'CONNECTED';
+                log('Viewer socket connected with ID: ' + viewerSocket.id, 'success');
+            });
+
+            viewerSocket.on('connect_error', (err) => {
+                log('Viewer connection error: ' + err.message, 'error');
+            });
+
+            viewerSocket.on('disconnect', () => {
+                document.getElementById('viewerStatus').className = 'status-badge status-disconnected';
+                document.getElementById('viewerStatus').innerText = 'OFFLINE';
+                log('Viewer socket disconnected', 'error');
+            });
+
+            // Listen for events
+            viewerSocket.on('viewer_joined', (data) => {
+                log('📢 Viewer Event [viewer_joined]: ' + JSON.stringify(data), 'event');
+            });
+            viewerSocket.on('viewer_left', (data) => {
+                log('📢 Viewer Event [viewer_left]: ' + JSON.stringify(data), 'event');
+            });
+            viewerSocket.on('new_live_comment', (data) => {
+                log('💬 Viewer Event [new_live_comment] from ' + data.name + ': ' + data.message, 'event');
+            });
+            viewerSocket.on('live_ended', (data) => {
+                log('🚨 RECEIVED EVENT [live_ended]! Stream has ended: ' + JSON.stringify(data), 'success');
+                alert('🚨 Stream ended by Host!');
+            });
+            viewerSocket.on('error_message', (msg) => {
+                log('❌ Server Error Event: ' + msg, 'error');
+            });
+        }
+
+        function disconnectViewer() {
+            if (viewerSocket) {
+                viewerSocket.disconnect();
+            }
+        }
+
+        function joinStream() {
+            const channelName = document.getElementById('channelInput').value;
+            if (viewerSocket && viewerSocket.connected) {
+                log('Viewer joining room: ' + channelName, 'info');
+                viewerSocket.emit('join_live', { channelName });
+            } else {
+                log('⚠️ Viewer socket not connected. Connect first!', 'error');
+            }
+        }
+
+        function sendComment() {
+            const channelName = document.getElementById('channelInput').value;
+            const message = document.getElementById('commentText').value;
+            if (viewerSocket && viewerSocket.connected) {
+                log('Viewer sending comment...', 'info');
+                viewerSocket.emit('live_comment', { channelName, message });
+            } else {
+                log('⚠️ Viewer socket not connected!', 'error');
+            }
+        }
+
+        // Leave stream
+        function leaveStream() {
+            const channelName = document.getElementById('channelInput').value;
+            if (viewerSocket && viewerSocket.connected) {
+                log('Viewer leaving room: ' + channelName, 'info');
+                viewerSocket.emit('leave_live', { channelName });
+            } else {
+                log('⚠️ Viewer socket not connected!', 'error');
+            }
+        }
+    </script>
+</body>
+</html>`;
+
+    const outputPath = path.join(__dirname, '../test-live.html');
+    fs.writeFileSync(outputPath, htmlContent);
+    console.log(`Successfully generated visual testing dashboard: ${outputPath}`);
+
+    await mongoose.disconnect();
+}
+
+run().catch(console.error);
