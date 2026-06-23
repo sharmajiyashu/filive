@@ -4,6 +4,7 @@ import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import LiveStream from '../../models/LiveStream';
 import User from '../../models/User';
 import config from '../../config';
+import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class LiveStreamService {
@@ -87,8 +88,13 @@ export class LiveStreamService {
 
   private getSocketIo() {
     try {
-      return Container.get('socket') as any;
-    } catch {
+      const io = Container.get('socket') as any;
+      if (!io) {
+        AppLogger.error('[Socket] Container.get("socket") returned null or undefined');
+      }
+      return io;
+    } catch (error: any) {
+      AppLogger.error(`[Socket] Container.get("socket") threw an error: ${error.message}`, error);
       return null;
     }
   }
@@ -120,10 +126,14 @@ export class LiveStreamService {
     // Emit live_ended event to notifying all socket clients in the room
     const io = this.getSocketIo();
     if (io) {
-      io.to(`live_${liveStream.channelName}`).emit('live_ended', {
+      const roomName = `live_${liveStream.channelName}`;
+      AppLogger.info(`[Socket] Emitting live_ended event to room: ${roomName}`);
+      io.to(roomName).emit('live_ended', {
         channelName: liveStream.channelName,
         message: 'Livestream has been ended by the host'
       });
+    } else {
+      AppLogger.error('[Socket] io is null, cannot emit live_ended event');
     }
 
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
