@@ -120,10 +120,6 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       const activeStream = await LiveStream.findOne({ hostId: userId, status: 'live' });
       if (activeStream) {
         await liveStreamService.endLiveStream(userId, activeStream.channelName);
-        io.to(`live_${activeStream.channelName}`).emit('live_ended', {
-          channelName: activeStream.channelName,
-          message: 'Livestream has been ended by the host'
-        });
         AppLogger.info(`Host disconnected. Ended live stream: ${activeStream.channelName}`);
       }
 
