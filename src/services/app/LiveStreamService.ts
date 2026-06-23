@@ -37,13 +37,17 @@ export class LiveStreamService {
    * Starts a new livestream for a host
    */
   public async startLiveStream(hostId: string, title: string) {
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}"`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
+      AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
     }
 
     // Check if the user is already hosting a live stream
+    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active stream`);
     const activeStream = await LiveStream.findOne({ hostId, status: 'live' });
     if (activeStream) {
+      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Populating and returning.`);
       const populatedStream = await LiveStream.findById(activeStream._id).populate({
         path: 'hostId',
         populate: {
@@ -53,18 +57,24 @@ export class LiveStreamService {
       return populatedStream || activeStream;
     }
 
+    AppLogger.info(`[LiveStreamService: startLiveStream] Fetching host user details. hostId=${hostId}`);
     const host = await User.findById(hostId);
     if (!host) {
+      AppLogger.error(`[LiveStreamService: startLiveStream] Host user not found in DB. hostId=${hostId}`);
       throw new Error('Host user not found');
     }
 
     // Generate unique channel name, e.g. live_hostId_timestamp
     const channelName = `live_${hostId}_${Date.now()}`;
+    AppLogger.info(`[LiveStreamService: startLiveStream] Generated channelName=${channelName}`);
 
     // Generate Agora RTC token for the host (broadcaster/publisher).
     // Host RTC UID can be 0 (default/auto-assign)
+    AppLogger.info(`[LiveStreamService: startLiveStream] Generating Agora RTC token for channelName=${channelName}`);
     const token = this.generateAgoraToken(channelName, 0, 'publisher');
+    AppLogger.info(`[LiveStreamService: startLiveStream] Agora token successfully generated.`);
 
+    AppLogger.info(`[LiveStreamService: startLiveStream] Creating LiveStream DB entry...`);
     const liveStream = await LiveStream.create({
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
@@ -75,7 +85,9 @@ export class LiveStreamService {
       viewers: [],
       startedAt: new Date()
     });
+    AppLogger.info(`[LiveStreamService: startLiveStream] LiveStream created successfully. streamId=${liveStream._id}, channelName=${channelName}`);
 
+    AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId and profileImage for return payload`);
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
       path: 'hostId',
       populate: {
@@ -103,7 +115,9 @@ export class LiveStreamService {
    * Ends an active live stream
    */
   public async endLiveStream(hostId: string, channelName?: string) {
+    AppLogger.info(`[LiveStreamService: endLiveStream] Entered. hostId=${hostId}, channelName=${channelName}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
+      AppLogger.warn(`[LiveStreamService: endLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
     }
 
@@ -112,18 +126,23 @@ export class LiveStreamService {
       query.channelName = channelName;
     }
 
+    AppLogger.info(`[LiveStreamService: endLiveStream] Querying active stream with query: ${JSON.stringify(query)}`);
     const liveStream = await LiveStream.findOne(query);
     if (!liveStream) {
+      AppLogger.warn(`[LiveStreamService: endLiveStream] No active live stream found for query: ${JSON.stringify(query)}`);
       throw new Error('No active live stream found to end');
     }
 
+    AppLogger.info(`[LiveStreamService: endLiveStream] Found active stream: channelName=${liveStream.channelName}, streamId=${liveStream._id}. Updating status to 'ended'.`);
     liveStream.status = 'ended';
     liveStream.endedAt = new Date();
     liveStream.viewers = [];
     liveStream.viewerCount = 0;
     await liveStream.save();
+    AppLogger.info(`[LiveStreamService: endLiveStream] Saved end status in database.`);
 
     // Emit live_ended event to notifying all socket clients in the room
+    AppLogger.info(`[LiveStreamService: endLiveStream] Fetching socket instance to emit live_ended event`);
     const io = this.getSocketIo();
     if (io) {
       const roomName = `live_${liveStream.channelName}`;
@@ -132,10 +151,12 @@ export class LiveStreamService {
         channelName: liveStream.channelName,
         message: 'Livestream has been ended by the host'
       });
+      AppLogger.info(`[Socket] Successfully emitted live_ended event to room: ${roomName}`);
     } else {
       AppLogger.error('[Socket] io is null, cannot emit live_ended event');
     }
 
+    AppLogger.info(`[LiveStreamService: endLiveStream] Populating hostId and profileImage for return payload`);
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
       path: 'hostId',
       populate: {
@@ -150,24 +171,36 @@ export class LiveStreamService {
    * Viewer joins a livestream
    */
   public async joinLiveStream(userId: string, channelName: string) {
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Entered. userId=${userId}, channelName=${channelName}`);
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      AppLogger.warn(`[LiveStreamService: joinLiveStream] Invalid user ID format: ${userId}`);
       throw new Error('Invalid user ID');
     }
 
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Querying active stream for channelName=${channelName}`);
     const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
     if (!liveStream) {
+      AppLogger.warn(`[LiveStreamService: joinLiveStream] Active livestream not found or has ended. channelName=${channelName}`);
       throw new Error('Live stream not found or has ended');
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // Avoid duplicate entries in viewers list
-    if (!liveStream.viewers.some(id => id.toString() === userId)) {
+    const isAlreadyWatching = liveStream.viewers.some(id => id.toString() === userId);
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Found streamId=${liveStream._id}. Is user already watching? ${isAlreadyWatching}`);
+    
+    if (!isAlreadyWatching) {
+      AppLogger.info(`[LiveStreamService: joinLiveStream] Adding userId=${userId} to viewers list.`);
       liveStream.viewers.push(userObjectId);
       liveStream.viewerCount = liveStream.viewers.length;
       await liveStream.save();
+      AppLogger.info(`[LiveStreamService: joinLiveStream] Saved viewer entry in DB. New viewerCount=${liveStream.viewerCount}`);
+    } else {
+      AppLogger.info(`[LiveStreamService: joinLiveStream] User was already in viewers list. Skipping DB update.`);
     }
 
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId and profileImage for return payload`);
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
       path: 'hostId',
       populate: {
@@ -182,19 +215,29 @@ export class LiveStreamService {
    * Viewer leaves a livestream
    */
   public async leaveLiveStream(userId: string, channelName: string) {
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Entered. userId=${userId}, channelName=${channelName}`);
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      AppLogger.warn(`[LiveStreamService: leaveLiveStream] Invalid user ID format: ${userId}`);
       throw new Error('Invalid user ID');
     }
 
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Querying active stream for channelName=${channelName}`);
     const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
     if (!liveStream) {
+      AppLogger.warn(`[LiveStreamService: leaveLiveStream] Active stream not found. Returning null. channelName=${channelName}`);
       return null;
     }
 
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Found streamId=${liveStream._id}. Removing userId=${userId} from viewers list.`);
+    const originalCount = liveStream.viewers.length;
     liveStream.viewers = liveStream.viewers.filter(id => id.toString() !== userId);
     liveStream.viewerCount = liveStream.viewers.length;
+    
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Before filter count=${originalCount}, after filter count=${liveStream.viewerCount}`);
     await liveStream.save();
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Saved updated viewer list in DB.`);
 
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Populating hostId and profileImage for return payload`);
     const populatedStream = await LiveStream.findById(liveStream._id).populate({
       path: 'hostId',
       populate: {
@@ -209,8 +252,10 @@ export class LiveStreamService {
    * Gets list of all active live streams
    */
   public async getActiveLiveStreams(page: number = 1, limit: number = 10) {
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}`);
     const query = { status: 'live' };
 
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
     const streams = await LiveStream.find(query)
       .populate({
         path: 'hostId',
@@ -223,6 +268,7 @@ export class LiveStreamService {
       .limit(limit);
 
     const total = await LiveStream.countDocuments(query);
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
     return {
       streams,
