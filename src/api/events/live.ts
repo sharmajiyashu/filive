@@ -91,9 +91,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       if (liveStream) {
         AppLogger.info(`[Socket Event: leave_live] Broadcasting viewer_left to live_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
         io.to(`live_${channelName}`).emit('viewer_left', {
-          userId,
-          name: userObj?.name,
-          profileImage: userObj?.profileImage,
+          user: userObj,
           viewerCount: liveStream.viewerCount
         });
       } else {
@@ -125,9 +123,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       // Broadcast comment to the stream's socket room
       AppLogger.info(`[Socket Event: live_comment] Broadcasting new_live_comment to live_${channelName}. user=${userObj?.name}`);
       io.to(`live_${channelName}`).emit('new_live_comment', {
-        userId,
-        name: userObj?.name || 'Anonymous',
-        profileImage: userObj?.profileImage,
+        user: userObj,
         message,
         createdAt: new Date()
       });
@@ -161,13 +157,14 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         AppLogger.info(`[Socket Event: disconnect] Removing viewer ${userId} from stream ${stream.channelName}`);
         await liveStreamService.leaveLiveStream(userId, stream.channelName);
         
-        AppLogger.info(`[Socket Event: disconnect] Fetching username for ${userId}`);
-        const userObj = await User.findById(userId).select('name');
+        AppLogger.info(`[Socket Event: disconnect] Fetching username and profile image for ${userId}`);
+        const userObj = await User.findById(userId)
+          .select('name profileImage')
+          .populate('profileImage');
         
         AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left to live_${stream.channelName}. New viewerCount target roughly: ${stream.viewerCount - 1}`);
         io.to(`live_${stream.channelName}`).emit('viewer_left', {
-          userId,
-          name: userObj?.name,
+          user: userObj,
           viewerCount: stream.viewerCount - 1
         });
       }
