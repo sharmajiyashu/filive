@@ -20,7 +20,7 @@ export class ChatMessageService {
     @Inject() private cloudinaryService: CloudinaryService,
     @Inject() private mediaService: MediaService,
     @Inject() private pushService: FirebasePushService,
-  ) {}
+  ) { }
 
   private resolveUserId(value: unknown): string | null {
     if (!value) return null;
@@ -206,14 +206,14 @@ export class ChatMessageService {
     const message = await Message.findById(messageId)
       .populate({
         path: 'senderId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole userId dob',
         populate: { path: 'profileImage' }
       })
       .populate('medias')
       .populate({
         path: 'replyToId',
         populate: [
-          { path: 'senderId', select: 'name email profileImage userRole' },
+          { path: 'senderId', select: 'name email profileImage userRole userId dob' },
           { path: 'medias' }
         ]
       });
@@ -541,14 +541,14 @@ export class ChatMessageService {
       .limit(limit)
       .populate({
         path: 'senderId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole userId dob',
         populate: { path: 'profileImage' }
       })
       .populate('medias')
       .populate({
         path: 'replyToId',
         populate: [
-          { path: 'senderId', select: 'name email profileImage userRole' },
+          { path: 'senderId', select: 'name email profileImage userRole userId dob' },
           { path: 'medias' }
         ]
       });
@@ -630,14 +630,14 @@ export class ChatMessageService {
     const populatedMessage = await Message.findById(message._id)
       .populate({
         path: 'senderId',
-        select: 'name email profileImage userRole',
+        select: 'name email profileImage userRole userId dob',
         populate: { path: 'profileImage' }
       })
       .populate('medias')
       .populate({
         path: 'replyToId',
         populate: [
-          { path: 'senderId', select: 'name email profileImage userRole' },
+          { path: 'senderId', select: 'name email profileImage userRole userId dob' },
           { path: 'medias' }
         ]
       });

@@ -40,14 +40,14 @@ export class ChatService {
           .sort({ createdAt: -1 })
           .populate({
             path: 'senderId',
-            select: 'name email profileImage userRole',
+            select: 'name email profileImage userRole userId dob',
             populate: { path: 'profileImage' }
           })
           .populate('medias')
           .populate({
             path: 'replyToId',
             populate: [
-              { path: 'senderId', select: 'name email profileImage userRole' },
+              { path: 'senderId', select: 'name email profileImage userRole userId dob' },
               { path: 'medias' }
             ]
           });
