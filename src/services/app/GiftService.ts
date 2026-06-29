@@ -1,6 +1,7 @@
 import { Service } from 'typedi';
 import mongoose from 'mongoose';
 import Gift from '../../models/Gift';
+import GiftType from '../../models/GiftType';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import LiveStream from '../../models/LiveStream';
@@ -23,7 +24,7 @@ export class GiftService {
     AppLogger.info(`[GiftService: createGift] Creating gift: ${data.name}`);
     return await Gift.create({
       name: data.name,
-      type: data.type,
+      type: new mongoose.Types.ObjectId(data.type),
       price: data.price,
       media: new mongoose.Types.ObjectId(data.media),
       isActive: true,
@@ -35,6 +36,9 @@ export class GiftService {
     if (data.media) {
       data.media = new mongoose.Types.ObjectId(data.media);
     }
+    if (data.type) {
+      data.type = new mongoose.Types.ObjectId(data.type);
+    }
     const gift = await Gift.findByIdAndUpdate(id, data, { new: true });
     if (!gift) throw new Error('Gift not found');
     return gift;
@@ -44,10 +48,11 @@ export class GiftService {
     const skip = (page - 1) * limit;
     const query: any = {};
     if (type) {
-      query.type = type;
+      query.type = new mongoose.Types.ObjectId(type);
     }
     const gifts = await Gift.find(query)
       .populate('media')
+      .populate('type')
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -76,9 +81,9 @@ export class GiftService {
   public async getActiveGifts(type?: string) {
     const query: any = { isActive: true };
     if (type) {
-      query.type = type;
+      query.type = new mongoose.Types.ObjectId(type);
     }
-    return await Gift.find(query).populate('media').sort({ price: 1 });
+    return await Gift.find(query).populate('media').populate('type').sort({ price: 1 });
   }
 
   /**
@@ -177,5 +182,36 @@ export class GiftService {
         charmCoins: host.charmCoins,
       }
     };
+  }
+
+  // ----------------------------------------------------
+  // GIFT TYPE APIS
+  // ----------------------------------------------------
+
+  public async createGiftType(data: { name: string }) {
+    AppLogger.info(`[GiftService: createGiftType] Creating gift type: ${data.name}`);
+    return await GiftType.create({ name: data.name, isActive: true });
+  }
+
+  public async updateGiftType(id: string, data: { name?: string; isActive?: boolean }) {
+    AppLogger.info(`[GiftService: updateGiftType] Updating gift type ID: ${id}`);
+    const giftType = await GiftType.findByIdAndUpdate(id, data, { new: true });
+    if (!giftType) throw new Error('Gift type not found');
+    return giftType;
+  }
+
+  public async getGiftTypes() {
+    return await GiftType.find({ isActive: true }).sort({ name: 1 });
+  }
+
+  public async getAdminGiftTypes() {
+    return await GiftType.find().sort({ createdAt: -1 });
+  }
+
+  public async deleteGiftType(id: string) {
+    AppLogger.info(`[GiftService: deleteGiftType] Deleting gift type ID: ${id}`);
+    const giftType = await GiftType.findByIdAndDelete(id);
+    if (!giftType) throw new Error('Gift type not found');
+    return true;
   }
 }
