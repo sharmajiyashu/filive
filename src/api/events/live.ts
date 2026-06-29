@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { LiveStreamService } from '../../services/app/LiveStreamService';
+import { GiftService } from '../../services/app/GiftService';
 import LiveStream from '../../models/LiveStream';
 import User from '../../models/User';
 import Container from 'typedi';
@@ -21,6 +22,7 @@ interface LiveCommentData {
 
 export default (socket: AuthenticatedSocket, io: Server) => {
   const liveStreamService = Container.get(LiveStreamService);
+  const giftService = Container.get(GiftService);
 
   if (!socket.user) {
     return;
@@ -115,6 +117,13 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
+      // Check if user is blocked in this stream
+      const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      if (liveStream && liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === userId)) {
+        socket.emit('error_message', 'You are blocked from chatting in this room');
+        return;
+      }
+
       AppLogger.info(`[Socket Event: live_comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name profileImage bio isPremium')
@@ -131,6 +140,51 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: live_comment] Error in live_comment for user ${userId}: ${error.message}`, error);
       socket.emit('error_message', error.message || 'Failed to send live comment');
+    }
+  });
+
+  // Handle gift sending via sockets
+  socket.on('send_gift', async (data: { channelName: string; giftId: string }) => {
+    AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, giftId } = data;
+      if (!channelName || !giftId) {
+        socket.emit('error_message', 'channelName and giftId are required');
+        return;
+      }
+      
+      const result = await giftService.sendGift(userId, channelName, giftId);
+      
+      // Broadcast gift sent event to the room
+      io.to(`live_${channelName}`).emit('gift_sent', {
+        sender: result.sender,
+        host: result.host,
+        gift: result.gift,
+        createdAt: new Date()
+      });
+      
+      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in room live_${channelName}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to send gift');
+    }
+  });
+
+  // Handle blocking/kicking user from host
+  socket.on('kick_user', async (data: { channelName: string; userIdToBlock: string }) => {
+    AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, userIdToBlock } = data;
+      if (!channelName || !userIdToBlock) {
+        socket.emit('error_message', 'channelName and userIdToBlock are required');
+        return;
+      }
+      
+      await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
+      AppLogger.info(`[Socket Event: kick_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: kick_user] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to block/kick user');
     }
   });
 

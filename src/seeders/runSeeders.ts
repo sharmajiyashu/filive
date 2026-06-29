@@ -24,6 +24,8 @@ import { seedCareers } from './CareerSeeder';
 import { seedHobbies } from './HobbySeeder';
 import { seedLevels } from './LevelSeeder';
 import { seedCommissionSlabs } from './CommissionSlabSeeder';
+import { seedGifts } from './GiftSeeder';
+import { seedRoomThemes } from './RoomThemeSeeder';
 
 async function main() {
   try {
@@ -43,6 +45,8 @@ async function main() {
     await seedHobbies();
     await seedLevels();
     await seedCommissionSlabs();
+    await seedGifts();
+    await seedRoomThemes();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);

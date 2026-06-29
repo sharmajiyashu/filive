@@ -34,10 +34,16 @@ export class LiveStreamService {
   }
 
   /**
-   * Starts a new livestream for a host
+   * Starts a new livestream or party room for a host
    */
-  public async startLiveStream(hostId: string, title: string) {
-    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}"`);
+  public async startLiveStream(
+    hostId: string,
+    title: string,
+    roomType: 'livestream' | 'party_room' = 'livestream',
+    partyRoomOption: 'live' | 'chat' = 'live',
+    roomThemeId?: string
+  ) {
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
@@ -48,12 +54,19 @@ export class LiveStreamService {
     const activeStream = await LiveStream.findOne({ hostId, status: 'live' });
     if (activeStream) {
       AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Populating and returning.`);
-      const populatedStream = await LiveStream.findById(activeStream._id).populate({
-        path: 'hostId',
-        populate: {
-          path: 'profileImage'
-        }
-      });
+      const populatedStream = await LiveStream.findById(activeStream._id)
+        .populate({
+          path: 'hostId',
+          populate: {
+            path: 'profileImage'
+          }
+        })
+        .populate({
+          path: 'roomTheme',
+          populate: {
+            path: 'media'
+          }
+        });
       return populatedStream || activeStream;
     }
 
@@ -74,6 +87,10 @@ export class LiveStreamService {
     const token = this.generateAgoraToken(channelName, 0, 'publisher');
     AppLogger.info(`[LiveStreamService: startLiveStream] Agora token successfully generated.`);
 
+    const themeObjectId = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
+      ? new mongoose.Types.ObjectId(roomThemeId)
+      : undefined;
+
     AppLogger.info(`[LiveStreamService: startLiveStream] Creating LiveStream DB entry...`);
     const liveStream = await LiveStream.create({
       hostId: new mongoose.Types.ObjectId(hostId),
@@ -83,19 +100,163 @@ export class LiveStreamService {
       token,
       viewerCount: 0,
       viewers: [],
+      roomType,
+      partyRoomOption,
+      roomTheme: themeObjectId,
+      blockedUsers: [],
       startedAt: new Date()
     });
     AppLogger.info(`[LiveStreamService: startLiveStream] LiveStream created successfully. streamId=${liveStream._id}, channelName=${channelName}`);
 
-    AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId and profileImage for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id).populate({
-      path: 'hostId',
-      populate: {
-        path: 'profileImage'
-      }
-    });
+    AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId, profileImage, and theme for return payload`);
+    const populatedStream = await LiveStream.findById(liveStream._id)
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
 
     return populatedStream || liveStream;
+  }
+
+  /**
+   * Updates room details for an active livestream
+   */
+  public async updateLiveStream(
+    hostId: string,
+    channelName: string,
+    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat' }
+  ) {
+    AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
+    const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName, status: 'live' };
+    const liveStream = await LiveStream.findOne(query);
+    if (!liveStream) {
+      throw new Error('Active room/livestream not found or you are not the host');
+    }
+
+    if (data.title !== undefined) liveStream.title = data.title;
+    if (data.partyRoomOption !== undefined) liveStream.partyRoomOption = data.partyRoomOption;
+    if (data.roomTheme !== undefined) {
+      liveStream.roomTheme = data.roomTheme && mongoose.Types.ObjectId.isValid(data.roomTheme)
+        ? new mongoose.Types.ObjectId(data.roomTheme)
+        : undefined;
+    }
+
+    await liveStream.save();
+
+    return await LiveStream.findById(liveStream._id)
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
+  }
+
+  /**
+   * Kicks and blocks a user from a room
+   */
+  public async blockUserFromRoom(hostId: string, channelName: string, userIdToBlock: string) {
+    AppLogger.info(`[LiveStreamService: blockUserFromRoom] hostId=${hostId}, channelName=${channelName}, userIdToBlock=${userIdToBlock}`);
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    if (!liveStream) {
+      throw new Error('Active room/livestream not found');
+    }
+
+    // Only host or admin can block
+    if (liveStream.hostId.toString() !== hostId) {
+      // Find host to see if they are an admin
+      const requestor = await User.findById(hostId);
+      if (!requestor || requestor.userRole !== 'admin') {
+        throw new Error('Unauthorized. Only the host or admin can block users.');
+      }
+    }
+
+    const blockObjectId = new mongoose.Types.ObjectId(userIdToBlock);
+    if (!liveStream.blockedUsers) {
+      liveStream.blockedUsers = [];
+    }
+
+    if (!liveStream.blockedUsers.some(uid => uid.toString() === userIdToBlock)) {
+      liveStream.blockedUsers.push(blockObjectId);
+    }
+
+    // Remove from active viewers list
+    liveStream.viewers = liveStream.viewers.filter(uid => uid.toString() !== userIdToBlock);
+    liveStream.viewerCount = liveStream.viewers.length;
+
+    await liveStream.save();
+
+    // Trigger socket kick
+    const io = this.getSocketIo();
+    if (io) {
+      const roomName = `live_${channelName}`;
+      io.to(roomName).emit('user_blocked', {
+        userId: userIdToBlock,
+        channelName,
+        message: 'You have been blocked and kicked from this room'
+      });
+    }
+
+    return liveStream;
+  }
+
+  /**
+   * Unblocks a user from a room
+   */
+  public async unblockUserFromRoom(hostId: string, channelName: string, userIdToUnblock: string) {
+    AppLogger.info(`[LiveStreamService: unblockUserFromRoom] hostId=${hostId}, channelName=${channelName}, userIdToUnblock=${userIdToUnblock}`);
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    if (!liveStream) {
+      throw new Error('Active room/livestream not found');
+    }
+
+    if (liveStream.hostId.toString() !== hostId) {
+      const requestor = await User.findById(hostId);
+      if (!requestor || requestor.userRole !== 'admin') {
+        throw new Error('Unauthorized. Only the host or admin can unblock users.');
+      }
+    }
+
+    if (liveStream.blockedUsers) {
+      liveStream.blockedUsers = liveStream.blockedUsers.filter(uid => uid.toString() !== userIdToUnblock);
+      await liveStream.save();
+    }
+
+    return liveStream;
+  }
+
+  /**
+   * Retrieves room audience details
+   */
+  public async getAudienceList(channelName: string) {
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' })
+      .populate({
+        path: 'viewers',
+        select: 'name profileImage email mobile isPremium wealthCoins charmCoins gender country location',
+        populate: {
+          path: 'profileImage'
+        }
+      });
+
+    if (!liveStream) {
+      throw new Error('Active room/livestream not found');
+    }
+
+    return liveStream.viewers;
   }
 
   private getSocketIo() {
@@ -184,6 +345,10 @@ export class LiveStreamService {
       throw new Error('Live stream not found or has ended');
     }
 
+    if (liveStream.blockedUsers && liveStream.blockedUsers.some(id => id.toString() === userId)) {
+      throw new Error('You are blocked and kicked from this room');
+    }
+
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // Avoid duplicate entries in viewers list
@@ -200,13 +365,20 @@ export class LiveStreamService {
       AppLogger.info(`[LiveStreamService: joinLiveStream] User was already in viewers list. Skipping DB update.`);
     }
 
-    AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId and profileImage for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id).populate({
-      path: 'hostId',
-      populate: {
-        path: 'profileImage'
-      }
-    });
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);
+    const populatedStream = await LiveStream.findById(liveStream._id)
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
 
     return populatedStream || liveStream;
   }
@@ -237,13 +409,20 @@ export class LiveStreamService {
     await liveStream.save();
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Saved updated viewer list in DB.`);
 
-    AppLogger.info(`[LiveStreamService: leaveLiveStream] Populating hostId and profileImage for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id).populate({
-      path: 'hostId',
-      populate: {
-        path: 'profileImage'
-      }
-    });
+    AppLogger.info(`[LiveStreamService: leaveLiveStream] Populating hostId, profileImage, and theme for return payload`);
+    const populatedStream = await LiveStream.findById(liveStream._id)
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
 
     return populatedStream || liveStream;
   }
@@ -261,6 +440,12 @@ export class LiveStreamService {
         path: 'hostId',
         populate: {
           path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
         }
       })
       .sort({ viewerCount: -1, createdAt: -1 })

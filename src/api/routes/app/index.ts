@@ -16,6 +16,8 @@ import chat from './chat';
 import coinSeller from './coinSeller';
 import store from './store';
 import liveStream from './liveStream';
+import gift from './gift';
+import roomTheme from './roomTheme';
 
 export default (router: Router): Router => {
   profile(router);
@@ -35,5 +37,7 @@ export default (router: Router): Router => {
   coinSeller(router);
   store(router);
   liveStream(router);
+  gift(router);
+  roomTheme(router);
   return router;
 };

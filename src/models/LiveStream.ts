@@ -8,6 +8,10 @@ export interface ILiveStream extends Document {
   token: string;
   viewerCount: number;
   viewers: mongoose.Types.ObjectId[];
+  roomType?: 'livestream' | 'party_room';
+  partyRoomOption?: 'live' | 'chat';
+  roomTheme?: mongoose.Types.ObjectId;
+  blockedUsers?: mongoose.Types.ObjectId[];
   startedAt: Date;
   endedAt?: Date;
   createdAt: Date;
@@ -23,6 +27,10 @@ const LiveStreamSchema: Schema = new Schema(
     token: { type: String, required: true },
     viewerCount: { type: Number, default: 0 },
     viewers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    roomType: { type: String, enum: ['livestream', 'party_room'], default: 'livestream' },
+    partyRoomOption: { type: String, enum: ['live', 'chat'], default: 'live' },
+    roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
+    blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
   },
