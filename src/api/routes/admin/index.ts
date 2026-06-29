@@ -11,6 +11,9 @@ import appSetting from './appSetting';
 import store from './store';
 import agency from './agency';
 import agencyCommission from './agencyCommission';
+import gift from './gift';
+import roomTheme from './roomTheme';
+import live from './live';
 
 export default (router: Router): Router => {
   auth(router);
@@ -25,5 +28,8 @@ export default (router: Router): Router => {
   store(router);
   agency(router);
   agencyCommission(router);
+  gift(router);
+  roomTheme(router);
+  live(router);
   return router;
 };

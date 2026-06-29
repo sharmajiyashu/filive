@@ -3,18 +3,19 @@ import Container from 'typedi';
 import { LiveStreamService } from '../../../services/app/LiveStreamService';
 import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
+import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 
 export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
   const liveRouter = Router();
 
-  router.use('/live', liveRouter);
+  router.use('/live', appAuthMiddleware, liveRouter);
 
   /**
    * @swagger
    * /app/live/start:
    *   post:
-   *     summary: Start a live stream
+   *     summary: Start a live stream or party room
    *     tags: [LiveStream]
    *     security:
    *       - bearerAuth: []
@@ -29,24 +30,108 @@ export default (router: Router) => {
    *             properties:
    *               title:
    *                 type: string
+   *               roomType:
+   *                 type: string
+   *                 enum: [livestream, party_room]
+   *               partyRoomOption:
+   *                 type: string
+   *                 enum: [live, chat]
+   *               roomTheme:
+   *                 type: string
    *     responses:
    *       200:
-   *         description: Livestream started successfully
+   *         description: Livestream/Room started successfully
    */
   liveRouter.post('/start', async (req: any, res: Response) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/live/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { title } = req.body;
+      const { title, roomType, partyRoomOption, roomTheme } = req.body;
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/live/start] Missing title in body. userId=${userId}`);
-        throw new Error('Title is required to start a livestream');
+        throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme);
       AppLogger.info(`[HTTP POST /app/live/start] Success. userId=${userId}`);
-      return ResponseWrapper.success(res, result, 'Livestream started successfully');
+      return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP POST /app/live/start] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Edit active room details
+   */
+  liveRouter.post('/edit', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/live/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
+    try {
+      const { channelName, title, roomTheme, partyRoomOption } = req.body;
+      if (!channelName) {
+        throw new Error('channelName is required');
+      }
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption });
+      
+      // Emit room_updated socket event
+      try {
+        const io = Container.get('socket') as any;
+        if (io) {
+          io.to(`live_${channelName}`).emit('room_updated', result);
+        }
+      } catch (e) {
+        AppLogger.error('Failed to emit room_updated socket event', e);
+      }
+
+      return ResponseWrapper.success(res, result, 'Room details updated successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/live/edit] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Block a user from the room (kick & block)
+   */
+  liveRouter.post('/block', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, userIdToBlock } = req.body;
+      if (!channelName || !userIdToBlock) {
+        throw new Error('channelName and userIdToBlock are required');
+      }
+      const result = await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
+      return ResponseWrapper.success(res, result, 'User blocked and kicked successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Unblock a user from the room
+   */
+  liveRouter.post('/unblock', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, userIdToUnblock } = req.body;
+      if (!channelName || !userIdToUnblock) {
+        throw new Error('channelName and userIdToUnblock are required');
+      }
+      const result = await liveStreamService.unblockUserFromRoom(userId, channelName, userIdToUnblock);
+      return ResponseWrapper.success(res, result, 'User unblocked successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Fetch room audience list
+   */
+  liveRouter.get('/audience/:channelName', async (req: any, res: Response) => {
+    try {
+      const result = await liveStreamService.getAudienceList(req.params.channelName);
+      return ResponseWrapper.success(res, result, 'Audience list fetched successfully');
+    } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
   });
