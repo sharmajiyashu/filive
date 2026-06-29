@@ -1,9 +1,23 @@
 import Gift from '../models/Gift';
+import GiftType from '../models/GiftType';
 import Media from '../models/Media';
 import AppLogger from '../api/loaders/logger';
 
 export async function seedGifts() {
   try {
+    // 1. Seed Gift Types first
+    const giftTypes = ['Normal', 'VIP', 'Luxury'];
+    const typeMap: Record<string, any> = {};
+
+    for (const typeName of giftTypes) {
+      let typeDoc = await GiftType.findOne({ name: typeName });
+      if (!typeDoc) {
+        typeDoc = await GiftType.create({ name: typeName, isActive: true });
+        AppLogger.info(`🌱 Created gift type seed: ${typeName}`);
+      }
+      typeMap[typeName] = typeDoc._id;
+    }
+
     const existingCount = await Gift.countDocuments();
     if (existingCount > 0) {
       AppLogger.info('Gifts already seeded, skipping...');
@@ -12,7 +26,7 @@ export async function seedGifts() {
 
     AppLogger.info('🌱 Seeding virtual gifts...');
 
-    // 1. Create Media entries for gifts
+    // 2. Create Media entries for gifts
     const giftMedias = [
       {
         name: 'Flower',
@@ -55,7 +69,7 @@ export async function seedGifts() {
 
       await Gift.create({
         name: item.name,
-        type: item.type,
+        type: typeMap[item.type],
         price: item.price,
         media: media._id,
         isActive: true,
