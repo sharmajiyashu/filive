@@ -12,6 +12,7 @@ import store from './store';
 import agency from './agency';
 import agencyCommission from './agencyCommission';
 import gift from './gift';
+import giftType from './giftType';
 import roomTheme from './roomTheme';
 import live from './live';
 
@@ -29,6 +30,7 @@ export default (router: Router): Router => {
   agency(router);
   agencyCommission(router);
   gift(router);
+  giftType(router);
   roomTheme(router);
   live(router);
   return router;

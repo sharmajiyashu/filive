@@ -4,6 +4,7 @@ import Country from '../../../models/Country';
 import Language from '../../../models/Language';
 import Career from '../../../models/Career';
 import Hobby from '../../../models/Hobby';
+import GiftType from '../../../models/GiftType';
 import { ResponseWrapper } from '../../responseWrapper';
 
 export default (router: Router) => {
@@ -15,7 +16,7 @@ export default (router: Router) => {
    * @swagger
    * /app/settings:
    *   get:
-   *     summary: Get all app settings, countries, languages, careers and hobbies
+   *     summary: Get all app settings, countries, languages, careers, hobbies and gift types
    *     tags: [Settings]
    *     responses:
    *       200:
@@ -23,12 +24,13 @@ export default (router: Router) => {
    */
   settingsRouter.get('/', async (req: Request, res: Response) => {
     try {
-      const [settings, countries, languages, careers, hobbies] = await Promise.all([
+      const [settings, countries, languages, careers, hobbies, giftTypes] = await Promise.all([
         AppSetting.find(),
         Country.find({ isActive: true }).sort({ name: 1 }),
         Language.find({ isActive: true }).sort({ name: 1 }),
         Career.find({ isActive: true }).populate('image').sort({ name: 1 }),
-        Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 })
+        Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 }),
+        GiftType.find({ isActive: true }).sort({ name: 1 })
       ]);
 
       const settingsMap = settings.reduce((acc: any, curr) => {
@@ -41,7 +43,8 @@ export default (router: Router) => {
         countries,
         languages,
         careers,
-        hobbies
+        hobbies,
+        giftTypes
       };
 
       return ResponseWrapper.success(res, result, 'Configuration fetched successfully');
