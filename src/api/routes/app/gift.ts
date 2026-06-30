@@ -23,7 +23,7 @@ export default (router: Router) => {
 
   giftRouter.post('/send', async (req: any, res: Response) => {
     try {
-      const { channelName, giftId, receiverId, contextType } = req.body;
+      const { channelName, giftId, receiverId, contextType, quantity } = req.body;
       if (!giftId) {
         throw new Error('giftId is required');
       }
@@ -40,8 +40,9 @@ export default (router: Router) => {
         throw new Error('receiverId is required');
       }
 
-      const result = await giftService.sendGift(req.user.id, channelName, giftId, actualReceiverId, contextType);
-      
+      const parsedQuantity = quantity ? Number(quantity) : 1;
+      const result = await giftService.sendGift(req.user.id, channelName, giftId, actualReceiverId, contextType, parsedQuantity);
+
       // Try to emit the socket event for realtime updates
       try {
         const io = Container.get('socket') as any;
@@ -52,6 +53,7 @@ export default (router: Router) => {
             host: result.host,
             receiver: result.receiver,
             gift: result.gift,
+            quantity: result.quantity,
             createdAt: new Date(),
           });
         }
@@ -71,9 +73,12 @@ export default (router: Router) => {
    */
   giftRouter.get('/sent-recipients/:channelName', async (req: any, res: Response) => {
     try {
-      const { channelName } = req.params;
+      let { channelName } = req.params;
       if (!channelName) {
         throw new Error('channelName parameter is required');
+      }
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
       }
       const result = await giftService.getGiftedUsersInRoom(req.user.id, channelName);
       return ResponseWrapper.success(res, result, 'Gifted users list fetched successfully');
@@ -87,9 +92,12 @@ export default (router: Router) => {
    */
   giftRouter.get('/eligible-receivers/:channelName', async (req: any, res: Response) => {
     try {
-      const { channelName } = req.params;
+      let { channelName } = req.params;
       if (!channelName) {
         throw new Error('channelName parameter is required');
+      }
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
       }
       const result = await giftService.getEligibleReceivers(req.user.id, channelName);
       return ResponseWrapper.success(res, result, 'Eligible gift receivers fetched successfully');

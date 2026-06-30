@@ -129,7 +129,11 @@ export default (router: Router) => {
    */
   liveRouter.get('/audience/:channelName', async (req: any, res: Response) => {
     try {
-      const result = await liveStreamService.getAudienceList(req.params.channelName);
+      let { channelName } = req.params;
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
+      }
+      const result = await liveStreamService.getAudienceList(channelName);
       return ResponseWrapper.success(res, result, 'Audience list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

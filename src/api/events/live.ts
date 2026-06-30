@@ -144,10 +144,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Handle gift sending via sockets
-  socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call' }) => {
+  socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }) => {
     AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
-      const { channelName, giftId, receiverId, contextType } = data;
+      const { channelName, giftId, receiverId, contextType, quantity } = data;
       if (!giftId) {
         socket.emit('error_message', 'giftId is required');
         return;
@@ -166,7 +166,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType);
+      const parsedQuantity = quantity ? Number(quantity) : 1;
+      const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType, parsedQuantity);
       
       // Broadcast gift sent event to the room
       io.to(`live_${channelName}`).emit('gift_sent', {
@@ -174,6 +175,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         host: result.host,
         receiver: result.receiver,
         gift: result.gift,
+        quantity: result.quantity,
         createdAt: new Date()
       });
       

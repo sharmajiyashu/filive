@@ -57,7 +57,10 @@ export default (router: Router) => {
   // Get audience sorted by priority logic
   liveRouter.get('/audience/:channelName', async (req: any, res: Response) => {
     try {
-      const { channelName } = req.params;
+      let { channelName } = req.params;
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
+      }
       const liveStream = await LiveStream.findOne({ channelName, status: 'live' })
         .populate({
           path: 'viewers',
@@ -111,7 +114,10 @@ export default (router: Router) => {
   // Get contribution rankings for a room
   liveRouter.get('/contribution/:channelName', async (req: any, res: Response) => {
     try {
-      const { channelName } = req.params;
+      let { channelName } = req.params;
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
+      }
       const period = req.query.period?.toString() || 'daily'; // 'daily' | 'weekly'
 
       const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
