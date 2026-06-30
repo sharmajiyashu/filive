@@ -94,10 +94,15 @@ export class GiftService {
     channelName: string,
     giftId: string,
     receiverId: string,
-    contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'
+    contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call',
+    quantity: number = 1
   ) {
-    AppLogger.info(`[GiftService: sendGift] Entered. senderId=${senderId}, channelName=${channelName}, giftId=${giftId}, receiverId=${receiverId}, contextType=${contextType}`);
+    AppLogger.info(`[GiftService: sendGift] Entered. senderId=${senderId}, channelName=${channelName}, giftId=${giftId}, receiverId=${receiverId}, contextType=${contextType}, quantity=${quantity}`);
     
+    if (quantity <= 0 || isNaN(quantity)) {
+      throw new Error('Quantity must be a positive number');
+    }
+
     if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(giftId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
       throw new Error('Invalid sender, receiver, or gift ID');
     }
@@ -180,6 +185,7 @@ export class GiftService {
     }
 
     const price = gift.price;
+    const totalPrice = price * quantity;
 
     // 4. Find sender and receiver
     const sender = await User.findById(senderId);
@@ -194,42 +200,43 @@ export class GiftService {
 
     // 5. Verify sender balance
     const currentCoins = sender.coins || 0;
-    if (currentCoins < price) {
+    if (currentCoins < totalPrice) {
       throw new Error('Insufficient coins to purchase and send this gift');
     }
 
     // 6. Perform balance updates
-    sender.coins = currentCoins - price;
-    sender.wealthCoins = (sender.wealthCoins || 0) + price;
+    sender.coins = currentCoins - totalPrice;
+    sender.wealthCoins = (sender.wealthCoins || 0) + totalPrice;
     await sender.save();
 
-    receiver.coins = (receiver.coins || 0) + price;
-    receiver.charmCoins = (receiver.charmCoins || 0) + price;
+    receiver.coins = (receiver.coins || 0) + totalPrice;
+    receiver.charmCoins = (receiver.charmCoins || 0) + totalPrice;
     await receiver.save();
 
     // 7. Record Coin History for both users
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
       relatedUserId: new mongoose.Types.ObjectId(receiverId),
-      amount: -price,
+      amount: -totalPrice,
       type: 'transfer',
-      description: `Sent gift '${gift.name}' during ${resolvedContext || 'live stream'}`,
+      description: `Sent gift '${gift.name}' x${quantity} during ${resolvedContext || 'live stream'}`,
       channelName: channelName || undefined
     });
 
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(receiverId),
       relatedUserId: new mongoose.Types.ObjectId(senderId),
-      amount: price,
+      amount: totalPrice,
       type: 'charm_received',
-      description: `Received gift '${gift.name}' from viewer`,
+      description: `Received gift '${gift.name}' x${quantity} from viewer`,
       channelName: channelName || undefined
     });
 
-    AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' sent. Price=${price}`);
+    AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);
 
     return {
       gift,
+      quantity,
       sender: {
         id: sender._id,
         name: sender.name,
