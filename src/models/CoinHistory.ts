@@ -7,6 +7,7 @@ export interface ICoinHistory extends Document {
   type: 'recharge' | 'family_creation' | 'transfer' | 'charm_received' | 'beans_to_coins' | 'coins_to_beans' | 'agency_commission' | 'other';
   description?: string;
   transactionId?: string; // For payment gateways
+  channelName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,6 +24,7 @@ const CoinHistorySchema: Schema = new Schema(
     },
     description: { type: String },
     transactionId: { type: String },
+    channelName: { type: String },
   },
   {
     timestamps: true,

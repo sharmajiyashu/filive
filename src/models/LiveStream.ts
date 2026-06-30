@@ -1,5 +1,10 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface ISeat {
+  userId: mongoose.Types.ObjectId;
+  seatIndex: number;
+}
+
 export interface ILiveStream extends Document {
   hostId: mongoose.Types.ObjectId;
   channelName: string;
@@ -12,6 +17,7 @@ export interface ILiveStream extends Document {
   partyRoomOption?: 'live' | 'chat';
   roomTheme?: mongoose.Types.ObjectId;
   blockedUsers?: mongoose.Types.ObjectId[];
+  seats?: ISeat[];
   startedAt: Date;
   endedAt?: Date;
   createdAt: Date;
@@ -31,6 +37,12 @@ const LiveStreamSchema: Schema = new Schema(
     partyRoomOption: { type: String, enum: ['live', 'chat'], default: 'live' },
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    seats: [
+      {
+        userId: { type: Schema.Types.ObjectId, ref: 'User' },
+        seatIndex: { type: Number }
+      }
+    ],
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
   },

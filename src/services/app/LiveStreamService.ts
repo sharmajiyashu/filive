@@ -405,6 +405,22 @@ export class LiveStreamService {
     liveStream.viewers = liveStream.viewers.filter(id => id.toString() !== userId);
     liveStream.viewerCount = liveStream.viewers.length;
     
+    // Remove user from seats if party room
+    if (liveStream.seats) {
+      const originalSeatCount = liveStream.seats.length;
+      liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
+      if (liveStream.seats.length !== originalSeatCount) {
+        // Emit seat_updated event to the room
+        const io = this.getSocketIo();
+        if (io) {
+          io.to(`live_${channelName}`).emit('seat_updated', {
+            channelName,
+            seats: liveStream.seats
+          });
+        }
+      }
+    }
+
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Before filter count=${originalCount}, after filter count=${liveStream.viewerCount}`);
     await liveStream.save();
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Saved updated viewer list in DB.`);
@@ -425,6 +441,99 @@ export class LiveStreamService {
       });
 
     return populatedStream || liveStream;
+  }
+
+  /**
+   * User joins a seat in a party room
+   */
+  public async joinSeat(userId: string, channelName: string, seatIndex: number) {
+    AppLogger.info(`[LiveStreamService: joinSeat] Entered. userId=${userId}, channelName=${channelName}, seatIndex=${seatIndex}`);
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    if (!liveStream) {
+      throw new Error('Active room/party room not found');
+    }
+
+    if (liveStream.roomType !== 'party_room') {
+      throw new Error('This room is not a party room');
+    }
+
+    if (liveStream.blockedUsers && liveStream.blockedUsers.some(id => id.toString() === userId)) {
+      throw new Error('You are blocked from this room');
+    }
+
+    if (!liveStream.seats) {
+      liveStream.seats = [];
+    }
+
+    // Check if the seat is already occupied
+    const isOccupied = liveStream.seats.some(seat => seat.seatIndex === seatIndex);
+    if (isOccupied) {
+      throw new Error(`Seat ${seatIndex} is already occupied`);
+    }
+
+    // If the user is already on another seat, remove them from that seat first
+    liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
+
+    // Add user to the new seat
+    liveStream.seats.push({
+      userId: new mongoose.Types.ObjectId(userId),
+      seatIndex
+    });
+
+    await liveStream.save();
+
+    // Emit socket event
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.seats
+      });
+    }
+
+    return liveStream;
+  }
+
+  /**
+   * User leaves a seat in a party room
+   */
+  public async leaveSeat(userId: string, channelName: string) {
+    AppLogger.info(`[LiveStreamService: leaveSeat] Entered. userId=${userId}, channelName=${channelName}`);
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    if (!liveStream) {
+      throw new Error('Active room/party room not found');
+    }
+
+    if (!liveStream.seats) {
+      liveStream.seats = [];
+    }
+
+    // Remove user from seats
+    const originalLength = liveStream.seats.length;
+    liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
+
+    if (liveStream.seats.length !== originalLength) {
+      await liveStream.save();
+
+      // Emit socket event
+      const io = this.getSocketIo();
+      if (io) {
+        io.to(`live_${channelName}`).emit('seat_updated', {
+          channelName,
+          seats: liveStream.seats
+        });
+      }
+    }
+
+    return liveStream;
   }
 
   /**

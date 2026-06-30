@@ -89,30 +89,91 @@ export class GiftService {
   /**
    * Processes sending a gift in a room/livestream
    */
-  public async sendGift(senderId: string, channelName: string, giftId: string) {
-    AppLogger.info(`[GiftService: sendGift] Entered. senderId=${senderId}, channelName=${channelName}, giftId=${giftId}`);
+  public async sendGift(
+    senderId: string,
+    channelName: string,
+    giftId: string,
+    receiverId: string,
+    contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'
+  ) {
+    AppLogger.info(`[GiftService: sendGift] Entered. senderId=${senderId}, channelName=${channelName}, giftId=${giftId}, receiverId=${receiverId}, contextType=${contextType}`);
     
-    if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(giftId)) {
-      throw new Error('Invalid sender or gift ID');
+    if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(giftId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
+      throw new Error('Invalid sender, receiver, or gift ID');
     }
 
-    // 1. Find live room
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
-    if (!liveStream) {
-      throw new Error('Active room/livestream not found');
+    if (senderId === receiverId) {
+      throw new Error('Self-gifting is not allowed');
     }
 
-    const hostId = liveStream.hostId.toString();
-    if (senderId === hostId) {
-      throw new Error('You cannot send a gift to yourself');
+    // 1. Determine room & context
+    let liveStream = null;
+    let resolvedContext = contextType;
+
+    if (channelName) {
+      liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      if (liveStream) {
+        if (!resolvedContext) {
+          resolvedContext = liveStream.roomType === 'party_room' ? 'party_room' : 'live_stream';
+        }
+      }
     }
 
-    // Check if sender is blocked in this room
-    if (liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === senderId)) {
-      throw new Error('You are blocked from sending gifts in this room');
+    // 2. Perform room validation based on room type/rules
+    if (resolvedContext === 'live_stream') {
+      if (!liveStream) {
+        throw new Error('Active room/livestream not found');
+      }
+      const hostId = liveStream.hostId.toString();
+      
+      // Audience can send only to host. Host cannot send to self (already checked by self-gifting).
+      if (senderId !== hostId) {
+        if (receiverId !== hostId) {
+          throw new Error('Audience can send gifts only to the Live Host');
+        }
+      }
+
+      // Check block status
+      if (liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === senderId)) {
+        throw new Error('You are blocked from sending gifts in this room');
+      }
+    } else if (resolvedContext === 'party_room') {
+      if (!liveStream) {
+        throw new Error('Active party room not found');
+      }
+      const hostId = liveStream.hostId.toString();
+
+      const isUserSeated = (uid: string) => {
+        return liveStream.seats && liveStream.seats.some(seat => seat.userId && seat.userId.toString() === uid);
+      };
+
+      const isHost = senderId === hostId;
+      const isSeated = isUserSeated(senderId);
+
+      if (isHost) {
+        // Host can send gifts to any user sitting on a seat
+        if (!isUserSeated(receiverId)) {
+          throw new Error('Host can only send gifts to users sitting on a seat');
+        }
+      } else if (isSeated) {
+        // Seated user can send gifts to Host and other seated users
+        if (receiverId !== hostId && !isUserSeated(receiverId)) {
+          throw new Error('Seated users can only send gifts to the Host or other seated users');
+        }
+      } else {
+        // Audience can send gifts to Host and seated users
+        if (receiverId !== hostId && !isUserSeated(receiverId)) {
+          throw new Error('Audience can only send gifts to the Host or users sitting on a seat');
+        }
+      }
+
+      // Check block status
+      if (liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === senderId)) {
+        throw new Error('You are blocked from sending gifts in this room');
+      }
     }
 
-    // 2. Find Gift details
+    // 3. Find Gift details
     const gift = await Gift.findById(giftId).populate('media');
     if (!gift || !gift.isActive) {
       throw new Error('Gift not found or inactive');
@@ -120,49 +181,49 @@ export class GiftService {
 
     const price = gift.price;
 
-    // 3. Find sender and receiver (host)
+    // 4. Find sender and receiver
     const sender = await User.findById(senderId);
     if (!sender) {
       throw new Error('Sender profile not found');
     }
 
-    const host = await User.findById(hostId);
-    if (!host) {
-      throw new Error('Host profile not found');
+    const receiver = await User.findById(receiverId);
+    if (!receiver) {
+      throw new Error('Receiver profile not found');
     }
 
-    // 4. Verify sender balance
+    // 5. Verify sender balance
     const currentCoins = sender.coins || 0;
     if (currentCoins < price) {
       throw new Error('Insufficient coins to purchase and send this gift');
     }
 
-    // 5. Perform balance updates
-    // Sender: deduct coins, add wealthCoins
+    // 6. Perform balance updates
     sender.coins = currentCoins - price;
     sender.wealthCoins = (sender.wealthCoins || 0) + price;
     await sender.save();
 
-    // Host: add coins, add charmCoins
-    host.coins = (host.coins || 0) + price;
-    host.charmCoins = (host.charmCoins || 0) + price;
-    await host.save();
+    receiver.coins = (receiver.coins || 0) + price;
+    receiver.charmCoins = (receiver.charmCoins || 0) + price;
+    await receiver.save();
 
-    // 6. Record Coin History for both users
+    // 7. Record Coin History for both users
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
-      relatedUserId: new mongoose.Types.ObjectId(hostId),
+      relatedUserId: new mongoose.Types.ObjectId(receiverId),
       amount: -price,
       type: 'transfer',
-      description: `Sent gift '${gift.name}' during live stream`,
+      description: `Sent gift '${gift.name}' during ${resolvedContext || 'live stream'}`,
+      channelName: channelName || undefined
     });
 
     await CoinHistory.create({
-      userId: new mongoose.Types.ObjectId(hostId),
+      userId: new mongoose.Types.ObjectId(receiverId),
       relatedUserId: new mongoose.Types.ObjectId(senderId),
       amount: price,
       type: 'charm_received',
       description: `Received gift '${gift.name}' from viewer`,
+      channelName: channelName || undefined
     });
 
     AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' sent. Price=${price}`);
@@ -176,12 +237,145 @@ export class GiftService {
         wealthCoins: sender.wealthCoins,
       },
       host: {
-        id: host._id,
-        name: host.name,
-        coins: host.coins,
-        charmCoins: host.charmCoins,
+        id: receiver._id,
+        name: receiver.name,
+        coins: receiver.coins,
+        charmCoins: receiver.charmCoins,
+      },
+      receiver: {
+        id: receiver._id,
+        name: receiver.name,
+        coins: receiver.coins,
+        charmCoins: receiver.charmCoins,
       }
     };
+  }
+
+  /**
+   * Retrieves unique users whom the sender has sent gifts to in a specific room
+   */
+  public async getGiftedUsersInRoom(userId: string, channelName: string) {
+    AppLogger.info(`[GiftService: getGiftedUsersInRoom] Entered. userId=${userId}, channelName=${channelName}`);
+    
+    const historyEntries = await CoinHistory.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          type: 'transfer',
+          channelName: channelName
+        }
+      },
+      {
+        $group: {
+          _id: '$relatedUserId',
+          totalCoins: { $sum: { $abs: '$amount' } },
+          giftsCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const result = [];
+    for (const entry of historyEntries) {
+      if (entry._id) {
+        const user = await User.findById(entry._id)
+          .select('name profileImage bio isPremium gender country')
+          .populate('profileImage');
+        if (user) {
+          result.push({
+            user,
+            totalCoins: entry.totalCoins,
+            giftsCount: entry.giftsCount
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Gets list of eligible gift receivers based on context-aware rules
+   */
+  public async getEligibleReceivers(userId: string, channelName: string) {
+    AppLogger.info(`[GiftService: getEligibleReceivers] Entered. userId=${userId}, channelName=${channelName}`);
+    
+    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    if (!liveStream) {
+      throw new Error('Active room/livestream not found');
+    }
+
+    const hostId = liveStream.hostId.toString();
+    const roomType = liveStream.roomType || 'livestream';
+    const result: any[] = [];
+
+    const addUserToList = async (uid: string, role: string) => {
+      if (uid === userId) return; // Self-gifting is not allowed
+      
+      // Avoid duplicate entries in the result list
+      if (result.some(entry => entry.user._id.toString() === uid)) return;
+
+      const user = await User.findById(uid)
+        .select('name profileImage bio isPremium gender country')
+        .populate('profileImage');
+      if (user) {
+        result.push({
+          user,
+          role
+        });
+      }
+    };
+
+    if (roomType === 'livestream') {
+      if (userId !== hostId) {
+        // Audience can gift only host
+        await addUserToList(hostId, 'host');
+      } else {
+        // Host can gift audience/viewers
+        for (const viewerId of liveStream.viewers) {
+          await addUserToList(viewerId.toString(), 'audience');
+        }
+      }
+    } else if (roomType === 'party_room') {
+      const isUserSeated = (uid: string) => {
+        return liveStream.seats && liveStream.seats.some(seat => seat.userId && seat.userId.toString() === uid);
+      };
+
+      const isHost = userId === hostId;
+      const isSeated = isUserSeated(userId);
+
+      if (isHost) {
+        // Host can send to any user sitting on a seat
+        if (liveStream.seats) {
+          for (const seat of liveStream.seats) {
+            if (seat.userId) {
+              await addUserToList(seat.userId.toString(), 'seat');
+            }
+          }
+        }
+      } else if (isSeated) {
+        // Seated user can send to host and other seated users
+        await addUserToList(hostId, 'host');
+        if (liveStream.seats) {
+          for (const seat of liveStream.seats) {
+            if (seat.userId) {
+              await addUserToList(seat.userId.toString(), 'seat');
+            }
+          }
+        }
+      } else {
+        // Audience can send to host and seated users
+        await addUserToList(hostId, 'host');
+        if (liveStream.seats) {
+          for (const seat of liveStream.seats) {
+            if (seat.userId) {
+              await addUserToList(seat.userId.toString(), 'seat');
+            }
+          }
+        }
+      }
+    }
+
+    return result;
   }
 
   // ----------------------------------------------------
