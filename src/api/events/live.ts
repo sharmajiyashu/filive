@@ -144,21 +144,35 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Handle gift sending via sockets
-  socket.on('send_gift', async (data: { channelName: string; giftId: string }) => {
+  socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call' }) => {
     AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
-      const { channelName, giftId } = data;
-      if (!channelName || !giftId) {
-        socket.emit('error_message', 'channelName and giftId are required');
+      const { channelName, giftId, receiverId, contextType } = data;
+      if (!giftId) {
+        socket.emit('error_message', 'giftId is required');
         return;
       }
       
-      const result = await giftService.sendGift(userId, channelName, giftId);
+      let actualReceiverId = receiverId;
+      if (!actualReceiverId && channelName) {
+        const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+        if (liveStream) {
+          actualReceiverId = liveStream.hostId.toString();
+        }
+      }
+
+      if (!actualReceiverId) {
+        socket.emit('error_message', 'receiverId is required');
+        return;
+      }
+
+      const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType);
       
       // Broadcast gift sent event to the room
       io.to(`live_${channelName}`).emit('gift_sent', {
         sender: result.sender,
         host: result.host,
+        receiver: result.receiver,
         gift: result.gift,
         createdAt: new Date()
       });
@@ -167,6 +181,38 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to send gift');
+    }
+  });
+
+  // User joins a seat in a party room
+  socket.on('join_seat', async (data: { channelName: string; seatIndex: number }) => {
+    AppLogger.info(`[Socket Event: join_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, seatIndex } = data;
+      if (!channelName || seatIndex === undefined) {
+        socket.emit('error_message', 'channelName and seatIndex are required');
+        return;
+      }
+      await liveStreamService.joinSeat(userId, channelName, seatIndex);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: join_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to join seat');
+    }
+  });
+
+  // User leaves a seat in a party room
+  socket.on('leave_seat', async (data: { channelName: string }) => {
+    AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName } = data;
+      if (!channelName) {
+        socket.emit('error_message', 'channelName is required');
+        return;
+      }
+      await liveStreamService.leaveSeat(userId, channelName);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: leave_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to leave seat');
     }
   });
 

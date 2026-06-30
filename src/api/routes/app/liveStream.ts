@@ -72,7 +72,7 @@ export default (router: Router) => {
         throw new Error('channelName is required');
       }
       const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption });
-      
+
       // Emit room_updated socket event
       try {
         const io = Container.get('socket') as any;
@@ -131,6 +131,40 @@ export default (router: Router) => {
     try {
       const result = await liveStreamService.getAudienceList(req.params.channelName);
       return ResponseWrapper.success(res, result, 'Audience list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Join a seat in a party room
+   */
+  liveRouter.post('/seat/join', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, seatIndex } = req.body;
+      if (!channelName || seatIndex === undefined) {
+        throw new Error('channelName and seatIndex are required');
+      }
+      const result = await liveStreamService.joinSeat(userId, channelName, Number(seatIndex));
+      return ResponseWrapper.success(res, result, 'Joined seat successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Leave a seat in a party room
+   */
+  liveRouter.post('/seat/leave', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName } = req.body;
+      if (!channelName) {
+        throw new Error('channelName is required');
+      }
+      const result = await liveStreamService.leaveSeat(userId, channelName);
+      return ResponseWrapper.success(res, result, 'Left seat successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
