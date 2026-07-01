@@ -103,7 +103,14 @@ export default (router: Router) => {
       });
 
       // Extract the sorted users
-      const sortedUsers = viewersWithIndex.map((item: any) => item.user);
+      const hostIdStr = liveStream.hostId.toString();
+      const sortedUsers = viewersWithIndex.map((item: any) => {
+        const userObj = item.user.toObject ? item.user.toObject() : item.user;
+        return {
+          ...userObj,
+          isHost: userObj._id ? userObj._id.toString() === hostIdStr : false
+        };
+      });
 
       return ResponseWrapper.success(res, sortedUsers, 'Audience fetched and sorted successfully');
     } catch (error: any) {
@@ -126,11 +133,11 @@ export default (router: Router) => {
       }
 
       const hostId = liveStream.hostId;
-      
+
       // Determine date limit
       const now = new Date();
       let dateLimit = new Date(liveStream.startedAt); // default to when room started
-      
+
       if (period === 'daily') {
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         if (oneDayAgo > dateLimit) {

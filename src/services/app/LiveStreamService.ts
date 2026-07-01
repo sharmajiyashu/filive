@@ -256,7 +256,14 @@ export class LiveStreamService {
       throw new Error('Active room/livestream not found');
     }
 
-    return liveStream.viewers;
+    const hostIdStr = liveStream.hostId.toString();
+    return liveStream.viewers.map((viewer: any) => {
+      const viewerObj = viewer.toObject ? viewer.toObject() : viewer;
+      return {
+        ...viewerObj,
+        isHost: viewerObj._id ? viewerObj._id.toString() === hostIdStr : false
+      };
+    });
   }
 
   private getSocketIo() {
@@ -354,7 +361,7 @@ export class LiveStreamService {
     // Avoid duplicate entries in viewers list
     const isAlreadyWatching = liveStream.viewers.some(id => id.toString() === userId);
     AppLogger.info(`[LiveStreamService: joinLiveStream] Found streamId=${liveStream._id}. Is user already watching? ${isAlreadyWatching}`);
-    
+
     if (!isAlreadyWatching) {
       AppLogger.info(`[LiveStreamService: joinLiveStream] Adding userId=${userId} to viewers list.`);
       liveStream.viewers.push(userObjectId);
@@ -404,7 +411,7 @@ export class LiveStreamService {
     const originalCount = liveStream.viewers.length;
     liveStream.viewers = liveStream.viewers.filter(id => id.toString() !== userId);
     liveStream.viewerCount = liveStream.viewers.length;
-    
+
     // Remove user from seats if party room
     if (liveStream.seats) {
       const originalSeatCount = liveStream.seats.length;
