@@ -4,6 +4,9 @@ import { LiveStreamService } from '../../../services/app/LiveStreamService';
 import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import LiveStream from '../../../models/LiveStream';
+import User from '../../../models/User';
+import CoinHistory from '../../../models/CoinHistory';
 
 export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
@@ -231,6 +234,112 @@ export default (router: Router) => {
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/live/list] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Get contribution rankings for a live room (paginated)
+   * GET /app/live/contribution/:channelName?page=1&limit=10&period=daily
+   */
+  liveRouter.get('/contribution/:channelName', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      let { channelName } = req.params;
+      // Sanitize channelName in case client sends query params joined with & instead of ?
+      if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+        channelName = channelName.split(/[&?]/)[0];
+      }
+
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const period = req.query.period?.toString() || 'daily'; // 'daily' | 'weekly' | 'all'
+
+      AppLogger.info(`[HTTP GET /app/live/contribution] channelName=${channelName}, userId=${userId}, page=${page}, limit=${limit}, period=${period}`);
+
+      const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      if (!liveStream) {
+        throw new Error('Active room not found');
+      }
+
+      const hostId = liveStream.hostId;
+
+      // Determine date range based on period
+      const now = new Date();
+      let dateLimit = new Date(liveStream.startedAt); // default: since room started
+
+      if (period === 'daily') {
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        if (oneDayAgo > dateLimit) dateLimit = oneDayAgo;
+      } else if (period === 'weekly') {
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        if (oneWeekAgo > dateLimit) dateLimit = oneWeekAgo;
+      }
+      // 'all' → use room start time (already set)
+
+      // Aggregate contributions from CoinHistory
+      const allContributions = await CoinHistory.aggregate([
+        {
+          $match: {
+            relatedUserId: hostId,
+            type: 'transfer',
+            amount: { $lt: 0 },
+            createdAt: { $gte: dateLimit }
+          }
+        },
+        {
+          $group: {
+            _id: '$userId',
+            totalContribution: { $sum: { $abs: '$amount' } }
+          }
+        },
+        { $sort: { totalContribution: -1 } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit }
+      ]);
+
+      // Total contributors count (for pagination)
+      const totalContributorsAgg = await CoinHistory.aggregate([
+        {
+          $match: {
+            relatedUserId: hostId,
+            type: 'transfer',
+            amount: { $lt: 0 },
+            createdAt: { $gte: dateLimit }
+          }
+        },
+        { $group: { _id: '$userId' } },
+        { $count: 'total' }
+      ]);
+      const total = totalContributorsAgg[0]?.total || 0;
+
+      // Populate user info
+      const populatedContributions = await Promise.all(
+        allContributions.map(async (c: any) => {
+          const user = await User.findById(c._id)
+            .populate('profileImage')
+            .select('name profileImage isPremium wealthCoins country');
+          return {
+            user,
+            totalContribution: c.totalContribution
+          };
+        })
+      );
+
+      const result = populatedContributions.filter((c: any) => c.user !== null);
+
+      AppLogger.info(`[HTTP GET /app/live/contribution] Success. channelName=${channelName}, contributors=${result.length}`);
+      return ResponseWrapper.success(res, {
+        contributions: result,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
+      }, 'Contribution ranking fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/live/contribution] Failed: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
