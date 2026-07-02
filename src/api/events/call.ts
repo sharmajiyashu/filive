@@ -5,6 +5,17 @@ import { GiftService } from '../../services/app/GiftService';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 
+const callTimeouts = new Map<string, NodeJS.Timeout>();
+
+function clearCallTimeout(callId: string) {
+  const timeoutId = callTimeouts.get(callId);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    callTimeouts.delete(callId);
+    AppLogger.info(`[Call Timeout Cleared] callId=${callId}`);
+  }
+}
+
 export default (socket: AuthenticatedSocket, io: Server) => {
   const callService = Container.get(CallService);
   const giftService = Container.get(GiftService);
@@ -44,6 +55,37 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         roomId: call.roomId,
       });
 
+      // Start a timeout timer for the call (auto cut after 45 seconds)
+      const timeoutDuration = 45000; // 45 seconds
+      const timeoutId = setTimeout(async () => {
+        try {
+          AppLogger.info(`[Call Timeout Triggered] callId=${call._id}`);
+          const timedOutCall = await callService.handleCallTimeout(call._id.toString());
+          if (timedOutCall) {
+            const callerObj = timedOutCall.callerId as any;
+            const receiverObj = timedOutCall.receiverId as any;
+
+            // Notify both caller and receiver that call missed due to timeout/no-answer
+            io.to(`user_${callerObj._id}`).emit('call_missed', {
+              callId: timedOutCall._id,
+              reason: 'timeout',
+              call: timedOutCall
+            });
+            io.to(`user_${receiverObj._id}`).emit('call_missed', {
+              callId: timedOutCall._id,
+              reason: 'timeout',
+              call: timedOutCall
+            });
+          }
+        } catch (err: any) {
+          AppLogger.error(`[Call Timeout Error] callId=${call._id}: ${err.message}`);
+        } finally {
+          callTimeouts.delete(call._id.toString());
+        }
+      }, timeoutDuration);
+
+      callTimeouts.set(call._id.toString(), timeoutId);
+
       AppLogger.info(`[Socket Event: initiate_call] Call initiated. ID=${call._id}, roomId=${call.roomId}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: initiate_call] Error for user ${userId}: ${error.message}`);
@@ -60,6 +102,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'callId is required');
         return;
       }
+
+      clearCallTimeout(callId);
 
       const call = await callService.acceptCall(userId, callId);
 
@@ -84,6 +128,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
+      clearCallTimeout(callId);
+
       const call = await callService.rejectCall(userId, callId);
 
       // Notify caller that call was rejected
@@ -105,6 +151,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'callId is required');
         return;
       }
+
+      clearCallTimeout(callId);
 
       const call = await callService.endCall(userId, callId);
 

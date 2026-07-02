@@ -423,4 +423,34 @@ export class CallService {
       totalPages: Math.ceil(total / limit)
     };
   }
+
+  /**
+   * Handles automatically cutting/timing out a call if not answered
+   */
+  public async handleCallTimeout(callId: string) {
+    AppLogger.info(`[CallService: handleCallTimeout] callId=${callId}`);
+    const call = await Call.findById(callId);
+    if (!call) return null;
+
+    if (call.status === 'initiated') {
+      call.status = 'missed';
+      call.endedAt = new Date();
+      await call.save();
+
+      const populatedCall = await Call.findById(call._id)
+        .populate({
+          path: 'callerId',
+          select: 'name profileImage coins',
+          populate: { path: 'profileImage' }
+        })
+        .populate({
+          path: 'receiverId',
+          select: 'name profileImage',
+          populate: { path: 'profileImage' }
+        });
+
+      return populatedCall || call;
+    }
+    return null;
+  }
 }
