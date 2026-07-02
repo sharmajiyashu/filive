@@ -30,13 +30,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       // Notify caller that call is successfully initiated
       socket.emit('call_initiated', call);
 
+      const callerUser = call.callerId as any;
+
       // Notify receiver about incoming call request
       io.to(`user_${receiverId}`).emit('incoming_call', {
         callId: call._id,
         caller: {
-          id: socket.user?.id,
-          name: socket.user?.fullName,
-          profileImage: socket.user?.profileImage,
+          id: callerUser?._id || socket.user?.id,
+          name: callerUser?.name || socket.user?.fullName,
+          profileImage: callerUser?.profileImage || null,
         },
         callType,
         roomId: call.roomId,
@@ -132,8 +134,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       // 2. Identify sender & receiver in this call
       const actualSenderId = userId;
-      const actualReceiverId = call.callerId._id.toString() === userId 
-        ? call.receiverId._id.toString() 
+      const actualReceiverId = call.callerId._id.toString() === userId
+        ? call.receiverId._id.toString()
         : call.callerId._id.toString();
 
       const contextType = call.callType === 'voice' ? 'audio_call' : 'video_call';
