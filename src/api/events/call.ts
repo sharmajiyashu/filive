@@ -7,12 +7,24 @@ import AppLogger from '../loaders/logger';
 
 const callTimeouts = new Map<string, NodeJS.Timeout>();
 
+function registerCallTimeout(callId: string, handler: () => void, durationMs: number) {
+  // Always clear any existing timeout for this call first
+  clearCallTimeout(callId);
+  const timeoutId = setTimeout(handler, durationMs);
+  callTimeouts.set(callId, timeoutId);
+  AppLogger.info(`[Call Timeout Registered] callId=${callId}, timeoutMs=${durationMs}, activeTimers=${callTimeouts.size}`);
+}
+
 function clearCallTimeout(callId: string) {
-  const timeoutId = callTimeouts.get(callId);
+  // Normalize the callId just in case
+  const key = callId?.toString()?.trim();
+  const timeoutId = callTimeouts.get(key);
   if (timeoutId) {
     clearTimeout(timeoutId);
-    callTimeouts.delete(callId);
-    AppLogger.info(`[Call Timeout Cleared] callId=${callId}`);
+    callTimeouts.delete(key);
+    AppLogger.info(`[Call Timeout Cleared] callId=${key}, remainingTimers=${callTimeouts.size}`);
+  } else {
+    AppLogger.info(`[Call Timeout NOT FOUND] callId=${key}, activeTimers=${callTimeouts.size}`);
   }
 }
 
@@ -55,15 +67,17 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         roomId: call.roomId,
       });
 
-      // Start a timeout timer for the call (auto cut after 45 seconds)
-      const timeoutDuration = 45000; // 45 seconds
-      const timeoutId = setTimeout(async () => {
+      // Start a 45-second auto-cut timeout for the call
+      const callIdStr = call._id.toString().trim();
+      registerCallTimeout(callIdStr, async () => {
         try {
-          AppLogger.info(`[Call Timeout Triggered] callId=${call._id}`);
-          const timedOutCall = await callService.handleCallTimeout(call._id.toString());
+          AppLogger.info(`[Call Timeout Fired] callId=${callIdStr}`);
+          const timedOutCall = await callService.handleCallTimeout(callIdStr);
           if (timedOutCall) {
             const callerObj = timedOutCall.callerId as any;
             const receiverObj = timedOutCall.receiverId as any;
+
+            AppLogger.info(`[Call Timeout] Emitting call_missed to caller=${callerObj._id} and receiver=${receiverObj._id}`);
 
             // Notify both caller and receiver that call missed due to timeout/no-answer
             io.to(`user_${callerObj._id}`).emit('call_missed', {
@@ -76,15 +90,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
               reason: 'timeout',
               call: timedOutCall
             });
+          } else {
+            AppLogger.info(`[Call Timeout] Call already handled (accepted/rejected/ended). callId=${callIdStr}`);
           }
         } catch (err: any) {
-          AppLogger.error(`[Call Timeout Error] callId=${call._id}: ${err.message}`);
+          AppLogger.error(`[Call Timeout Error] callId=${callIdStr}: ${err.message}`);
         } finally {
-          callTimeouts.delete(call._id.toString());
+          callTimeouts.delete(callIdStr);
         }
-      }, timeoutDuration);
-
-      callTimeouts.set(call._id.toString(), timeoutId);
+      }, 45000);
 
       AppLogger.info(`[Socket Event: initiate_call] Call initiated. ID=${call._id}, roomId=${call.roomId}`);
     } catch (error: any) {
@@ -103,7 +117,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      clearCallTimeout(callId);
+      clearCallTimeout(callId.toString().trim());
 
       const call = await callService.acceptCall(userId, callId);
 
@@ -128,7 +142,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      clearCallTimeout(callId);
+      clearCallTimeout(callId.toString().trim());
 
       const call = await callService.rejectCall(userId, callId);
 
@@ -152,7 +166,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      clearCallTimeout(callId);
+      clearCallTimeout(callId.toString().trim());
 
       const call = await callService.endCall(userId, callId);
 
