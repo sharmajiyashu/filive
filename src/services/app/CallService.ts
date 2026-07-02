@@ -93,16 +93,30 @@ export class CallService {
       throw new Error(`Call cannot be accepted in status: ${call.status}`);
     }
 
-    // Generate ZegoCloud token for the room (expire in 2 hours)
+    // Generate ZegoCloud tokens for the room (expire in 2 hours)
     const appId = config.zegocloud.appId;
     const serverSecret = config.zegocloud.serverSecret;
-    
-    // Generate token for receiver
-    const receiverToken = generateZegoToken(appId, receiverId, serverSecret, 7200, '');
+
+    // Room privileges payload (allowing login and streaming in the call room)
+    const payloadObj = {
+      room_id: call.roomId,
+      privilege: {
+        1: 1, // Allow login
+        2: 1  // Allow publishing
+      },
+      stream_id_list: []
+    };
+    const payloadStr = JSON.stringify(payloadObj);
+
+    // Generate specific tokens for both participants
+    const callerToken = generateZegoToken(appId, call.callerId.toString(), serverSecret, 7200, payloadStr);
+    const receiverToken = generateZegoToken(appId, receiverId, serverSecret, 7200, payloadStr);
 
     call.status = 'accepted';
     call.startedAt = new Date();
-    call.zegoToken = receiverToken;
+    call.zegoToken = receiverToken; // backward compatibility
+    call.callerZegoToken = callerToken;
+    call.receiverZegoToken = receiverToken;
     await call.save();
 
     const populatedCall = await Call.findById(call._id)
