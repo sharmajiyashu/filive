@@ -173,12 +173,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       // If caller cancelled before receiver answered → emit call_cancelled to receiver
       if (call.status === 'cancelled') {
         socket.emit('call_cancelled', { callId: call._id, call });
-        io.to(`user_${call.receiverId}`).emit('call_cancelled', { callId: call._id, call });
+        io.to(`user_${call.receiverId.toString()}`).emit('call_cancelled', { callId: call._id, call });
         AppLogger.info(`[Socket Event: end_call] Call cancelled by caller. ID=${callId}`);
       } else if (call.status === 'rejected') {
         // Receiver dismissed the incoming call via end_call
         socket.emit('call_ended', call);
-        io.to(`user_${call.callerId}`).emit('call_ended', call);
+        io.to(`user_${call.callerId.toString()}`).emit('call_ended', call);
         AppLogger.info(`[Socket Event: end_call] Call ended (rejected by receiver via end_call). ID=${callId}`);
       } else {
         // Active call ended normally — notify both parties
