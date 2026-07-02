@@ -3,6 +3,7 @@ import AppLogger from '../loaders/logger';
 import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import chat from './chat';
 import live from './live';
+import call from './call';
 
 export default (io: Server): void => {
     io.on('connection', (socket: AuthenticatedSocket) => {
@@ -11,6 +12,7 @@ export default (io: Server): void => {
         }
         chat(socket, io);
         live(socket, io);
+        call(socket, io);
     });
     AppLogger.info('✌️ Socket Events Loaded');
 };

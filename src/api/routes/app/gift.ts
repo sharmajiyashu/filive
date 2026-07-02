@@ -47,15 +47,29 @@ export default (router: Router) => {
       try {
         const io = Container.get('socket') as any;
         if (io) {
-          const roomName = `live_${channelName}`;
-          io.to(roomName).emit('gift_sent', {
-            sender: result.sender,
-            host: result.host,
-            receiver: result.receiver,
-            gift: result.gift,
-            quantity: result.quantity,
-            createdAt: new Date(),
-          });
+          if (channelName) {
+            const roomName = `live_${channelName}`;
+            io.to(roomName).emit('gift_sent', {
+              sender: result.sender,
+              host: result.host,
+              receiver: result.receiver,
+              gift: result.gift,
+              quantity: result.quantity,
+              createdAt: new Date(),
+            });
+          } else {
+            // Direct/personal gift: Emit to both sender and receiver's private rooms
+            const eventPayload = {
+              sender: result.sender,
+              receiver: result.receiver,
+              gift: result.gift,
+              quantity: result.quantity,
+              contextType: contextType || 'direct',
+              createdAt: new Date(),
+            };
+            io.to(`user_${req.user.id}`).emit('personal_gift_sent', eventPayload);
+            io.to(`user_${actualReceiverId}`).emit('personal_gift_received', eventPayload);
+          }
         }
       } catch (ioError) {
         // Log error but do not fail the request
