@@ -4,7 +4,7 @@ export interface ICall extends Document {
   callerId: mongoose.Types.ObjectId;
   receiverId: mongoose.Types.ObjectId;
   callType: 'voice' | 'video';
-  status: 'initiated' | 'accepted' | 'rejected' | 'ended' | 'missed' | 'busy';
+  status: 'initiated' | 'accepted' | 'rejected' | 'ended' | 'missed' | 'busy' | 'cancelled';
   roomId: string;
   agoraToken?: string;
   callerAgoraToken?: string;
@@ -26,7 +26,7 @@ const CallSchema: Schema = new Schema(
     callType: { type: String, enum: ['voice', 'video'], required: true },
     status: {
       type: String,
-      enum: ['initiated', 'accepted', 'rejected', 'ended', 'missed', 'busy'],
+      enum: ['initiated', 'accepted', 'rejected', 'ended', 'missed', 'busy', 'cancelled'],
       default: 'initiated',
     },
     roomId: { type: String, required: true },
