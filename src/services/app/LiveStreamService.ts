@@ -1,36 +1,32 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
-import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import LiveStream from '../../models/LiveStream';
 import User from '../../models/User';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
+import { generateZegoToken } from '../../utils/zegoToken';
 
 @Service()
 export class LiveStreamService {
   /**
-   * Generates an Agora RTC Token for a channel
+   * Generates a ZegoCloud Token for a live stream channel
    */
-  public generateAgoraToken(channelName: string, uid: number, role: 'publisher' | 'subscriber'): string {
-    const appId = config.agora.appId;
-    const appCertificate = config.agora.appCertificate;
+  public generateZegoTokenForStream(channelName: string, userId: string, role: 'publisher' | 'subscriber'): string {
+    const appId = config.zegocloud.appId;
+    const serverSecret = config.zegocloud.serverSecret;
 
-    const rtcRole = role === 'publisher' ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
+    // Use strict privilege payload for room access and publishing control
+    const payload = JSON.stringify({
+      room_id: channelName,
+      privilege: {
+        1: 1, // Login room permission
+        2: role === 'publisher' ? 1 : 0 // Publish stream permission
+      },
+      stream_id_list: []
+    });
 
-    // Set token expiration to 2 hours (7200 seconds)
-    const expirationTimeInSeconds = 7200;
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
-
-    return RtcTokenBuilder.buildTokenWithUid(
-      appId,
-      appCertificate,
-      channelName,
-      uid,
-      rtcRole,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
+    // Valid for 2 hours (7200 seconds)
+    return generateZegoToken(appId, userId, serverSecret, 7200, payload);
   }
 
   /**
@@ -81,11 +77,10 @@ export class LiveStreamService {
     const channelName = `live_${hostId}_${Date.now()}`;
     AppLogger.info(`[LiveStreamService: startLiveStream] Generated channelName=${channelName}`);
 
-    // Generate Agora RTC token for the host (broadcaster/publisher).
-    // Host RTC UID can be 0 (default/auto-assign)
-    AppLogger.info(`[LiveStreamService: startLiveStream] Generating Agora RTC token for channelName=${channelName}`);
-    const token = this.generateAgoraToken(channelName, 0, 'publisher');
-    AppLogger.info(`[LiveStreamService: startLiveStream] Agora token successfully generated.`);
+    // Generate ZegoCloud token for the host (broadcaster/publisher).
+    AppLogger.info(`[LiveStreamService: startLiveStream] Generating ZegoCloud token for channelName=${channelName}`);
+    const token = this.generateZegoTokenForStream(channelName, hostId, 'publisher');
+    AppLogger.info(`[LiveStreamService: startLiveStream] ZegoCloud token successfully generated.`);
 
     const themeObjectId = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
       ? new mongoose.Types.ObjectId(roomThemeId)

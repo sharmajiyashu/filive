@@ -7,6 +7,8 @@ export interface ICall extends Document {
   status: 'initiated' | 'accepted' | 'rejected' | 'ended' | 'missed' | 'busy';
   roomId: string;
   zegoToken?: string;
+  callerZegoToken?: string;
+  receiverZegoToken?: string;
   duration: number; // in seconds
   coinsDeducted: number;
   startedAt?: Date;
@@ -27,6 +29,8 @@ const CallSchema: Schema = new Schema(
     },
     roomId: { type: String, required: true },
     zegoToken: { type: String },
+    callerZegoToken: { type: String },
+    receiverZegoToken: { type: String },
     duration: { type: Number, default: 0 },
     coinsDeducted: { type: Number, default: 0 },
     startedAt: { type: Date },
