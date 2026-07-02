@@ -170,11 +170,22 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       const call = await callService.endCall(userId, callId);
 
-      // Notify both parties that the call has ended
-      io.to(`user_${call.callerId._id}`).emit('call_ended', call);
-      io.to(`user_${call.receiverId._id}`).emit('call_ended', call);
-
-      AppLogger.info(`[Socket Event: end_call] Call ended. ID=${callId}, duration=${call.duration}s`);
+      // If caller cancelled before receiver answered → emit call_cancelled to receiver
+      if (call.status === 'cancelled') {
+        socket.emit('call_cancelled', { callId: call._id, call });
+        io.to(`user_${call.receiverId}`).emit('call_cancelled', { callId: call._id, call });
+        AppLogger.info(`[Socket Event: end_call] Call cancelled by caller. ID=${callId}`);
+      } else if (call.status === 'rejected') {
+        // Receiver dismissed the incoming call via end_call
+        socket.emit('call_ended', call);
+        io.to(`user_${call.callerId}`).emit('call_ended', call);
+        AppLogger.info(`[Socket Event: end_call] Call ended (rejected by receiver via end_call). ID=${callId}`);
+      } else {
+        // Active call ended normally — notify both parties
+        io.to(`user_${(call.callerId as any)._id || call.callerId}`).emit('call_ended', call);
+        io.to(`user_${(call.receiverId as any)._id || call.receiverId}`).emit('call_ended', call);
+        AppLogger.info(`[Socket Event: end_call] Call ended. ID=${callId}, duration=${call.duration}s`);
+      }
     } catch (error: any) {
       AppLogger.error(`[Socket Event: end_call] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to end call');

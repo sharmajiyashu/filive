@@ -222,9 +222,15 @@ export class CallService {
       throw new Error('Unauthorized to end this call');
     }
 
-    // If call was still in 'initiated' status (missed/rejected)
+    // If call was still in 'initiated' status (caller cancelled or receiver declined before accepting)
     if (call.status === 'initiated') {
-      call.status = userId === call.callerId.toString() ? 'missed' : 'rejected';
+      // Caller cancelled the call before receiver answered
+      if (userId === call.callerId.toString()) {
+        call.status = 'cancelled';
+      } else {
+        // Receiver explicitly ended the incoming call (treated as rejected)
+        call.status = 'rejected';
+      }
       call.endedAt = new Date();
       await call.save();
       return call;
