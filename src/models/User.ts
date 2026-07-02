@@ -58,6 +58,8 @@ export interface IUser extends Document {
   enableVideoCall: boolean;
   voiceCallPrice: number;
   videoCallPrice: number;
+  audioCallChargePerMinute: number;
+  videoCallChargePerMinute: number;
   hostVerificationCode?: string;
   activeEntity?: mongoose.Types.ObjectId;
   activeFrame?: mongoose.Types.ObjectId;
@@ -136,6 +138,8 @@ const UserSchema: Schema = new Schema(
     enableVideoCall: { type: Boolean, default: false },
     voiceCallPrice: { type: Number, default: 0 },
     videoCallPrice: { type: Number, default: 0 },
+    audioCallChargePerMinute: { type: Number, default: 0 },
+    videoCallChargePerMinute: { type: Number, default: 0 },
     hostVerificationCode: { type: String, unique: true, sparse: true },
     activeEntity: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeFrame: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
