@@ -4,12 +4,12 @@ import Call from '../../models/Call';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import config from '../../config';
-import { generateZegoToken } from '../../utils/zegoToken';
+import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class CallService {
-  constructor() {}
+  constructor() { }
 
   /**
    * Initiates a new call request between caller and receiver
@@ -93,30 +93,72 @@ export class CallService {
       throw new Error(`Call cannot be accepted in status: ${call.status}`);
     }
 
-    // Generate ZegoCloud tokens for the room (expire in 2 hours)
-    const appId = config.zegocloud.appId;
-    const serverSecret = config.zegocloud.serverSecret;
+    // Fetch caller & receiver profiles to get their numeric userIds and string accounts
+    const caller = await User.findById(call.callerId);
+    const receiver = await User.findById(call.receiverId);
+    if (!caller || !receiver) {
+      throw new Error('User profiles not found');
+    }
 
-    // Room privileges payload (allowing login and streaming in the call room)
-    const payloadObj = {
-      room_id: call.roomId,
-      privilege: {
-        1: 1, // Allow login
-        2: 1  // Allow publishing
-      },
-      stream_id_list: []
-    };
-    const payloadStr = JSON.stringify(payloadObj);
+    // Generate Agora RTC tokens (expire in 2 hours)
+    const appId = config.agora.appId;
+    const appCertificate = config.agora.appCertificate;
+    const expirationTimeInSeconds = 7200;
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    // Generate specific tokens for both participants
-    const callerToken = generateZegoToken(appId, call.callerId.toString(), serverSecret, 7200, payloadStr);
-    const receiverToken = generateZegoToken(appId, receiverId, serverSecret, 7200, payloadStr);
+    // 1. Generate Tokens using numeric UIDs (e.g. caller.userId, receiver.userId)
+    const callerUid = caller.userId || 0;
+    const receiverUid = receiver.userId || 0;
+
+    const callerToken = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      call.roomId,
+      callerUid,
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
+
+    const receiverToken = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      call.roomId,
+      receiverUid,
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
+
+    // 2. Generate Tokens using string User Accounts (e.g. caller._id, receiver._id)
+    const callerAccountToken = RtcTokenBuilder.buildTokenWithUserAccount(
+      appId,
+      appCertificate,
+      call.roomId,
+      caller._id.toString(),
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
+
+    const receiverAccountToken = RtcTokenBuilder.buildTokenWithUserAccount(
+      appId,
+      appCertificate,
+      call.roomId,
+      receiver._id.toString(),
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
 
     call.status = 'accepted';
     call.startedAt = new Date();
-    call.zegoToken = receiverToken; // backward compatibility
-    call.callerZegoToken = callerToken;
-    call.receiverZegoToken = receiverToken;
+    call.agoraToken = receiverToken; // backward compatibility
+    call.callerAgoraToken = callerToken;
+    call.receiverAgoraToken = receiverToken;
+    call.callerAgoraAccountToken = callerAccountToken;
+    call.receiverAgoraAccountToken = receiverAccountToken;
     await call.save();
 
     const populatedCall = await Call.findById(call._id)
@@ -190,7 +232,7 @@ export class CallService {
 
     if (receiver && caller) {
       const rate = call.callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
-      
+
       // Calculate total cost (charge per started minute)
       const minutes = Math.ceil(duration / 60);
       const cost = minutes * rate;
@@ -198,7 +240,7 @@ export class CallService {
       if (cost > 0) {
         // Cap the cost to caller's current balance to avoid negative balance
         const actualCost = Math.min(caller.coins || 0, cost);
-        
+
         caller.coins = Math.max(0, (caller.coins || 0) - actualCost);
         caller.wealthCoins = (caller.wealthCoins || 0) + actualCost;
         await caller.save();
