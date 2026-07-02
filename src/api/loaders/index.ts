@@ -10,6 +10,23 @@ import { startAgencySettlementJob } from '../../jobs/agencySettlementJob';
 
 export default async (expressApp: Express): Promise<void> => {
     const mongoConnection = await dbLoader();
+
+    // Reset active/busy calls stuck in 'initiated' or 'accepted' state on server startup
+    try {
+        const Call = (await import('../../models/Call')).default;
+        const initiatedReset = await Call.updateMany(
+            { status: 'initiated' },
+            { status: 'missed', endedAt: new Date() }
+        );
+        const acceptedReset = await Call.updateMany(
+            { status: 'accepted' },
+            { status: 'ended', endedAt: new Date() }
+        );
+        AppLogger.info(`🧹 Startup cleanup: Reset ${initiatedReset.modifiedCount} initiated calls to 'missed' and ${acceptedReset.modifiedCount} accepted calls to 'ended'.`);
+    } catch (err: any) {
+        AppLogger.error('❌ Failed to run startup cleanup for stuck calls:', err);
+    }
+
     const cloudinaryClient = await cloudinaryLoader();
     const firebaseApp = firebaseLoader();
     // const emailClient = await smtpLoader();

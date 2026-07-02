@@ -77,7 +77,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage',
+        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -177,7 +177,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage',
+        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -300,7 +300,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage',
+        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -327,7 +327,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage isPremium gender',
+        select: 'name profileImage isPremium gender dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       })
       .skip(skip)
@@ -357,7 +357,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage',
+        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -445,7 +445,7 @@ export class CallService {
         })
         .populate({
           path: 'receiverId',
-          select: 'name profileImage',
+          select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
           populate: { path: 'profileImage' }
         });
 
