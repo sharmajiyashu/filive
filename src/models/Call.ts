@@ -6,9 +6,11 @@ export interface ICall extends Document {
   callType: 'voice' | 'video';
   status: 'initiated' | 'accepted' | 'rejected' | 'ended' | 'missed' | 'busy';
   roomId: string;
-  zegoToken?: string;
-  callerZegoToken?: string;
-  receiverZegoToken?: string;
+  agoraToken?: string;
+  callerAgoraToken?: string;
+  receiverAgoraToken?: string;
+  callerAgoraAccountToken?: string;
+  receiverAgoraAccountToken?: string;
   duration: number; // in seconds
   coinsDeducted: number;
   startedAt?: Date;
@@ -28,9 +30,11 @@ const CallSchema: Schema = new Schema(
       default: 'initiated',
     },
     roomId: { type: String, required: true },
-    zegoToken: { type: String },
-    callerZegoToken: { type: String },
-    receiverZegoToken: { type: String },
+    agoraToken: { type: String },
+    callerAgoraToken: { type: String },
+    receiverAgoraToken: { type: String },
+    callerAgoraAccountToken: { type: String },
+    receiverAgoraAccountToken: { type: String },
     duration: { type: Number, default: 0 },
     coinsDeducted: { type: Number, default: 0 },
     startedAt: { type: Date },
