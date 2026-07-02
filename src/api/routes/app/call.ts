@@ -44,6 +44,51 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/calls/hosts:
+   *   get:
+   *     summary: Get hosts available for voice/video calling
+   *     tags: [Calls]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: callType
+   *         schema:
+   *           type: string
+   *           enum: [voice, video]
+   *         description: Filter hosts by enabled call type
+   *     responses:
+   *       200:
+   *         description: Calling hosts fetched successfully
+   */
+  callRouter.get('/hosts', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1', 10);
+      const limit = parseInt(req.query.limit?.toString() || '10', 10);
+      const callType = req.query.callType as 'voice' | 'video' | undefined;
+      
+      if (callType && !['voice', 'video'].includes(callType)) {
+        throw new Error('Invalid callType filter. Use "voice" or "video".');
+      }
+
+      const userId = req.user.id;
+      const result = await callService.getCallingHosts(page, limit, userId, callType);
+      return ResponseWrapper.success(res, result, 'Calling hosts fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/calls/{callId}:
    *   get:
    *     summary: Get details of a call session

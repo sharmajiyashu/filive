@@ -329,4 +329,58 @@ export class CallService {
 
     return call;
   }
+
+  /**
+   * Fetches hosts who have enabled voice call or video call, excluding blocked users.
+   */
+  public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video') {
+    let query: any = {
+      userRole: 'user'
+    };
+
+    if (callType === 'voice') {
+      query.enableVoiceCall = true;
+    } else if (callType === 'video') {
+      query.enableVideoCall = true;
+    } else {
+      query.$or = [
+        { enableVoiceCall: true },
+        { enableVideoCall: true }
+      ];
+    }
+
+    // Exclude blocked users
+    const Block = mongoose.model('Block');
+    const blockedRelations = await Block.find({
+      $or: [
+        { blockerId: currentUserId },
+        { blockedId: currentUserId }
+      ]
+    });
+
+    const excludedUserIds = blockedRelations.map((rel: any) =>
+      rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
+    );
+
+    const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
+    query._id = { $nin: ninIds };
+
+    const skip = (page - 1) * limit;
+    const hosts = await User.find(query)
+      .select('name profileImage email bio isPremium gender country enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+      .populate('profileImage')
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    const total = await User.countDocuments(query);
+
+    return {
+      data: hosts,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  }
 }
