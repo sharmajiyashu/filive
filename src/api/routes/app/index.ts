@@ -18,6 +18,7 @@ import store from './store';
 import liveStream from './liveStream';
 import gift from './gift';
 import roomTheme from './roomTheme';
+import call from './call';
 
 export default (router: Router): Router => {
   profile(router);
@@ -39,5 +40,6 @@ export default (router: Router): Router => {
   liveStream(router);
   gift(router);
   roomTheme(router);
+  call(router);
   return router;
 };

@@ -71,5 +71,9 @@ export default {
     agora: {
         appId: process.env.AGORA_APP_ID || 'ca641267ba3648fa8c2f2474e9eeac72',
         appCertificate: process.env.AGORA_APP_CERTIFICATE || '256cb89b013645978d1f6af54899d414'
+    },
+    zegocloud: {
+        appId: parseInt(process.env.ZEGO_APP_ID || '123456789', 10),
+        serverSecret: process.env.ZEGO_SERVER_SECRET || '12345678901234567890123456789012'
     }
 };
