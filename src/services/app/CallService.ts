@@ -70,8 +70,16 @@ export class CallService {
 
     // Populate profiles for response
     const populatedCall = await Call.findById(call._id)
-      .populate('callerId', 'name profileImage coins')
-      .populate('receiverId', 'name profileImage');
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage coins',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage',
+        populate: { path: 'profileImage' }
+      });
 
     return populatedCall || call;
   }
@@ -162,8 +170,16 @@ export class CallService {
     await call.save();
 
     const populatedCall = await Call.findById(call._id)
-      .populate('callerId', 'name profileImage coins')
-      .populate('receiverId', 'name profileImage');
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage coins',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage',
+        populate: { path: 'profileImage' }
+      });
 
     return populatedCall || call;
   }
@@ -277,8 +293,16 @@ export class CallService {
     await call.save();
 
     const populatedCall = await Call.findById(call._id)
-      .populate('callerId', 'name profileImage coins')
-      .populate('receiverId', 'name profileImage');
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage coins',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage',
+        populate: { path: 'profileImage' }
+      });
 
     return populatedCall || call;
   }
@@ -296,8 +320,16 @@ export class CallService {
     };
 
     const calls = await Call.find(query)
-      .populate('callerId', 'name profileImage isPremium gender')
-      .populate('receiverId', 'name profileImage isPremium gender')
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage isPremium gender',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage isPremium gender',
+        populate: { path: 'profileImage' }
+      })
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -318,8 +350,16 @@ export class CallService {
    */
   public async getCallDetails(userId: string, callId: string) {
     const call = await Call.findById(callId)
-      .populate('callerId', 'name profileImage coins')
-      .populate('receiverId', 'name profileImage');
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage coins',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage',
+        populate: { path: 'profileImage' }
+      });
 
     if (!call) throw new Error('Call session not found');
 
