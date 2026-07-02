@@ -80,12 +80,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
             AppLogger.info(`[Call Timeout] Emitting call_missed to caller=${callerObj._id} and receiver=${receiverObj._id}`);
 
             // Notify both caller and receiver that call missed due to timeout/no-answer
-            io.to(`user_${callerObj._id}`).emit('call_missed', {
+            io.to(`user_${callerObj._id.toString()}`).emit('call_missed', {
               callId: timedOutCall._id,
               reason: 'timeout',
               call: timedOutCall
             });
-            io.to(`user_${receiverObj._id}`).emit('call_missed', {
+            io.to(`user_${receiverObj._id.toString()}`).emit('call_missed', {
               callId: timedOutCall._id,
               reason: 'timeout',
               call: timedOutCall
