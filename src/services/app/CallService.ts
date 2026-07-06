@@ -115,9 +115,9 @@ export class CallService {
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-    // 1. Generate Tokens using numeric UIDs (e.g. caller.userId, receiver.userId)
-    const callerUid = caller.userId || 0;
-    const receiverUid = receiver.userId || 0;
+    // 1. Generate Tokens using numeric UIDs (e.g. caller.userId, receiver.userId) - changed to 0 for wildcard matching
+    const callerUid = 0;
+    const receiverUid = 0;
 
     const callerToken = RtcTokenBuilder.buildTokenWithUid(
       appId,
