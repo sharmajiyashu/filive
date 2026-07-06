@@ -57,8 +57,10 @@ export class CallService {
     }
 
     // 4. Create Call entry
-    const roomId = `call_${callerId}_${receiverId}_${Date.now()}`;
+    const callId = new mongoose.Types.ObjectId();
+    const roomId = `call_${callId.toString()}`;
     const call = await Call.create({
+      _id: callId,
       callerId: new mongoose.Types.ObjectId(callerId),
       receiverId: new mongoose.Types.ObjectId(receiverId),
       callType,
