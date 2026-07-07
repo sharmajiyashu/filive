@@ -11,6 +11,7 @@ export class AppSettingService {
     agency_use_commission_slabs: true,
     agency_auto_settlement_enabled: true,
     agency_settlement_day: 1,
+    call_platform_fee_percent: 10,
   };
 
   async getSettings() {
