@@ -1,4 +1,4 @@
-import { Service } from 'typedi';
+import { Service, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import Call from '../../models/Call';
 import User from '../../models/User';
@@ -6,9 +6,13 @@ import CoinHistory from '../../models/CoinHistory';
 import config from '../../config';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import AppLogger from '../../api/loaders/logger';
+import { AppSettingService } from '../common/AppSettingService';
 
 @Service()
 export class CallService {
+  @Inject()
+  private appSettingService!: AppSettingService;
+
   constructor() { }
 
   /**
@@ -141,34 +145,11 @@ export class CallService {
       privilegeExpiredTs
     );
 
-    // 2. Generate Tokens using string User Accounts (e.g. caller._id, receiver._id)
-    const callerAccountToken = RtcTokenBuilder.buildTokenWithUserAccount(
-      appId,
-      appCertificate,
-      call.roomId,
-      caller._id.toString(),
-      RtcRole.PUBLISHER,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
-
-    const receiverAccountToken = RtcTokenBuilder.buildTokenWithUserAccount(
-      appId,
-      appCertificate,
-      call.roomId,
-      receiver._id.toString(),
-      RtcRole.PUBLISHER,
-      privilegeExpiredTs,
-      privilegeExpiredTs
-    );
-
     call.status = 'accepted';
     call.startedAt = new Date();
     call.agoraToken = receiverToken; // backward compatibility
     call.callerAgoraToken = callerToken;
     call.receiverAgoraToken = receiverToken;
-    call.callerAgoraAccountToken = callerAccountToken;
-    call.receiverAgoraAccountToken = receiverAccountToken;
     await call.save();
 
     const populatedCall = await Call.findById(call._id)
@@ -265,15 +246,22 @@ export class CallService {
         // Cap the cost to caller's current balance to avoid negative balance
         const actualCost = Math.min(caller.coins || 0, cost);
 
+        // Calculate platform fee and receiver's earnings
+        const platformFeePercent = await this.appSettingService.getSettingValue('call_platform_fee_percent') ?? 10;
+        const platformFee = Math.round((actualCost * platformFeePercent) / 100);
+        const coinsEarned = Math.max(0, actualCost - platformFee);
+
         caller.coins = Math.max(0, (caller.coins || 0) - actualCost);
         caller.wealthCoins = (caller.wealthCoins || 0) + actualCost;
         await caller.save();
 
-        receiver.coins = (receiver.coins || 0) + actualCost;
-        receiver.charmCoins = (receiver.charmCoins || 0) + actualCost;
+        receiver.coins = (receiver.coins || 0) + coinsEarned;
+        receiver.charmCoins = (receiver.charmCoins || 0) + coinsEarned;
         await receiver.save();
 
         call.coinsDeducted = actualCost;
+        call.coinsEarned = coinsEarned;
+        call.platformFee = platformFee;
 
         // Record coin transaction logs
         await CoinHistory.create({
@@ -288,9 +276,9 @@ export class CallService {
         await CoinHistory.create({
           userId: receiver._id,
           relatedUserId: caller._id,
-          amount: actualCost,
+          amount: coinsEarned,
           type: 'charm_received',
-          description: `Earned from ${call.callType} call duration of ${minutes} min(s)`,
+          description: `Earned from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
           channelName: call.roomId,
         });
 

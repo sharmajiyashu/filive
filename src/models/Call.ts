@@ -13,6 +13,8 @@ export interface ICall extends Document {
   receiverAgoraAccountToken?: string;
   duration: number; // in seconds
   coinsDeducted: number;
+  coinsEarned: number;
+  platformFee: number;
   startedAt?: Date;
   endedAt?: Date;
   createdAt: Date;
@@ -37,6 +39,8 @@ const CallSchema: Schema = new Schema(
     receiverAgoraAccountToken: { type: String },
     duration: { type: Number, default: 0 },
     coinsDeducted: { type: Number, default: 0 },
+    coinsEarned: { type: Number, default: 0 },
+    platformFee: { type: Number, default: 0 },
     startedAt: { type: Date },
     endedAt: { type: Date },
   },
