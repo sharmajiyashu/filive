@@ -3,7 +3,7 @@ import Container from 'typedi';
 import { LiveStreamService } from '../../../services/app/LiveStreamService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { adminAuthMiddleware } from '../../middleware/adminAuthMiddleware';
-import LiveStream from '../../../models/LiveStream';
+import Room from '../../../models/Room';
 import User from '../../../models/User';
 import CoinHistory from '../../../models/CoinHistory';
 
@@ -43,7 +43,7 @@ export default (router: Router) => {
   liveRouter.delete('/:id', async (req: any, res: Response) => {
     try {
       const streamId = req.params.id;
-      const liveStream = await LiveStream.findById(streamId);
+      const liveStream = await Room.findById(streamId);
       if (!liveStream) {
         throw new Error('Room not found');
       }
@@ -61,7 +61,7 @@ export default (router: Router) => {
       if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
         channelName = channelName.split(/[&?]/)[0];
       }
-      const liveStream = await LiveStream.findOne({ channelName, status: 'live' })
+      const liveStream = await Room.findOne({ channelName, status: 'live' })
         .populate({
           path: 'viewers',
           select: 'userId name profileImage email mobile isPremium wealthCoins charmCoins gender country location',
@@ -127,7 +127,7 @@ export default (router: Router) => {
       }
       const period = req.query.period?.toString() || 'daily'; // 'daily' | 'weekly'
 
-      const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      const liveStream = await Room.findOne({ channelName, status: 'live' });
       if (!liveStream) {
         throw new Error('Active room not found');
       }

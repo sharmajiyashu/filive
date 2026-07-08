@@ -5,7 +5,7 @@ export interface ISeat {
   seatIndex: number;
 }
 
-export interface ILiveStream extends Document {
+export interface IRoom extends Document {
   hostId: mongoose.Types.ObjectId;
   channelName: string;
   title: string;
@@ -24,7 +24,7 @@ export interface ILiveStream extends Document {
   updatedAt: Date;
 }
 
-const LiveStreamSchema: Schema = new Schema(
+const RoomSchema: Schema = new Schema(
   {
     hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     channelName: { type: String, required: true, unique: true },
@@ -51,8 +51,8 @@ const LiveStreamSchema: Schema = new Schema(
   }
 );
 
-// Indexing for faster queries on active livestreams
-LiveStreamSchema.index({ status: 1 });
-LiveStreamSchema.index({ hostId: 1, status: 1 });
+// Indexing for faster queries on active rooms
+RoomSchema.index({ status: 1 });
+RoomSchema.index({ hostId: 1, status: 1 });
 
-export default mongoose.model<ILiveStream>('LiveStream', LiveStreamSchema);
+export default mongoose.model<IRoom>('Room', RoomSchema);

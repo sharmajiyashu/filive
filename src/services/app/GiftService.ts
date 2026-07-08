@@ -4,12 +4,12 @@ import Gift from '../../models/Gift';
 import GiftType from '../../models/GiftType';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
-import LiveStream from '../../models/LiveStream';
+import Room from '../../models/Room';
 import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class GiftService {
-  constructor() {}
+  constructor() { }
 
   // ----------------------------------------------------
   // ADMIN APIS
@@ -98,7 +98,7 @@ export class GiftService {
     quantity: number = 1
   ) {
     AppLogger.info(`[GiftService: sendGift] Entered. senderId=${senderId}, channelName=${channelName}, giftId=${giftId}, receiverId=${receiverId}, contextType=${contextType}, quantity=${quantity}`);
-    
+
     if (quantity <= 0 || isNaN(quantity)) {
       throw new Error('Quantity must be a positive number');
     }
@@ -116,7 +116,7 @@ export class GiftService {
     let resolvedContext = contextType;
 
     if (channelName) {
-      liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      liveStream = await Room.findOne({ channelName, status: 'live' });
       if (liveStream) {
         if (!resolvedContext) {
           resolvedContext = liveStream.roomType === 'party_room' ? 'party_room' : 'live_stream';
@@ -130,7 +130,7 @@ export class GiftService {
         throw new Error('Active room/livestream not found');
       }
       const hostId = liveStream.hostId.toString();
-      
+
       // Audience can send only to host. Host cannot send to self (already checked by self-gifting).
       if (senderId !== hostId) {
         if (receiverId !== hostId) {
@@ -263,7 +263,7 @@ export class GiftService {
    */
   public async getGiftedUsersInRoom(userId: string, channelName: string) {
     AppLogger.info(`[GiftService: getGiftedUsersInRoom] Entered. userId=${userId}, channelName=${channelName}`);
-    
+
     const historyEntries = await CoinHistory.aggregate([
       {
         $match: {
@@ -305,8 +305,8 @@ export class GiftService {
    */
   public async getEligibleReceivers(userId: string, channelName: string) {
     AppLogger.info(`[GiftService: getEligibleReceivers] Entered. userId=${userId}, channelName=${channelName}`);
-    
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       throw new Error('Active room/livestream not found');
     }
@@ -317,7 +317,7 @@ export class GiftService {
 
     const addUserToList = async (uid: string, role: string) => {
       if (uid === userId) return; // Self-gifting is not allowed
-      
+
       // Avoid duplicate entries in the result list
       if (result.some(entry => entry.user._id.toString() === uid)) return;
 

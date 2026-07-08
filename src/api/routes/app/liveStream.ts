@@ -4,7 +4,7 @@ import { LiveStreamService } from '../../../services/app/LiveStreamService';
 import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
-import LiveStream from '../../../models/LiveStream';
+import Room from '../../../models/Room';
 import User from '../../../models/User';
 import CoinHistory from '../../../models/CoinHistory';
 
@@ -12,11 +12,11 @@ export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
   const liveRouter = Router();
 
-  router.use('/live', appAuthMiddleware, liveRouter);
+  router.use('/room', appAuthMiddleware, liveRouter);
 
   /**
    * @swagger
-   * /app/live/start:
+   * /app/room/start:
    *   post:
    *     summary: Start a live stream or party room
    *     tags: [LiveStream]
@@ -47,18 +47,18 @@ export default (router: Router) => {
    */
   liveRouter.post('/start', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP POST /app/live/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
+    AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { title, roomType, partyRoomOption, roomTheme } = req.body;
       if (!title) {
-        AppLogger.warn(`[HTTP POST /app/live/start] Missing title in body. userId=${userId}`);
+        AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
       const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme);
-      AppLogger.info(`[HTTP POST /app/live/start] Success. userId=${userId}`);
+      AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
-      AppLogger.error(`[HTTP POST /app/live/start] Failed for userId=${userId}: ${error.message}`, error);
+      AppLogger.error(`[HTTP POST /app/room/start] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -68,7 +68,7 @@ export default (router: Router) => {
    */
   liveRouter.post('/edit', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP POST /app/live/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
+    AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { channelName, title, roomTheme, partyRoomOption } = req.body;
       if (!channelName) {
@@ -80,7 +80,7 @@ export default (router: Router) => {
       try {
         const io = Container.get('socket') as any;
         if (io) {
-          io.to(`live_${channelName}`).emit('room_updated', result);
+          io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_updated', result);
         }
       } catch (e) {
         AppLogger.error('Failed to emit room_updated socket event', e);
@@ -88,7 +88,7 @@ export default (router: Router) => {
 
       return ResponseWrapper.success(res, result, 'Room details updated successfully');
     } catch (error: any) {
-      AppLogger.error(`[HTTP POST /app/live/edit] Failed for userId=${userId}: ${error.message}`, error);
+      AppLogger.error(`[HTTP POST /app/room/edit] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -179,7 +179,7 @@ export default (router: Router) => {
 
   /**
    * @swagger
-   * /app/live/end:
+   * /app/room/end:
    *   post:
    *     summary: End active live stream
    *     tags: [LiveStream]
@@ -191,20 +191,20 @@ export default (router: Router) => {
    */
   liveRouter.post('/end', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP POST /app/live/end] Request received. userId=${userId}`);
+    AppLogger.info(`[HTTP POST /app/room/end] Request received. userId=${userId}`);
     try {
       const result = await liveStreamService.endLiveStream(userId);
-      AppLogger.info(`[HTTP POST /app/live/end] Success. userId=${userId}`);
+      AppLogger.info(`[HTTP POST /app/room/end] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream ended successfully');
     } catch (error: any) {
-      AppLogger.error(`[HTTP POST /app/live/end] Failed for userId=${userId}: ${error.message}`, error);
+      AppLogger.error(`[HTTP POST /app/room/end] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
 
   /**
    * @swagger
-   * /app/live/list:
+   * /app/room/list:
    *   get:
    *     summary: Get all active live streams
    *     tags: [LiveStream]
@@ -225,22 +225,22 @@ export default (router: Router) => {
    */
   liveRouter.get('/list', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP GET /app/live/list] Request received. userId=${userId}, query=${JSON.stringify(req.query)}`);
+    AppLogger.info(`[HTTP GET /app/room/list] Request received. userId=${userId}, query=${JSON.stringify(req.query)}`);
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const result = await liveStreamService.getActiveLiveStreams(page, limit);
-      AppLogger.info(`[HTTP GET /app/live/list] Success. Found ${result.streams?.length || 0} active streams.`);
+      AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
-      AppLogger.error(`[HTTP GET /app/live/list] Failed for userId=${userId}: ${error.message}`, error);
+      AppLogger.error(`[HTTP GET /app/room/list] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
 
   /**
    * Get contribution rankings for a live room (paginated)
-   * GET /app/live/contribution/:channelName?page=1&limit=10&period=daily
+   * GET /app/room/contribution/:channelName?page=1&limit=10&period=daily
    */
   liveRouter.get('/contribution/:channelName', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -255,9 +255,9 @@ export default (router: Router) => {
       const limit = parseInt(req.query.limit?.toString() || '10');
       const period = req.query.period?.toString() || 'daily'; // 'daily' | 'weekly' | 'all'
 
-      AppLogger.info(`[HTTP GET /app/live/contribution] channelName=${channelName}, userId=${userId}, page=${page}, limit=${limit}, period=${period}`);
+      AppLogger.info(`[HTTP GET /app/room/contribution] channelName=${channelName}, userId=${userId}, page=${page}, limit=${limit}, period=${period}`);
 
-      const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      const liveStream = await Room.findOne({ channelName, status: 'live' });
       if (!liveStream) {
         throw new Error('Active room not found');
       }
@@ -328,7 +328,7 @@ export default (router: Router) => {
 
       const result = populatedContributions.filter((c: any) => c.user !== null);
 
-      AppLogger.info(`[HTTP GET /app/live/contribution] Success. channelName=${channelName}, contributors=${result.length}`);
+      AppLogger.info(`[HTTP GET /app/room/contribution] Success. channelName=${channelName}, contributors=${result.length}`);
       return ResponseWrapper.success(res, {
         contributions: result,
         pagination: {
@@ -339,7 +339,48 @@ export default (router: Router) => {
         }
       }, 'Contribution ranking fetched successfully');
     } catch (error: any) {
-      AppLogger.error(`[HTTP GET /app/live/contribution] Failed: ${error.message}`, error);
+      AppLogger.error(`[HTTP GET /app/room/contribution] Failed: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/history:
+   *   get:
+   *     summary: Get history of ended rooms/sessions
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: hostId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Room history fetched successfully
+   */
+  liveRouter.get('/history', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP GET /app/room/history] Request received. userId=${userId}, query=${JSON.stringify(req.query)}`);
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const hostId = req.query.hostId?.toString() || undefined;
+      const result = await liveStreamService.getRoomHistory(hostId, page, limit);
+      AppLogger.info(`[HTTP GET /app/room/history] Success. Found ${result.streams?.length || 0} ended streams.`);
+      return ResponseWrapper.success(res, result, 'Room history fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/room/history] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
