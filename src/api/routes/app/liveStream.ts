@@ -49,12 +49,12 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { title, roomType, partyRoomOption, roomTheme } = req.body;
+      const { title, roomType, partyRoomOption, roomTheme, announcement } = req.body;
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement);
       AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
@@ -70,11 +70,11 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { channelName, title, roomTheme, partyRoomOption } = req.body;
+      const { channelName, title, roomTheme, partyRoomOption, announcement } = req.body;
       if (!channelName) {
         throw new Error('channelName is required');
       }
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption });
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement });
 
       // Emit room_updated socket event
       try {
@@ -229,11 +229,44 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await liveStreamService.getActiveLiveStreams(page, limit);
+      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId);
       AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/list] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Get active room details for the logged-in host
+   */
+  liveRouter.get('/active', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP GET /app/room/active] Request received. userId=${userId}`);
+    try {
+      const result = await liveStreamService.getActiveRoomForHost(userId);
+      return ResponseWrapper.success(res, result, 'Active room details fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/room/active] Failed: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Get details of any room by channelName
+   */
+  liveRouter.get('/details/:channelName', async (req: any, res: Response) => {
+    let { channelName } = req.params;
+    if (channelName && (channelName.includes('&') || channelName.includes('?'))) {
+      channelName = channelName.split(/[&?]/)[0];
+    }
+    AppLogger.info(`[HTTP GET /app/room/details/:channelName] Request received. channelName=${channelName}`);
+    try {
+      const result = await liveStreamService.getRoomDetails(channelName);
+      return ResponseWrapper.success(res, result, 'Room details fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/room/details/:channelName] Failed for channelName=${channelName}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
