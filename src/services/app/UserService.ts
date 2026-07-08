@@ -7,7 +7,7 @@ import Comment from '../../models/Comment';
 import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
 import Chat from '../../models/Chat';
-import LiveStream from '../../models/LiveStream';
+import Room from '../../models/Room';
 import mongoose from 'mongoose';
 
 import { LevelService } from './LevelService';
@@ -213,7 +213,7 @@ export class UserService {
     }
 
     // Check if the user has an active livestream
-    const activeLive = await LiveStream.findOne({ hostId: user._id, status: 'live' });
+    const activeLive = await Room.findOne({ hostId: user._id, status: 'live' });
 
     return {
       user: {

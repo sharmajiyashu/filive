@@ -1,7 +1,7 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
-import LiveStream from '../../models/LiveStream';
+import Room from '../../models/Room';
 import User from '../../models/User';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
@@ -51,10 +51,10 @@ export class LiveStreamService {
 
     // Check if the user is already hosting a live stream
     AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active stream`);
-    const activeStream = await LiveStream.findOne({ hostId, status: 'live' });
+    const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
       AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Populating and returning.`);
-      const populatedStream = await LiveStream.findById(activeStream._id)
+      const populatedStream = await Room.findById(activeStream._id)
         .populate({
           path: 'hostId',
           populate: {
@@ -92,7 +92,7 @@ export class LiveStreamService {
       : undefined;
 
     AppLogger.info(`[LiveStreamService: startLiveStream] Creating LiveStream DB entry...`);
-    const liveStream = await LiveStream.create({
+    const liveStream = await Room.create({
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
       title,
@@ -109,7 +109,7 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: startLiveStream] LiveStream created successfully. streamId=${liveStream._id}, channelName=${channelName}`);
 
     AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId, profileImage, and theme for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id)
+    const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
         populate: {
@@ -136,7 +136,7 @@ export class LiveStreamService {
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName, status: 'live' };
-    const liveStream = await LiveStream.findOne(query);
+    const liveStream = await Room.findOne(query);
     if (!liveStream) {
       throw new Error('Active room/livestream not found or you are not the host');
     }
@@ -151,7 +151,7 @@ export class LiveStreamService {
 
     await liveStream.save();
 
-    return await LiveStream.findById(liveStream._id)
+    return await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
         populate: {
@@ -171,7 +171,7 @@ export class LiveStreamService {
    */
   public async blockUserFromRoom(hostId: string, channelName: string, userIdToBlock: string) {
     AppLogger.info(`[LiveStreamService: blockUserFromRoom] hostId=${hostId}, channelName=${channelName}, userIdToBlock=${userIdToBlock}`);
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       throw new Error('Active room/livestream not found');
     }
@@ -203,12 +203,12 @@ export class LiveStreamService {
     // Trigger socket kick
     const io = this.getSocketIo();
     if (io) {
-      const roomName = `live_${channelName}`;
-      io.to(roomName).emit('user_blocked', {
+      const payload = {
         userId: userIdToBlock,
         channelName,
         message: 'You have been blocked and kicked from this room'
-      });
+      };
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('user_blocked', payload);
     }
 
     return liveStream;
@@ -219,7 +219,7 @@ export class LiveStreamService {
    */
   public async unblockUserFromRoom(hostId: string, channelName: string, userIdToUnblock: string) {
     AppLogger.info(`[LiveStreamService: unblockUserFromRoom] hostId=${hostId}, channelName=${channelName}, userIdToUnblock=${userIdToUnblock}`);
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       throw new Error('Active room/livestream not found');
     }
@@ -243,7 +243,7 @@ export class LiveStreamService {
    * Retrieves room audience details
    */
   public async getAudienceList(channelName: string) {
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' })
+    const liveStream = await Room.findOne({ channelName, status: 'live' })
       .populate({
         path: 'viewers',
         select: 'name profileImage email mobile isPremium wealthCoins charmCoins gender country location',
@@ -295,7 +295,7 @@ export class LiveStreamService {
     }
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Querying active stream with query: ${JSON.stringify(query)}`);
-    const liveStream = await LiveStream.findOne(query);
+    const liveStream = await Room.findOne(query);
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: endLiveStream] No active live stream found for query: ${JSON.stringify(query)}`);
       throw new Error('No active live stream found to end');
@@ -313,19 +313,20 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: endLiveStream] Fetching socket instance to emit live_ended event`);
     const io = this.getSocketIo();
     if (io) {
-      const roomName = `live_${liveStream.channelName}`;
-      AppLogger.info(`[Socket] Emitting live_ended event to room: ${roomName}`);
-      io.to(roomName).emit('live_ended', {
+      const payload = {
         channelName: liveStream.channelName,
         message: 'Livestream has been ended by the host'
-      });
-      AppLogger.info(`[Socket] Successfully emitted live_ended event to room: ${roomName}`);
+      };
+      AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}`);
+      io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('live_ended', payload);
+      io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_ended', payload);
+      AppLogger.info(`[Socket] Successfully emitted events to rooms.`);
     } else {
       AppLogger.error('[Socket] io is null, cannot emit live_ended event');
     }
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Populating hostId and profileImage for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id).populate({
+    const populatedStream = await Room.findById(liveStream._id).populate({
       path: 'hostId',
       populate: {
         path: 'profileImage'
@@ -346,7 +347,7 @@ export class LiveStreamService {
     }
 
     AppLogger.info(`[LiveStreamService: joinLiveStream] Querying active stream for channelName=${channelName}`);
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: joinLiveStream] Active livestream not found or has ended. channelName=${channelName}`);
       throw new Error('Live stream not found or has ended');
@@ -373,7 +374,7 @@ export class LiveStreamService {
     }
 
     AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id)
+    const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
         populate: {
@@ -401,7 +402,7 @@ export class LiveStreamService {
     }
 
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Querying active stream for channelName=${channelName}`);
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: leaveLiveStream] Active stream not found. Returning null. channelName=${channelName}`);
       return null;
@@ -433,7 +434,7 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Saved updated viewer list in DB.`);
 
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Populating hostId, profileImage, and theme for return payload`);
-    const populatedStream = await LiveStream.findById(liveStream._id)
+    const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
         populate: {
@@ -459,7 +460,7 @@ export class LiveStreamService {
       throw new Error('Invalid user ID');
     }
 
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       throw new Error('Active room/party room not found');
     }
@@ -514,7 +515,7 @@ export class LiveStreamService {
       throw new Error('Invalid user ID');
     }
 
-    const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) {
       throw new Error('Active room/party room not found');
     }
@@ -551,7 +552,7 @@ export class LiveStreamService {
     const query = { status: 'live' };
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
-    const streams = await LiveStream.find(query)
+    const streams = await Room.find(query)
       .populate({
         path: 'hostId',
         populate: {
@@ -568,8 +569,50 @@ export class LiveStreamService {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const total = await LiveStream.countDocuments(query);
+    const total = await Room.countDocuments(query);
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
+
+    return {
+      streams,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  /**
+   * Gets list of all ended rooms (history)
+   */
+  public async getRoomHistory(hostId?: string, page: number = 1, limit: number = 10) {
+    AppLogger.info(`[LiveStreamService: getRoomHistory] Entered. hostId=${hostId}, page=${page}, limit=${limit}`);
+    const query: any = { status: 'ended' };
+    if (hostId && mongoose.Types.ObjectId.isValid(hostId)) {
+      query.hostId = new mongoose.Types.ObjectId(hostId);
+    }
+
+    AppLogger.info(`[LiveStreamService: getRoomHistory] Querying ended streams...`);
+    const streams = await Room.find(query)
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      })
+      .sort({ endedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Room.countDocuments(query);
+    AppLogger.info(`[LiveStreamService: getRoomHistory] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
     return {
       streams,

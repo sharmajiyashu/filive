@@ -2,7 +2,7 @@ import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { LiveStreamService } from '../../services/app/LiveStreamService';
 import { GiftService } from '../../services/app/GiftService';
-import LiveStream from '../../models/LiveStream';
+import Room from '../../models/Room';
 import User from '../../models/User';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
@@ -30,118 +30,140 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   const userId = socket.user.id;
 
-  // Viewer joins a live stream
-  socket.on('join_live', async (data: JoinLiveStreamData) => {
-    AppLogger.info(`[Socket Event: join_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
+  // Handler for joining a room (supports join_live and join_room)
+  const handleJoin = async (data: JoinLiveStreamData) => {
+    AppLogger.info(`[Socket Event: join_room/join_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
       const { channelName } = data;
       if (!channelName) {
-        AppLogger.warn(`[Socket Event: join_live] Validation failed. Channel name is required. userId=${userId}`);
+        AppLogger.warn(`[Socket Event: join_room/join_live] Validation failed. Channel name is required. userId=${userId}`);
         socket.emit('error_message', 'Channel name is required to join');
         return;
       }
 
-      AppLogger.info(`[Socket Event: join_live] Socket joining room live_${channelName}. userId=${userId}`);
+      AppLogger.info(`[Socket Event: join_room/join_live] Socket joining rooms live_${channelName} and room_${channelName}. userId=${userId}`);
       socket.join(`live_${channelName}`);
-      
-      AppLogger.info(`[Socket Event: join_live] Calling liveStreamService.joinLiveStream for userId=${userId}, channelName=${channelName}`);
+      socket.join(`room_${channelName}`);
+
+      AppLogger.info(`[Socket Event: join_room/join_live] Calling liveStreamService.joinLiveStream for userId=${userId}, channelName=${channelName}`);
       const liveStream = await liveStreamService.joinLiveStream(userId, channelName);
-      AppLogger.info(`[Socket Event: join_live] liveStreamService.joinLiveStream returned successfully. viewerCount=${liveStream.viewerCount}`);
-      
+      AppLogger.info(`[Socket Event: join_room/join_live] liveStreamService.joinLiveStream returned successfully. viewerCount=${liveStream.viewerCount}`);
+
       // Fetch user profile details for broadcasting presence
-      AppLogger.info(`[Socket Event: join_live] Fetching User details for presence broadcast. userId=${userId}`);
+      AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name profileImage bio location isPremium gender country')
         .populate('profileImage');
 
-      // Notify the room about the new viewer
-      AppLogger.info(`[Socket Event: join_live] Broadcasting viewer_joined to live_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
-      io.to(`live_${channelName}`).emit('viewer_joined', {
+      // Notify both rooms about the new viewer (viewer_joined and room_viewer_joined)
+      AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
+      const payload = {
         user: userObj,
         viewerCount: liveStream.viewerCount
-      });
+      };
 
-      AppLogger.info(`[Socket Event: join_live] Success. User ${userId} joined livestream room live_${channelName}`);
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_joined', payload);
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_joined', payload);
+
+      AppLogger.info(`[Socket Event: join_room/join_live] Success. User ${userId} joined room_${channelName}`);
     } catch (error: any) {
-      AppLogger.error(`[Socket Event: join_live] Error occurred for userId=${userId}: ${error.message}`, error);
-      socket.emit('error_message', error.message || 'Failed to join live stream');
+      AppLogger.error(`[Socket Event: join_room/join_live] Error occurred for userId=${userId}: ${error.message}`, error);
+      socket.emit('error_message', error.message || 'Failed to join room');
     }
-  });
+  };
 
-  // Viewer leaves a live stream
-  socket.on('leave_live', async (data: LeaveLiveStreamData) => {
-    AppLogger.info(`[Socket Event: leave_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
+  socket.on('join_live', handleJoin);
+  socket.on('join_room', handleJoin);
+
+  // Handler for leaving a room (supports leave_live and leave_room)
+  const handleLeave = async (data: LeaveLiveStreamData) => {
+    AppLogger.info(`[Socket Event: leave_room/leave_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
       const { channelName } = data;
       if (!channelName) {
-        AppLogger.warn(`[Socket Event: leave_live] Validation failed. Channel name is missing. userId=${userId}`);
+        AppLogger.warn(`[Socket Event: leave_room/leave_live] Validation failed. Channel name is missing. userId=${userId}`);
         return;
       }
 
-      AppLogger.info(`[Socket Event: leave_live] Socket leaving room live_${channelName}. userId=${userId}`);
+      AppLogger.info(`[Socket Event: leave_room/leave_live] Socket leaving rooms live_${channelName} and room_${channelName}. userId=${userId}`);
       socket.leave(`live_${channelName}`);
-      
-      AppLogger.info(`[Socket Event: leave_live] Calling liveStreamService.leaveLiveStream for userId=${userId}, channelName=${channelName}`);
+      socket.leave(`room_${channelName}`);
+
+      AppLogger.info(`[Socket Event: leave_room/leave_live] Calling liveStreamService.leaveLiveStream for userId=${userId}, channelName=${channelName}`);
       const liveStream = await liveStreamService.leaveLiveStream(userId, channelName);
-      AppLogger.info(`[Socket Event: leave_live] liveStreamService.leaveLiveStream returned. Is stream found? ${!!liveStream}`);
-      
-      AppLogger.info(`[Socket Event: leave_live] Fetching User details for leave broadcast. userId=${userId}`);
+      AppLogger.info(`[Socket Event: leave_room/leave_live] liveStreamService.leaveLiveStream returned. Is stream found? ${!!liveStream}`);
+
+      AppLogger.info(`[Socket Event: leave_room/leave_live] Fetching User details for leave broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name profileImage')
         .populate('profileImage');
 
       if (liveStream) {
-        AppLogger.info(`[Socket Event: leave_live] Broadcasting viewer_left to live_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
-        io.to(`live_${channelName}`).emit('viewer_left', {
+        AppLogger.info(`[Socket Event: leave_room/leave_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
+        const payload = {
           user: userObj,
           viewerCount: liveStream.viewerCount
-        });
+        };
+        io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_left', payload);
+        io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_left', payload);
       } else {
-        AppLogger.warn(`[Socket Event: leave_live] Stream live_${channelName} was not found or already ended. Skipped broadcasting.`);
+        AppLogger.warn(`[Socket Event: leave_room/leave_live] Stream was not found or already ended. Skipped broadcasting.`);
       }
 
-      AppLogger.info(`[Socket Event: leave_live] Success. User ${userId} left livestream room live_${channelName}`);
+      AppLogger.info(`[Socket Event: leave_room/leave_live] Success. User ${userId} left room_${channelName}`);
     } catch (error: any) {
-      AppLogger.error(`[Socket Event: leave_live] Error on leave_live for user ${userId}: ${error.message}`, error);
+      AppLogger.error(`[Socket Event: leave_room/leave_live] Error on leave for user ${userId}: ${error.message}`, error);
     }
-  });
+  };
 
-  // Handle live comments/chat inside the stream
-  socket.on('live_comment', async (data: LiveCommentData) => {
-    AppLogger.info(`[Socket Event: live_comment] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
+  socket.on('leave_live', handleLeave);
+  socket.on('leave_room', handleLeave);
+
+  // Handler for room messages/comments (supports live_comment, room_comment, room_message)
+  const handleComment = async (data: LiveCommentData) => {
+    AppLogger.info(`[Socket Event: comment] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
       const { channelName, message } = data;
       if (!channelName || !message) {
-        AppLogger.warn(`[Socket Event: live_comment] Validation failed. channelName or message missing. userId=${userId}`);
+        AppLogger.warn(`[Socket Event: comment] Validation failed. channelName or message missing. userId=${userId}`);
         socket.emit('error_message', 'Channel name and message are required');
         return;
       }
 
       // Check if user is blocked in this stream
-      const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+      const liveStream = await Room.findOne({ channelName, status: 'live' });
       if (liveStream && liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === userId)) {
         socket.emit('error_message', 'You are blocked from chatting in this room');
         return;
       }
 
-      AppLogger.info(`[Socket Event: live_comment] Fetching user details for comment. userId=${userId}`);
+      AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name profileImage bio isPremium')
         .populate('profileImage');
 
-      // Broadcast comment to the stream's socket room
-      AppLogger.info(`[Socket Event: live_comment] Broadcasting new_live_comment to live_${channelName}. user=${userObj?.name}`);
-      io.to(`live_${channelName}`).emit('new_live_comment', {
+      // Broadcast comment to both rooms
+      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}`);
+      const payload = {
         user: userObj,
         message,
         createdAt: new Date()
-      });
-      AppLogger.info(`[Socket Event: live_comment] Success. Broadcasted comment for user ${userId} to room live_${channelName}`);
+      };
+
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_live_comment', payload);
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_comment', payload);
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_message', payload);
+
+      AppLogger.info(`[Socket Event: comment] Success. Broadcasted comment for user ${userId}`);
     } catch (error: any) {
-      AppLogger.error(`[Socket Event: live_comment] Error in live_comment for user ${userId}: ${error.message}`, error);
-      socket.emit('error_message', error.message || 'Failed to send live comment');
+      AppLogger.error(`[Socket Event: comment] Error for user ${userId}: ${error.message}`, error);
+      socket.emit('error_message', error.message || 'Failed to send comment');
     }
-  });
+  };
+
+  socket.on('live_comment', handleComment);
+  socket.on('room_comment', handleComment);
+  socket.on('room_message', handleComment);
 
   // Handle gift sending via sockets
   socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }) => {
@@ -152,10 +174,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'giftId is required');
         return;
       }
-      
+
       let actualReceiverId = receiverId;
       if (!actualReceiverId && channelName) {
-        const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+        const liveStream = await Room.findOne({ channelName, status: 'live' });
         if (liveStream) {
           actualReceiverId = liveStream.hostId.toString();
         }
@@ -168,18 +190,19 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       const parsedQuantity = quantity ? Number(quantity) : 1;
       const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType, parsedQuantity);
-      
-      // Broadcast gift sent event to the room
-      io.to(`live_${channelName}`).emit('gift_sent', {
+
+      // Broadcast gift sent event to both rooms
+      const payload = {
         sender: result.sender,
         host: result.host,
         receiver: result.receiver,
         gift: result.gift,
         quantity: result.quantity,
         createdAt: new Date()
-      });
-      
-      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in room live_${channelName}`);
+      };
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
+
+      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to send gift');
@@ -227,7 +250,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName and userIdToBlock are required');
         return;
       }
-      
+
       await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
       AppLogger.info(`[Socket Event: kick_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}`);
     } catch (error: any) {
@@ -240,9 +263,9 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   socket.on('disconnect', async () => {
     AppLogger.info(`[Socket Event: disconnect] Entered. socket.id=${socket.id}, userId=${userId}`);
     try {
-      // 1. Check if the disconnected user was hosting a live stream
+      // 1. Check if the disconnected user was hosting an active stream
       AppLogger.info(`[Socket Event: disconnect] Checking if userId=${userId} is host of any active streams`);
-      const activeStream = await LiveStream.findOne({ hostId: userId, status: 'live' });
+      const activeStream = await Room.findOne({ hostId: userId, status: 'live' });
       if (activeStream) {
         AppLogger.info(`[Socket Event: disconnect] Host disconnected. Ending live stream: ${activeStream.channelName}`);
         await liveStreamService.endLiveStream(userId, activeStream.channelName);
@@ -253,22 +276,24 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       // 2. Check if the user was watching any active streams and remove them
       AppLogger.info(`[Socket Event: disconnect] Checking if userId=${userId} was watching any active streams`);
-      const streamsWatched = await LiveStream.find({ status: 'live', viewers: userId });
+      const streamsWatched = await Room.find({ status: 'live', viewers: userId });
       AppLogger.info(`[Socket Event: disconnect] Found ${streamsWatched.length} watched streams for user ${userId}`);
       for (const stream of streamsWatched) {
         AppLogger.info(`[Socket Event: disconnect] Removing viewer ${userId} from stream ${stream.channelName}`);
         await liveStreamService.leaveLiveStream(userId, stream.channelName);
-        
+
         AppLogger.info(`[Socket Event: disconnect] Fetching username and profile image for ${userId}`);
         const userObj = await User.findById(userId)
           .select('name profileImage')
           .populate('profileImage');
-        
-        AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left to live_${stream.channelName}. New viewerCount target roughly: ${stream.viewerCount - 1}`);
-        io.to(`live_${stream.channelName}`).emit('viewer_left', {
+
+        AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName} and room_${stream.channelName}`);
+        const payload = {
           user: userObj,
           viewerCount: stream.viewerCount - 1
-        });
+        };
+        io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('viewer_left', payload);
+        io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('room_viewer_left', payload);
       }
       AppLogger.info(`[Socket Event: disconnect] Completed disconnect cleanup for userId=${userId}`);
     } catch (error: any) {

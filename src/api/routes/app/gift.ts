@@ -3,7 +3,7 @@ import Container from 'typedi';
 import { GiftService } from '../../../services/app/GiftService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
-import LiveStream from '../../../models/LiveStream';
+import Room from '../../../models/Room';
 
 export default (router: Router) => {
   const giftService = Container.get(GiftService);
@@ -30,7 +30,7 @@ export default (router: Router) => {
 
       let actualReceiverId = receiverId;
       if (!actualReceiverId && channelName) {
-        const liveStream = await LiveStream.findOne({ channelName, status: 'live' });
+        const liveStream = await Room.findOne({ channelName, status: 'live' });
         if (liveStream) {
           actualReceiverId = liveStream.hostId.toString();
         }
@@ -48,8 +48,7 @@ export default (router: Router) => {
         const io = Container.get('socket') as any;
         if (io) {
           if (channelName) {
-            const roomName = `live_${channelName}`;
-            io.to(roomName).emit('gift_sent', {
+            io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', {
               sender: result.sender,
               host: result.host,
               receiver: result.receiver,
