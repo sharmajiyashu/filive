@@ -41,9 +41,10 @@ export class LiveStreamService {
     title: string,
     roomType: 'livestream' | 'party_room' = 'livestream',
     partyRoomOption: 'live' | 'chat' = 'live',
-    roomThemeId?: string
+    roomThemeId?: string,
+    announcement?: string
   ) {
-    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}`);
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}, announcement="${announcement}"`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
@@ -53,7 +54,25 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active stream`);
     const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
-      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Populating and returning.`);
+      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
+      
+      activeStream.title = title;
+      activeStream.roomType = roomType;
+      activeStream.partyRoomOption = partyRoomOption;
+      if (roomThemeId !== undefined) {
+        activeStream.roomTheme = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
+          ? new mongoose.Types.ObjectId(roomThemeId)
+          : undefined;
+      }
+      if (announcement !== undefined) {
+        activeStream.announcement = announcement;
+      }
+      // Regenerate token as it might have expired
+      const token = this.generateAgoraToken(activeStream.channelName, 0, 'publisher');
+      activeStream.token = token;
+
+      await activeStream.save();
+
       const populatedStream = await Room.findById(activeStream._id)
         .populate({
           path: 'hostId',
@@ -96,6 +115,7 @@ export class LiveStreamService {
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
       title,
+      announcement: announcement || '',
       status: 'live',
       token,
       viewerCount: 0,
@@ -132,7 +152,7 @@ export class LiveStreamService {
   public async updateLiveStream(
     hostId: string,
     channelName: string,
-    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat' }
+    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName, status: 'live' };
@@ -148,6 +168,7 @@ export class LiveStreamService {
         ? new mongoose.Types.ObjectId(data.roomTheme)
         : undefined;
     }
+    if (data.announcement !== undefined) liveStream.announcement = data.announcement;
 
     await liveStream.save();
 
@@ -547,8 +568,8 @@ export class LiveStreamService {
   /**
    * Gets list of all active live streams
    */
-  public async getActiveLiveStreams(page: number = 1, limit: number = 10) {
-    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}`);
+  public async getActiveLiveStreams(page: number = 1, limit: number = 10, userId?: string) {
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}`);
     const query = { status: 'live' };
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
@@ -572,8 +593,18 @@ export class LiveStreamService {
     const total = await Room.countDocuments(query);
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
+    const mappedStreams = streams.map((stream: any) => {
+      const streamObj = stream.toObject ? stream.toObject() : stream;
+      const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
+      const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
+      return {
+        ...streamObj,
+        isMine
+      };
+    });
+
     return {
-      streams,
+      streams: mappedStreams,
       pagination: {
         total,
         page,
@@ -581,6 +612,52 @@ export class LiveStreamService {
         totalPages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Retrieves the active room for a given host user
+   */
+  public async getActiveRoomForHost(hostId: string) {
+    if (!mongoose.Types.ObjectId.isValid(hostId)) {
+      throw new Error('Invalid host ID');
+    }
+    const activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId), status: 'live' })
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
+    return activeStream;
+  }
+
+  /**
+   * Retrieves details of a room by its channelName
+   */
+  public async getRoomDetails(channelName: string) {
+    const liveStream = await Room.findOne({ channelName })
+      .populate({
+        path: 'hostId',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: {
+          path: 'media'
+        }
+      });
+    if (!liveStream) {
+      throw new Error('Room not found');
+    }
+    return liveStream;
   }
 
   /**

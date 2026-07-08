@@ -18,6 +18,7 @@ export interface IRoom extends Document {
   roomTheme?: mongoose.Types.ObjectId;
   blockedUsers?: mongoose.Types.ObjectId[];
   seats?: ISeat[];
+  announcement?: string;
   startedAt: Date;
   endedAt?: Date;
   createdAt: Date;
@@ -29,6 +30,7 @@ const RoomSchema: Schema = new Schema(
     hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     channelName: { type: String, required: true, unique: true },
     title: { type: String, required: true },
+    announcement: { type: String, default: '' },
     status: { type: String, enum: ['live', 'ended'], default: 'live' },
     token: { type: String, required: true },
     viewerCount: { type: Number, default: 0 },
