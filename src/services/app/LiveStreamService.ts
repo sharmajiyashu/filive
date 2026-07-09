@@ -93,7 +93,7 @@ export class LiveStreamService {
             path: 'media'
           }
         });
-      return await this.populateRoomWithDailyRank(populatedStream || activeStream);
+      return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
     }
 
     AppLogger.info(`[LiveStreamService: startLiveStream] Fetching host user details. hostId=${hostId}`);
@@ -150,7 +150,7 @@ export class LiveStreamService {
         }
       });
 
-    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
   }
 
   /**
@@ -193,7 +193,7 @@ export class LiveStreamService {
         }
       });
 
-    return await this.populateRoomWithDailyRank(updatedRoom);
+    return await this.populateRoomWithDailyRank(updatedRoom, hostId);
   }
 
   /**
@@ -539,7 +539,7 @@ export class LiveStreamService {
         }
       });
 
-    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
   }
 
   /**
@@ -599,7 +599,7 @@ export class LiveStreamService {
         }
       });
 
-    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
   }
 
   /**
@@ -764,13 +764,13 @@ export class LiveStreamService {
           path: 'media'
         }
       });
-    return await this.populateRoomWithDailyRank(activeStream);
+    return await this.populateRoomWithDailyRank(activeStream, hostId);
   }
 
   /**
    * Retrieves details of a room by its channelName
    */
-  public async getRoomDetails(channelName: string) {
+  public async getRoomDetails(channelName: string, currentUserId?: string) {
     const liveStream = await Room.findOne({ channelName })
       .populate({
         path: 'hostId',
@@ -787,7 +787,7 @@ export class LiveStreamService {
     if (!liveStream) {
       throw new Error('Room not found');
     }
-    return await this.populateRoomWithDailyRank(liveStream);
+    return await this.populateRoomWithDailyRank(liveStream, currentUserId);
   }
 
   /**
@@ -833,18 +833,25 @@ export class LiveStreamService {
   }
 
   /**
-   * Helper to populate room host with their daily charm ranking
+   * Helper to populate room host with their daily charm ranking, followers count, and follow status
    */
-  public async populateRoomWithDailyRank(room: any) {
+  public async populateRoomWithDailyRank(room: any, currentUserId?: string) {
     if (!room) return room;
     const roomObj = room.toObject ? room.toObject() : room;
     if (roomObj.hostId) {
       const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
       const dailyRank = await this.getHostDailyCharmRank(hostIdStr);
+      const followersCount = await Follow.countDocuments({ followingId: hostIdStr, status: 'accepted' });
+      const isFollowing = currentUserId
+        ? !!(await Follow.findOne({ followerId: currentUserId, followingId: hostIdStr, status: 'accepted' }))
+        : false;
+
       if (roomObj.hostId.toObject) {
         roomObj.hostId = roomObj.hostId.toObject();
       }
       roomObj.hostId.charmRankingDaily = dailyRank;
+      roomObj.hostId.followersCount = followersCount;
+      roomObj.hostId.isFollowing = isFollowing;
     }
     return roomObj;
   }

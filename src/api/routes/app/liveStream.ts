@@ -422,7 +422,8 @@ export default (router: Router) => {
     }
     AppLogger.info(`[HTTP GET /app/room/details/:channelName] Request received. channelName=${channelName}`);
     try {
-      const result = await liveStreamService.getRoomDetails(channelName);
+      const userId = req.user?.id;
+      const result = await liveStreamService.getRoomDetails(channelName, userId);
       return ResponseWrapper.success(res, result, 'Room details fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/details/:channelName] Failed for channelName=${channelName}: ${error.message}`, error);
