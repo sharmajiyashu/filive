@@ -50,15 +50,20 @@ export class LiveStreamService {
       throw new Error('Invalid host ID');
     }
 
-    // Check if the user is already hosting a live stream
-    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active stream`);
-    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    // Check if the user already has a room
+    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has a room`);
+    const activeStream = await Room.findOne({ hostId });
     if (activeStream) {
-      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active stream: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
-      
+      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has a room: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details, setting status to live, and returning.`);
+
       activeStream.title = title;
+      activeStream.status = 'live';
       activeStream.roomType = roomType;
       activeStream.partyRoomOption = partyRoomOption;
+      activeStream.viewers = [];
+      activeStream.viewerCount = 0;
+      activeStream.startedAt = new Date();
+      activeStream.endedAt = undefined;
       if (roomThemeId !== undefined) {
         activeStream.roomTheme = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
           ? new mongoose.Types.ObjectId(roomThemeId)
@@ -621,7 +626,7 @@ export class LiveStreamService {
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       throw new Error('Invalid host ID');
     }
-    const activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId), status: 'live' })
+    const activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) })
       .populate({
         path: 'hostId',
         populate: {
