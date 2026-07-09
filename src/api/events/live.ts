@@ -267,9 +267,26 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       AppLogger.info(`[Socket Event: disconnect] Checking if userId=${userId} is host of any active streams`);
       const activeStream = await Room.findOne({ hostId: userId, status: 'live' });
       if (activeStream) {
-        AppLogger.info(`[Socket Event: disconnect] Host disconnected. Ending live stream: ${activeStream.channelName}`);
-        await liveStreamService.endLiveStream(userId, activeStream.channelName);
-        AppLogger.info(`[Socket Event: disconnect] Successfully ended stream for host: ${activeStream.channelName}`);
+        AppLogger.info(`[Socket Event: disconnect] Host disconnected. Scheduling ending live stream in 5 seconds for channel: ${activeStream.channelName}`);
+        setTimeout(async () => {
+          try {
+            // Check if the user has reconnected with any socket
+            const userRoom = io.sockets.adapter.rooms.get(`user_${userId}`);
+            if (userRoom && userRoom.size > 0) {
+              AppLogger.info(`[Socket Event: disconnect] Host userId=${userId} has active connections (${userRoom.size}). Keeping stream active.`);
+              return;
+            }
+            // Double check if the stream is still live
+            const stillActiveStream = await Room.findOne({ hostId: userId, status: 'live' });
+            if (stillActiveStream) {
+              AppLogger.info(`[Socket Event: disconnect] Host did not reconnect within timeout. Ending live stream: ${stillActiveStream.channelName}`);
+              await liveStreamService.endLiveStream(userId, stillActiveStream.channelName);
+              AppLogger.info(`[Socket Event: disconnect] Successfully ended stream for host: ${stillActiveStream.channelName}`);
+            }
+          } catch (err: any) {
+            AppLogger.error(`[Socket Event: disconnect] Error ending stream after timeout for user ${userId}: ${err.message}`, err);
+          }
+        }, 5000);
       } else {
         AppLogger.info(`[Socket Event: disconnect] User is not hosting any active stream.`);
       }
