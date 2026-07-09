@@ -64,7 +64,36 @@ export default (router: Router) => {
   });
 
   /**
-   * Edit active room details
+   * @swagger
+   * /app/room/edit:
+   *   post:
+   *     summary: Edit active room details
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               title:
+   *                 type: string
+   *               roomTheme:
+   *                 type: string
+   *               partyRoomOption:
+   *                 type: string
+   *                 enum: [live, chat]
+   *               announcement:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Room details updated successfully
    */
   liveRouter.post('/edit', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -94,7 +123,30 @@ export default (router: Router) => {
   });
 
   /**
-   * Block a user from the room (kick & block)
+   * @swagger
+   * /app/room/block:
+   *   post:
+   *     summary: Block a user from the room (kick & block)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - userIdToBlock
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               userIdToBlock:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: User blocked and kicked successfully
    */
   liveRouter.post('/block', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -111,7 +163,30 @@ export default (router: Router) => {
   });
 
   /**
-   * Unblock a user from the room
+   * @swagger
+   * /app/room/unblock:
+   *   post:
+   *     summary: Unblock a user from the room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - userIdToUnblock
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               userIdToUnblock:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: User unblocked successfully
    */
   liveRouter.post('/unblock', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -128,7 +203,23 @@ export default (router: Router) => {
   });
 
   /**
-   * Fetch room audience list
+   * @swagger
+   * /app/room/audience/{channelName}:
+   *   get:
+   *     summary: Fetch room audience list
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: channelName
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Channel name of the room
+   *     responses:
+   *       200:
+   *         description: Audience list fetched successfully
    */
   liveRouter.get('/audience/:channelName', async (req: any, res: Response) => {
     try {
@@ -144,7 +235,30 @@ export default (router: Router) => {
   });
 
   /**
-   * Join a seat in a party room
+   * @swagger
+   * /app/room/seat/join:
+   *   post:
+   *     summary: Join a seat in a party room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - seatIndex
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               seatIndex:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Joined seat successfully
    */
   liveRouter.post('/seat/join', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -161,7 +275,27 @@ export default (router: Router) => {
   });
 
   /**
-   * Leave a seat in a party room
+   * @swagger
+   * /app/room/seat/leave:
+   *   post:
+   *     summary: Leave a seat in a party room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Left seat successfully
    */
   liveRouter.post('/seat/leave', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -239,7 +373,16 @@ export default (router: Router) => {
   });
 
   /**
-   * Get active room details for the logged-in host
+   * @swagger
+   * /app/room/active:
+   *   get:
+   *     summary: Get active room details for the logged-in host
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Active room details fetched successfully
    */
   liveRouter.get('/active', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -254,7 +397,23 @@ export default (router: Router) => {
   });
 
   /**
-   * Get details of any room by channelName
+   * @swagger
+   * /app/room/details/{channelName}:
+   *   get:
+   *     summary: Get details of any room by channelName
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: channelName
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Channel name of the room
+   *     responses:
+   *       200:
+   *         description: Room details fetched successfully
    */
   liveRouter.get('/details/:channelName', async (req: any, res: Response) => {
     let { channelName } = req.params;
@@ -272,8 +431,39 @@ export default (router: Router) => {
   });
 
   /**
-   * Get contribution rankings for a live room (paginated)
-   * GET /app/room/contribution/:channelName?page=1&limit=10&period=daily
+   * @swagger
+   * /app/room/contribution/{channelName}:
+   *   get:
+   *     summary: Get contribution rankings for a live room (paginated)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: channelName
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Channel name of the room
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *         description: Page number
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *         description: Page limit
+   *       - in: query
+   *         name: period
+   *         schema:
+   *           type: string
+   *           enum: [daily, weekly, all]
+   *         description: Date range/period for rankings
+   *     responses:
+   *       200:
+   *         description: Contribution ranking fetched successfully
    */
   liveRouter.get('/contribution/:channelName', async (req: any, res: Response) => {
     const userId = req.user?.id;

@@ -16,10 +16,40 @@ export default (router: Router) => {
 
   router.use('/room-theme', adminAuthMiddleware, themeRouter);
 
+  /**
+   * @swagger
+   * /admin/room-theme:
+   *   post:
+   *     summary: Create a new room theme
+   *     tags: [AdminRoomTheme]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - name
+   *               - media
+   *             properties:
+   *               name:
+   *                 type: string
+   *               isActive:
+   *                 type: boolean
+   *               media:
+   *                 type: string
+   *                 format: binary
+   *                 description: Background image file to upload
+   *     responses:
+   *       200:
+   *         description: Room theme created successfully
+   */
   themeRouter.post('/', upload.single('media'), async (req: any, res: Response) => {
     try {
       const data = { ...req.body };
-      
+
       if (!req.file) {
         throw new Error('Background image file is required');
       }
@@ -40,6 +70,40 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /admin/room-theme/{id}:
+   *   put:
+   *     summary: Update an existing room theme
+   *     tags: [AdminRoomTheme]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Room theme ID
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               name:
+   *                 type: string
+   *               isActive:
+   *                 type: boolean
+   *               media:
+   *                 type: string
+   *                 format: binary
+   *                 description: Background image file to upload (optional)
+   *     responses:
+   *       200:
+   *         description: Room theme updated successfully
+   */
   themeRouter.put('/:id', upload.single('media'), async (req: any, res: Response) => {
     try {
       const data = { ...req.body };
@@ -60,6 +124,29 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /admin/room-theme:
+   *   get:
+   *     summary: Fetch all room themes
+   *     tags: [AdminRoomTheme]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *         description: Page number
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *         description: Page limit
+   *     responses:
+   *       200:
+   *         description: Room themes fetched successfully
+   */
   themeRouter.get('/', async (req: any, res: Response) => {
     try {
       const page = req.query.page ? parseInt(req.query.page) : 1;
@@ -71,6 +158,25 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /admin/room-theme/{id}:
+   *   delete:
+   *     summary: Delete a room theme
+   *     tags: [AdminRoomTheme]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Room theme ID
+   *     responses:
+   *       200:
+   *         description: Room theme deleted successfully
+   */
   themeRouter.delete('/:id', async (req: any, res: Response) => {
     try {
       const result = await roomThemeService.deleteTheme(req.params.id);
