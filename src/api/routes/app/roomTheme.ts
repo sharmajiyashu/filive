@@ -10,6 +10,18 @@ export default (router: Router) => {
 
   router.use('/room-theme', appAuthMiddleware, themeRouter);
 
+  /**
+   * @swagger
+   * /app/room-theme/list:
+   *   get:
+   *     summary: Fetch all active room themes
+   *     tags: [RoomTheme]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Active room themes fetched successfully
+   */
   themeRouter.get('/list', async (req: any, res: Response) => {
     try {
       const result = await roomThemeService.getActiveThemes();
