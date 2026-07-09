@@ -21,6 +21,8 @@ export interface IRoom extends Document {
   announcement?: string;
   startedAt: Date;
   endedAt?: Date;
+  joinedUsers?: mongoose.Types.ObjectId[];
+  commentCount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +49,8 @@ const RoomSchema: Schema = new Schema(
     ],
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
+    joinedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    commentCount: { type: Number, default: 0 },
   },
   {
     timestamps: true,

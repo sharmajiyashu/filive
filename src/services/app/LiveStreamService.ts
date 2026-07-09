@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import Room from '../../models/Room';
 import User from '../../models/User';
+import CoinHistory from '../../models/CoinHistory';
+import Follow from '../../models/Follow';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 
@@ -308,6 +310,55 @@ export class LiveStreamService {
   /**
    * Ends an active live stream
    */
+  /**
+   * Calculates host's daily charm rank position
+   */
+  public async getHostDailyCharmRank(hostId: string): Promise<number> {
+    try {
+      const now = new Date();
+      const startDate = new Date(now.setHours(0, 0, 0, 0));
+
+      const dailyEarners = await CoinHistory.aggregate([
+        {
+          $match: {
+            type: 'charm_received',
+            createdAt: { $gte: startDate }
+          }
+        },
+        {
+          $group: {
+            _id: '$userId',
+            totalAmount: { $sum: { $abs: '$amount' } }
+          }
+        },
+        { $sort: { totalAmount: -1 } }
+      ]);
+
+      const activeIndex = dailyEarners.findIndex(earner => earner._id.toString() === hostId.toString());
+      if (activeIndex !== -1) {
+        return activeIndex + 1;
+      }
+
+      const activeUserIds = dailyEarners.map(e => e._id);
+      const hostUser = await User.findById(hostId);
+      const hostCharmCoins = hostUser ? (hostUser.charmCoins || 0) : 0;
+
+      const fallbackRankCount = await User.countDocuments({
+        userRole: 'user',
+        _id: { $nin: activeUserIds },
+        charmCoins: { $gt: hostCharmCoins }
+      });
+
+      return dailyEarners.length + fallbackRankCount + 1;
+    } catch (error: any) {
+      AppLogger.error(`[LiveStreamService: getHostDailyCharmRank] Error: ${error.message}`);
+      return 999;
+    }
+  }
+
+  /**
+   * Ends an active live stream
+   */
   public async endLiveStream(hostId: string, channelName?: string) {
     AppLogger.info(`[LiveStreamService: endLiveStream] Entered. hostId=${hostId}, channelName=${channelName}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
@@ -327,9 +378,62 @@ export class LiveStreamService {
       throw new Error('No active live stream found to end');
     }
 
-    AppLogger.info(`[LiveStreamService: endLiveStream] Found active stream: channelName=${liveStream.channelName}, streamId=${liveStream._id}. Updating status to 'ended'.`);
+    AppLogger.info(`[LiveStreamService: endLiveStream] Found active stream: channelName=${liveStream.channelName}, streamId=${liveStream._id}. Calculating statistics.`);
+
+    // 1. Calculate live duration
+    const endedAt = new Date();
+    const duration = Math.round((endedAt.getTime() - liveStream.startedAt.getTime()) / 1000);
+
+    // 2. Sum wealthCoins (total spendings) of all current online viewers
+    const activeViewers = await User.find({ _id: { $in: liveStream.viewers } }).select('wealthCoins coins');
+    const totalSpendingsOfOnlineUsers = activeViewers.reduce((sum, u) => sum + (u.wealthCoins || u.coins || 0), 0);
+
+    // 3. Count unique joined users
+    const joinedUsersCount = liveStream.joinedUsers ? liveStream.joinedUsers.length : 0;
+
+    // 4. Calculate public comments count
+    const commentCount = liveStream.commentCount || 0;
+
+    // 5. Calculate received gifts and coin collection
+    const giftHistories = await CoinHistory.find({ channelName: liveStream.channelName, type: 'charm_received' });
+    let receivedGifts = 0;
+    let coinCollection = 0;
+    for (const history of giftHistories) {
+      coinCollection += Math.abs(history.amount);
+      const match = history.description ? history.description.match(/x(\d+)/) : null;
+      if (match) {
+        receivedGifts += parseInt(match[1], 10);
+      } else {
+        receivedGifts += 1;
+      }
+    }
+
+    // 6. Calculate increased fans (new followers during livestream)
+    const increasedFans = await Follow.countDocuments({
+      followingId: liveStream.hostId,
+      status: 'accepted',
+      createdAt: { $gte: liveStream.startedAt, $lte: endedAt }
+    });
+
+    // 7. Calculate daily charm ranking
+    const charmRankingDaily = await this.getHostDailyCharmRank(liveStream.hostId.toString());
+
+    const summary = {
+      joinedUsers: joinedUsersCount,
+      liveDuration: duration,
+      receivedGifts,
+      publicComments: commentCount,
+      increasedFans,
+      coinCollection,
+      totalSpendingsOfOnlineUsers,
+      charmRankingDaily,
+      totalGiftRevenue: coinCollection
+    };
+
+    AppLogger.info(`[LiveStreamService: endLiveStream] Statistics calculated: ${JSON.stringify(summary)}. Updating status to 'ended'.`);
+
     liveStream.status = 'ended';
-    liveStream.endedAt = new Date();
+    liveStream.endedAt = endedAt;
     liveStream.viewers = [];
     liveStream.viewerCount = 0;
     await liveStream.save();
@@ -341,7 +445,8 @@ export class LiveStreamService {
     if (io) {
       const payload = {
         channelName: liveStream.channelName,
-        message: 'Livestream has been ended by the host'
+        message: 'Livestream has been ended by the host',
+        summary
       };
       AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}`);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('live_ended', payload);
@@ -359,7 +464,12 @@ export class LiveStreamService {
       }
     });
 
-    return populatedStream || liveStream;
+    const streamObj = populatedStream ? (populatedStream.toObject ? populatedStream.toObject() : populatedStream) : liveStream;
+
+    return {
+      ...streamObj,
+      summary
+    };
   }
 
   /**
@@ -385,6 +495,15 @@ export class LiveStreamService {
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    let shouldSave = false;
+    if (!liveStream.joinedUsers) {
+      liveStream.joinedUsers = [];
+    }
+    if (!liveStream.joinedUsers.some(id => id.toString() === userId)) {
+      liveStream.joinedUsers.push(userObjectId);
+      shouldSave = true;
+    }
+
     // Avoid duplicate entries in viewers list
     const isAlreadyWatching = liveStream.viewers.some(id => id.toString() === userId);
     AppLogger.info(`[LiveStreamService: joinLiveStream] Found streamId=${liveStream._id}. Is user already watching? ${isAlreadyWatching}`);
@@ -393,10 +512,14 @@ export class LiveStreamService {
       AppLogger.info(`[LiveStreamService: joinLiveStream] Adding userId=${userId} to viewers list.`);
       liveStream.viewers.push(userObjectId);
       liveStream.viewerCount = liveStream.viewers.length;
+      shouldSave = true;
+    }
+
+    if (shouldSave) {
       await liveStream.save();
-      AppLogger.info(`[LiveStreamService: joinLiveStream] Saved viewer entry in DB. New viewerCount=${liveStream.viewerCount}`);
+      AppLogger.info(`[LiveStreamService: joinLiveStream] Saved updated viewers/joinedUsers in DB. New viewerCount=${liveStream.viewerCount}`);
     } else {
-      AppLogger.info(`[LiveStreamService: joinLiveStream] User was already in viewers list. Skipping DB update.`);
+      AppLogger.info(`[LiveStreamService: joinLiveStream] No update needed for viewers/joinedUsers list.`);
     }
 
     AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);

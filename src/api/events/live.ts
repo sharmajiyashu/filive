@@ -137,6 +137,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
+      if (liveStream) {
+        await Room.updateOne({ _id: liveStream._id }, { $inc: { commentCount: 1 } });
+      }
+
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name profileImage bio isPremium')
