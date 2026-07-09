@@ -93,7 +93,7 @@ export class LiveStreamService {
             path: 'media'
           }
         });
-      return populatedStream || activeStream;
+      return await this.populateRoomWithDailyRank(populatedStream || activeStream);
     }
 
     AppLogger.info(`[LiveStreamService: startLiveStream] Fetching host user details. hostId=${hostId}`);
@@ -150,7 +150,7 @@ export class LiveStreamService {
         }
       });
 
-    return populatedStream || liveStream;
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
   }
 
   /**
@@ -179,7 +179,7 @@ export class LiveStreamService {
 
     await liveStream.save();
 
-    return await Room.findById(liveStream._id)
+    const updatedRoom = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
         populate: {
@@ -192,6 +192,8 @@ export class LiveStreamService {
           path: 'media'
         }
       });
+
+    return await this.populateRoomWithDailyRank(updatedRoom);
   }
 
   /**
@@ -537,7 +539,7 @@ export class LiveStreamService {
         }
       });
 
-    return populatedStream || liveStream;
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
   }
 
   /**
@@ -597,7 +599,7 @@ export class LiveStreamService {
         }
       });
 
-    return populatedStream || liveStream;
+    return await this.populateRoomWithDailyRank(populatedStream || liveStream);
   }
 
   /**
@@ -762,7 +764,7 @@ export class LiveStreamService {
           path: 'media'
         }
       });
-    return activeStream;
+    return await this.populateRoomWithDailyRank(activeStream);
   }
 
   /**
@@ -785,7 +787,7 @@ export class LiveStreamService {
     if (!liveStream) {
       throw new Error('Room not found');
     }
-    return liveStream;
+    return await this.populateRoomWithDailyRank(liveStream);
   }
 
   /**
@@ -828,5 +830,22 @@ export class LiveStreamService {
         totalPages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Helper to populate room host with their daily charm ranking
+   */
+  public async populateRoomWithDailyRank(room: any) {
+    if (!room) return room;
+    const roomObj = room.toObject ? room.toObject() : room;
+    if (roomObj.hostId) {
+      const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
+      const dailyRank = await this.getHostDailyCharmRank(hostIdStr);
+      if (roomObj.hostId.toObject) {
+        roomObj.hostId = roomObj.hostId.toObject();
+      }
+      roomObj.hostId.charmRankingDaily = dailyRank;
+    }
+    return roomObj;
   }
 }

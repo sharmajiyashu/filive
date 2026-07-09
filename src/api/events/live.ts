@@ -55,10 +55,18 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .select('name profileImage bio location isPremium gender country')
         .populate('profileImage');
 
+      const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+      if (userJson && liveStream && liveStream.hostId) {
+        const hostIdStr = liveStream.hostId._id ? liveStream.hostId._id.toString() : liveStream.hostId.toString();
+        if (userId.toString() === hostIdStr) {
+          userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+        }
+      }
+
       // Notify both rooms about the new viewer (viewer_joined and room_viewer_joined)
       AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
       const payload = {
-        user: userObj,
+        user: userJson || userObj,
         viewerCount: liveStream.viewerCount
       };
 
