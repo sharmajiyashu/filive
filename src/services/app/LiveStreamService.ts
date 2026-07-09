@@ -160,10 +160,10 @@ export class LiveStreamService {
     data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
-    const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName, status: 'live' };
+    const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName };
     const liveStream = await Room.findOne(query);
     if (!liveStream) {
-      throw new Error('Active room/livestream not found or you are not the host');
+      throw new Error('Room/livestream not found or you are not the host');
     }
 
     if (data.title !== undefined) liveStream.title = data.title;
@@ -197,9 +197,9 @@ export class LiveStreamService {
    */
   public async blockUserFromRoom(hostId: string, channelName: string, userIdToBlock: string) {
     AppLogger.info(`[LiveStreamService: blockUserFromRoom] hostId=${hostId}, channelName=${channelName}, userIdToBlock=${userIdToBlock}`);
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    const liveStream = await Room.findOne({ channelName });
     if (!liveStream) {
-      throw new Error('Active room/livestream not found');
+      throw new Error('Room/livestream not found');
     }
 
     // Only host or admin can block
