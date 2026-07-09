@@ -186,7 +186,14 @@ export default (router: Router) => {
 
       const result = populatedContributions.filter((c: any) => c.user !== null);
 
-      return ResponseWrapper.success(res, result, 'Contribution ranking fetched successfully');
+      // Calculate total gift revenue for this stream
+      const giftHistories = await CoinHistory.find({ channelName: liveStream.channelName, type: 'charm_received' });
+      const totalGiftRevenue = giftHistories.reduce((sum, history) => sum + Math.abs(history.amount), 0);
+
+      return ResponseWrapper.success(res, {
+        totalGiftRevenue,
+        contributions: result
+      }, 'Contribution ranking fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

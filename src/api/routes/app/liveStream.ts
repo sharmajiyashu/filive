@@ -551,8 +551,13 @@ export default (router: Router) => {
 
       const result = populatedContributions.filter((c: any) => c.user !== null);
 
+      // Calculate total gift revenue for this stream
+      const giftHistories = await CoinHistory.find({ channelName: liveStream.channelName, type: 'charm_received' });
+      const totalGiftRevenue = giftHistories.reduce((sum, history) => sum + Math.abs(history.amount), 0);
+
       AppLogger.info(`[HTTP GET /app/room/contribution] Success. channelName=${channelName}, contributors=${result.length}`);
       return ResponseWrapper.success(res, {
+        totalGiftRevenue,
         contributions: result,
         pagination: {
           total,
