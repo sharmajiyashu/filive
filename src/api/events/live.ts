@@ -163,12 +163,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .populate('profileImage');
 
       // Broadcast comment to both rooms
-      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}`);
       const payload = {
         user: userObj,
         message,
         createdAt: new Date()
       };
+      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
 
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_live_comment', payload);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_comment', payload);
@@ -220,9 +220,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         quantity: result.quantity,
         createdAt: new Date()
       };
+      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
-
-      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to send gift');

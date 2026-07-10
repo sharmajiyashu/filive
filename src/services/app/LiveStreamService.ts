@@ -452,7 +452,7 @@ export class LiveStreamService {
         message: 'Livestream has been ended by the host',
         summary
       };
-      AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}`);
+      AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('live_ended', payload);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_ended', payload);
       AppLogger.info(`[Socket] Successfully emitted events to rooms.`);
@@ -650,10 +650,12 @@ export class LiveStreamService {
     // Emit socket event
     const io = this.getSocketIo();
     if (io) {
-      io.to(`live_${channelName}`).emit('seat_updated', {
+      const payload = {
         channelName,
         seats: liveStream.seats
-      });
+      };
+      AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
+      io.to(`live_${channelName}`).emit('seat_updated', payload);
     }
 
     return liveStream;
@@ -687,10 +689,12 @@ export class LiveStreamService {
       // Emit socket event
       const io = this.getSocketIo();
       if (io) {
-        io.to(`live_${channelName}`).emit('seat_updated', {
+        const payload = {
           channelName,
           seats: liveStream.seats
-        });
+        };
+        AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
+        io.to(`live_${channelName}`).emit('seat_updated', payload);
       }
     }
 
