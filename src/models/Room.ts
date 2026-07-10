@@ -23,6 +23,7 @@ export interface IRoom extends Document {
   endedAt?: Date;
   joinedUsers?: mongoose.Types.ObjectId[];
   commentCount?: number;
+  totalGiftRevenue?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +52,7 @@ const RoomSchema: Schema = new Schema(
     endedAt: { type: Date },
     joinedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     commentCount: { type: Number, default: 0 },
+    totalGiftRevenue: { type: Number, default: 0 },
   },
   {
     timestamps: true,

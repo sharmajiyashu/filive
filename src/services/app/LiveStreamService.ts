@@ -66,6 +66,7 @@ export class LiveStreamService {
       activeStream.viewerCount = 0;
       activeStream.startedAt = new Date();
       activeStream.endedAt = undefined;
+      activeStream.totalGiftRevenue = 0;
       if (roomThemeId !== undefined) {
         activeStream.roomTheme = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
           ? new mongoose.Types.ObjectId(roomThemeId)

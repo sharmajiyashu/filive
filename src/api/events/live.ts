@@ -67,7 +67,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
       const payload = {
         user: userJson || userObj,
-        viewerCount: liveStream.viewerCount
+        viewerCount: liveStream.viewerCount,
+        charmRankingDaily: userJson?.charmRankingDaily
       };
 
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_joined', payload);
