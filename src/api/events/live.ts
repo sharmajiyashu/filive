@@ -64,7 +64,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         user: userJson || userObj,
         viewerCount: liveStream.viewerCount,
         charmRankingDaily: userJson?.charmRankingDaily,
-        totalGiftRevenue: liveStream?.totalGiftRevenue || 0
+        totalGiftRevenue: liveStream?.totalGiftRevenue || 0,
+        roomFollowerCount: liveStream?.roomFollowerCount || 0
       };
 
       AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
@@ -115,7 +116,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
           user: userJson || userObj,
           viewerCount: liveStream.viewerCount,
           charmRankingDaily: userJson?.charmRankingDaily,
-          totalGiftRevenue: liveStream.totalGiftRevenue || 0
+          totalGiftRevenue: liveStream.totalGiftRevenue || 0,
+          roomFollowerCount: liveStream.roomFollowerCount || 0
         };
         AppLogger.info(`[Socket Event: leave_room/leave_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
         io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_left', payload);
@@ -331,7 +333,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
           user: userJson || userObj,
           viewerCount: stream.viewerCount - 1,
           charmRankingDaily: userJson?.charmRankingDaily,
-          totalGiftRevenue: stream.totalGiftRevenue || 0
+          totalGiftRevenue: stream.totalGiftRevenue || 0,
+          roomFollowerCount: stream.roomFollowerCount || 0
         };
         AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName} and room_${stream.channelName}. payload=${JSON.stringify(payload)}`);
         io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('viewer_left', payload);
