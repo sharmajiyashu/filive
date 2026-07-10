@@ -60,13 +60,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
       }
 
-      // Notify both rooms about the new viewer (viewer_joined and room_viewer_joined)
-      AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
       const payload = {
         user: userJson || userObj,
         viewerCount: liveStream.viewerCount,
-        charmRankingDaily: userJson?.charmRankingDaily
+        charmRankingDaily: userJson?.charmRankingDaily,
+        totalGiftRevenue: liveStream?.totalGiftRevenue || 0,
+        roomFollowerCount: liveStream?.roomFollowerCount || 0
       };
+
+      AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
 
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_joined', payload);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_joined', payload);
@@ -104,12 +106,20 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .select('name profileImage')
         .populate('profileImage');
 
+      const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+      if (userJson) {
+        userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+      }
+
       if (liveStream) {
-        AppLogger.info(`[Socket Event: leave_room/leave_live] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}, viewerCount=${liveStream.viewerCount}`);
         const payload = {
-          user: userObj,
-          viewerCount: liveStream.viewerCount
+          user: userJson || userObj,
+          viewerCount: liveStream.viewerCount,
+          charmRankingDaily: userJson?.charmRankingDaily,
+          totalGiftRevenue: liveStream.totalGiftRevenue || 0,
+          roomFollowerCount: liveStream.roomFollowerCount || 0
         };
+        AppLogger.info(`[Socket Event: leave_room/leave_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
         io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_left', payload);
         io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_left', payload);
       } else {
@@ -153,12 +163,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .populate('profileImage');
 
       // Broadcast comment to both rooms
-      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. user=${userObj?.name}`);
       const payload = {
         user: userObj,
         message,
         createdAt: new Date()
       };
+      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
 
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_live_comment', payload);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_comment', payload);
@@ -210,9 +220,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         quantity: result.quantity,
         createdAt: new Date()
       };
+      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
-
-      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to send gift');
@@ -314,11 +323,19 @@ export default (socket: AuthenticatedSocket, io: Server) => {
           .select('name profileImage')
           .populate('profileImage');
 
-        AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName} and room_${stream.channelName}`);
+        const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+        if (userJson) {
+          userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+        }
+
         const payload = {
-          user: userObj,
-          viewerCount: stream.viewerCount - 1
+          user: userJson || userObj,
+          viewerCount: stream.viewerCount - 1,
+          charmRankingDaily: userJson?.charmRankingDaily,
+          totalGiftRevenue: stream.totalGiftRevenue || 0,
+          roomFollowerCount: stream.roomFollowerCount || 0
         };
+        AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName} and room_${stream.channelName}. payload=${JSON.stringify(payload)}`);
         io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('viewer_left', payload);
         io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('room_viewer_left', payload);
       }
