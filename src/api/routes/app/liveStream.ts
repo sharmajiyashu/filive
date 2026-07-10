@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import { LiveStreamService } from '../../../services/app/LiveStreamService';
+import { RoomFollowService } from '../../../services/app/RoomFollowService';
 import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
@@ -10,6 +11,7 @@ import CoinHistory from '../../../models/CoinHistory';
 
 export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
+  const roomFollowService = Container.get(RoomFollowService);
   const liveRouter = Router();
 
   router.use('/room', appAuthMiddleware, liveRouter);
@@ -427,6 +429,123 @@ export default (router: Router) => {
       return ResponseWrapper.success(res, result, 'Room details fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/details/:channelName] Failed for channelName=${channelName}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/follow:
+   *   post:
+   *     summary: Follow a specific room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - roomId
+   *             properties:
+   *               roomId:
+   *                 type: string
+   *                 description: The ID of the room to follow
+   *     responses:
+   *       200:
+   *         description: Room followed successfully
+   */
+  liveRouter.post('/follow', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    const { roomId } = req.body;
+    AppLogger.info(`[HTTP POST /app/room/follow] Request received. userId=${userId}, roomId=${roomId}`);
+    try {
+      if (!roomId) {
+        throw new Error('roomId is required');
+      }
+      const result = await roomFollowService.followRoom(userId, roomId);
+      return ResponseWrapper.success(res, result, 'Room followed successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/follow] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/unfollow:
+   *   post:
+   *     summary: Unfollow a specific room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - roomId
+   *             properties:
+   *               roomId:
+   *                 type: string
+   *                 description: The ID of the room to unfollow
+   *     responses:
+   *       200:
+   *         description: Room unfollowed successfully
+   */
+  liveRouter.post('/unfollow', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    const { roomId } = req.body;
+    AppLogger.info(`[HTTP POST /app/room/unfollow] Request received. userId=${userId}, roomId=${roomId}`);
+    try {
+      if (!roomId) {
+        throw new Error('roomId is required');
+      }
+      const result = await roomFollowService.unfollowRoom(userId, roomId);
+      return ResponseWrapper.success(res, result, 'Room unfollowed successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/unfollow] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/followed-list:
+   *   get:
+   *     summary: Get rooms followed by current user
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Followed rooms fetched successfully
+   */
+  liveRouter.get('/followed-list', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    AppLogger.info(`[HTTP GET /app/room/followed-list] Request received. userId=${userId}, page=${page}, limit=${limit}`);
+    try {
+      const result = await roomFollowService.getFollowedRooms(userId, page, limit);
+      return ResponseWrapper.success(res, result, 'Followed rooms fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/room/followed-list] Failed for userId=${userId}: ${error.message}`, error);
       return ResponseWrapper.error(res, error);
     }
   });
