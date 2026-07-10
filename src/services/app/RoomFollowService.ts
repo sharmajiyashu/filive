@@ -6,7 +6,7 @@ import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class RoomFollowService {
-  constructor() {}
+  constructor() { }
 
   /**
    * Follow a specific room
@@ -105,7 +105,7 @@ export class RoomFollowService {
       .sort({ createdAt: -1 });
 
     const total = await RoomFollow.countDocuments({ userId: new mongoose.Types.ObjectId(userId) });
-    
+
     // Extract room details
     const roomIds = followDocs.map(doc => doc.roomId);
     const rooms = await Room.find({ _id: { $in: roomIds } })
@@ -128,7 +128,8 @@ export class RoomFollowService {
       const roomObj = room.toObject ? room.toObject() : room;
       return {
         ...roomObj,
-        isFollowingRoom: true
+        isFollowingRoom: true,
+        totalMember: roomObj.viewerCount || 0
       };
     });
 
