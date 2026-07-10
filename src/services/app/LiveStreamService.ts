@@ -5,6 +5,7 @@ import Room from '../../models/Room';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
+import RoomFollow from '../../models/RoomFollow';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 
@@ -724,15 +725,17 @@ export class LiveStreamService {
     const total = await Room.countDocuments(query);
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
-    const mappedStreams = streams.map((stream: any) => {
-      const streamObj = stream.toObject ? stream.toObject() : stream;
-      const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
-      const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
-      return {
-        ...streamObj,
-        isMine
-      };
-    });
+    const mappedStreams = await Promise.all(
+      streams.map(async (stream: any) => {
+        const streamObj = await this.populateRoomWithDailyRank(stream, userId);
+        const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
+        const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
+        return {
+          ...streamObj,
+          isMine
+        };
+      })
+    );
 
     return {
       streams: mappedStreams,
@@ -854,6 +857,15 @@ export class LiveStreamService {
       roomObj.hostId.followersCount = followersCount;
       roomObj.hostId.isFollowing = isFollowing;
     }
+
+    // Populate Room Follow details
+    const isFollowingRoom = currentUserId && roomObj._id
+      ? !!(await RoomFollow.exists({ userId: new mongoose.Types.ObjectId(currentUserId), roomId: roomObj._id }))
+      : false;
+
+    roomObj.isFollowingRoom = isFollowingRoom;
+    roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
+
     return roomObj;
   }
 }

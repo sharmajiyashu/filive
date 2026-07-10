@@ -56,11 +56,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .populate('profileImage');
 
       const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
-      if (userJson && liveStream && liveStream.hostId) {
-        const hostIdStr = liveStream.hostId._id ? liveStream.hostId._id.toString() : liveStream.hostId.toString();
-        if (userId.toString() === hostIdStr) {
-          userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
-        }
+      if (userJson) {
+        userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
       }
 
       // Notify both rooms about the new viewer (viewer_joined and room_viewer_joined)
