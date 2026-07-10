@@ -869,6 +869,7 @@ export class LiveStreamService {
 
     roomObj.isFollowingRoom = isFollowingRoom;
     roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
+    roomObj.totalMember = roomObj.roomFollowerCount || 0;
 
     return roomObj;
   }
