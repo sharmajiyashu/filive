@@ -552,6 +552,53 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/room/follower-list:
+   *   get:
+   *     summary: Get followers (users) of a specific room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: roomId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: The ID of the room to get followers for
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Room followers fetched successfully
+   */
+  liveRouter.get('/follower-list', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    const roomId = req.query.roomId as string;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    AppLogger.info(`[HTTP GET /app/room/follower-list] Request received. userId=${userId}, roomId=${roomId}, page=${page}, limit=${limit}`);
+    try {
+      if (!roomId) {
+        throw new Error('roomId is required');
+      }
+      const result = await roomFollowService.getRoomFollowers(roomId, page, limit);
+      return ResponseWrapper.success(res, result, 'Room followers fetched successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP GET /app/room/follower-list] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/room/contribution/{channelName}:
    *   get:
    *     summary: Get contribution rankings for a live room (paginated)

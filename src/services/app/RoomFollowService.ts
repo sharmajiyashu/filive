@@ -143,6 +143,48 @@ export class RoomFollowService {
   }
 
   /**
+   * Get the list of users following a specific room
+   */
+  public async getRoomFollowers(roomId: string, page: number = 1, limit: number = 20) {
+    AppLogger.info(`[RoomFollowService: getRoomFollowers] Fetching followers for room ${roomId}, page=${page}, limit=${limit}`);
+
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      throw new Error('Invalid room ID');
+    }
+
+    const skip = (page - 1) * limit;
+
+    const followDocs = await RoomFollow.find({ roomId: new mongoose.Types.ObjectId(roomId) })
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 })
+      .populate({
+        path: 'userId',
+        select: 'name profileImage bio location isPremium gender country',
+        populate: {
+          path: 'profileImage'
+        }
+      });
+
+    const total = await RoomFollow.countDocuments({ roomId: new mongoose.Types.ObjectId(roomId) });
+
+    // Extract user details from populated userId
+    const results = followDocs.map(doc => {
+      const docObj = doc.toObject ? doc.toObject() : doc;
+      return docObj.userId;
+    }).filter(user => user !== null);
+
+    return {
+      data: results,
+      total,
+      totalMember: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
    * Helper to check if a user follows a room
    */
   public async isFollowingRoom(userId: string, roomId: string): Promise<boolean> {
