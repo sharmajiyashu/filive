@@ -177,6 +177,7 @@ export class RoomFollowService {
     return {
       data: results,
       total,
+      totalMember: total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
