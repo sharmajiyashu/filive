@@ -213,6 +213,12 @@ export class GiftService {
     receiver.charmCoins = (receiver.charmCoins || 0) + totalPrice;
     await receiver.save();
 
+    // Update room totalGiftRevenue if inside an active liveStream/partyRoom
+    if (liveStream) {
+      liveStream.totalGiftRevenue = (liveStream.totalGiftRevenue || 0) + totalPrice;
+      await liveStream.save();
+    }
+
     // 7. Record Coin History for both users
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
