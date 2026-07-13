@@ -733,7 +733,7 @@ export class LiveStreamService {
       streams.map(async (stream: any) => {
         const streamObj = await this.populateRoomWithDailyRank(stream, userId);
         const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
-        const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
+        const isMine = userId && hostIdStr ? (hostIdStr === userId.toString() || !!streamObj.isFollowingRoom) : false;
         return {
           ...streamObj,
           isMine
