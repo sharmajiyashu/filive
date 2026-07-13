@@ -706,7 +706,20 @@ export class LiveStreamService {
    */
   public async getActiveLiveStreams(page: number = 1, limit: number = 10, userId?: string) {
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}`);
-    const query = { status: 'live' };
+
+    let query: any = { status: 'live' };
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const followedRoomDocs = await RoomFollow.find({ userId: new mongoose.Types.ObjectId(userId) });
+      const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
+
+      query = {
+        $or: [
+          { status: 'live' },
+          { _id: { $in: followedRoomIds } }
+        ]
+      };
+    }
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
     const streams = await Room.find(query)
