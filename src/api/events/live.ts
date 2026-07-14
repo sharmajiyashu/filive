@@ -237,7 +237,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName and seatIndex are required');
         return;
       }
-      await liveStreamService.joinSeat(userId, channelName, seatIndex);
+      const result = await liveStreamService.joinSeat(userId, channelName, seatIndex);
+      AppLogger.info(`[Socket Event: join_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: join_seat] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to join seat');
@@ -253,7 +254,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName is required');
         return;
       }
-      await liveStreamService.leaveSeat(userId, channelName);
+      const result = await liveStreamService.leaveSeat(userId, channelName);
+      AppLogger.info(`[Socket Event: leave_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: leave_seat] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to leave seat');
@@ -270,8 +272,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
-      AppLogger.info(`[Socket Event: kick_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}`);
+      const result = await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
+      AppLogger.info(`[Socket Event: kick_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}. response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: kick_user] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to block/kick user');
@@ -287,7 +289,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName and newSeatIndex are required');
         return;
       }
-      await liveStreamService.changeSeat(userId, channelName, newSeatIndex);
+      const result = await liveStreamService.changeSeat(userId, channelName, newSeatIndex);
+      AppLogger.info(`[Socket Event: change_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: change_seat] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to change seat');
@@ -303,7 +306,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName, seatIndex, and lock are required');
         return;
       }
-      await liveStreamService.lockSeat(userId, channelName, seatIndex, lock);
+      const result = await liveStreamService.lockSeat(userId, channelName, seatIndex, lock);
+      AppLogger.info(`[Socket Event: lock_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: lock_seat] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to lock seat');
@@ -319,7 +323,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         socket.emit('error_message', 'channelName, seatIndex, and mute are required');
         return;
       }
-      await liveStreamService.muteSeat(userId, channelName, seatIndex, mute);
+      const result = await liveStreamService.muteSeat(userId, channelName, seatIndex, mute);
+      AppLogger.info(`[Socket Event: mute_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: mute_seat] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to mute seat');
