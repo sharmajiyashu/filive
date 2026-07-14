@@ -62,7 +62,15 @@ export class LiveStreamService {
 
     // Check if the user already has an active room
     AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active room`);
-    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    let activeStream = await Room.findOne({ hostId, status: 'live' });
+
+    // For party rooms, reuse the previous party room if it exists (even if ended) to keep channelName permanent
+    if (!activeStream && roomType === 'party_room') {
+      activeStream = await Room.findOne({ hostId, roomType: 'party_room' }).sort({ createdAt: -1 });
+      if (activeStream) {
+        AppLogger.info(`[LiveStreamService: startLiveStream] Found existing ended party room for host. Reusing to keep channelName permanent.`);
+      }
+    }
     if (activeStream) {
       AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active room: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
 
