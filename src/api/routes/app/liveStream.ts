@@ -57,7 +57,7 @@ export default (router: Router) => {
         throw new Error('Title is required to start a livestream/room');
       }
       const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement);
-      AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}`);
+      AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP POST /app/room/start] Failed for userId=${userId}: ${error.message}`, error);
@@ -264,14 +264,17 @@ export default (router: Router) => {
    */
   liveRouter.post('/seat/join', async (req: any, res: Response) => {
     const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/room/seat/join] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { channelName, seatIndex } = req.body;
       if (!channelName || seatIndex === undefined) {
         throw new Error('channelName and seatIndex are required');
       }
       const result = await liveStreamService.joinSeat(userId, channelName, Number(seatIndex));
+      AppLogger.info(`[HTTP POST /app/room/seat/join] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Joined seat successfully');
     } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/seat/join] Failed: ${error.message}`);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -301,14 +304,17 @@ export default (router: Router) => {
    */
   liveRouter.post('/seat/leave', async (req: any, res: Response) => {
     const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/room/seat/leave] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { channelName } = req.body;
       if (!channelName) {
         throw new Error('channelName is required');
       }
       const result = await liveStreamService.leaveSeat(userId, channelName);
+      AppLogger.info(`[HTTP POST /app/room/seat/leave] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Left seat successfully');
     } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/seat/leave] Failed: ${error.message}`);
       return ResponseWrapper.error(res, error);
     }
   });
@@ -391,6 +397,7 @@ export default (router: Router) => {
     AppLogger.info(`[HTTP GET /app/room/active] Request received. userId=${userId}`);
     try {
       const result = await liveStreamService.getActiveRoomForHost(userId);
+      AppLogger.info(`[HTTP GET /app/room/active] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Active room details fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/active] Failed: ${error.message}`, error);
@@ -426,6 +433,7 @@ export default (router: Router) => {
     try {
       const userId = req.user?.id;
       const result = await liveStreamService.getRoomDetails(channelName, userId);
+      AppLogger.info(`[HTTP GET /app/room/details/:channelName] Success. channelName=${channelName}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Room details fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/details/:channelName] Failed for channelName=${channelName}: ${error.message}`, error);
