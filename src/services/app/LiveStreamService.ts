@@ -732,11 +732,11 @@ export class LiveStreamService {
       const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
 
       query = {
-        $or: [
-          { status: 'live' },
-          { _id: { $in: followedRoomIds } }
-        ]
+        status: 'live'
       };
+
+      // If we need to prioritize followed rooms, that should be done in sorting, 
+      // but for now we just ensure only 'live' status rooms are returned.
     }
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
