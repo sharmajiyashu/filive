@@ -385,7 +385,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
           } catch (err: any) {
             AppLogger.error(`[Socket Event: disconnect] Error ending stream after timeout for user ${userId}: ${err.message}`, err);
           }
-        }, 5000);
+        }, 30000);
       } else {
         AppLogger.info(`[Socket Event: disconnect] User is not hosting any active stream.`);
       }
