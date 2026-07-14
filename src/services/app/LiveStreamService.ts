@@ -809,19 +809,28 @@ export class LiveStreamService {
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       throw new Error('Invalid host ID');
     }
-    const activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) })
+    let activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId), status: 'live' })
       .populate({
         path: 'hostId',
-        populate: {
-          path: 'profileImage'
-        }
+        populate: { path: 'profileImage' }
       })
       .populate({
         path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
+        populate: { path: 'media' }
       });
+
+    if (!activeStream) {
+      activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) })
+        .sort({ createdAt: -1 })
+        .populate({
+          path: 'hostId',
+          populate: { path: 'profileImage' }
+        })
+        .populate({
+          path: 'roomTheme',
+          populate: { path: 'media' }
+        });
+    }
     return await this.populateRoomWithDailyRank(activeStream, hostId);
   }
 
