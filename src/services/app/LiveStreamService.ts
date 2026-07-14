@@ -83,6 +83,17 @@ export class LiveStreamService {
       if (announcement !== undefined) {
         activeStream.announcement = announcement;
       }
+
+      if (roomType === 'party_room') {
+        const maxSeats = roomSetting.maxSeats || 4;
+        let initialSeats = activeStream.seats || [];
+        initialSeats = [];
+        for (let i = 0; i < maxSeats; i++) {
+          initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+        }
+        activeStream.seats = initialSeats;
+      }
+
       // Regenerate token as it might have expired
       const token = this.generateAgoraToken(activeStream.channelName, 0, 'publisher');
       activeStream.token = token;
