@@ -75,7 +75,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Success. User ${userId} joined room_${channelName}`);
     } catch (error: any) {
-      AppLogger.error(`[Socket Event: join_room/join_live] Error occurred for userId=${userId}: ${error.message}`, error);
+      const knownErrors = ['Live stream not found or has ended', 'Invalid user ID', 'You are blocked and kicked from this room'];
+      if (knownErrors.includes(error.message)) {
+        AppLogger.warn(`[Socket Event: join_room/join_live] Warning for userId=${userId}: ${error.message}`);
+      } else {
+        AppLogger.error(`[Socket Event: join_room/join_live] Error occurred for userId=${userId}: ${error.message}`, error);
+      }
       socket.emit('error_message', error.message || 'Failed to join room');
     }
   };
