@@ -1,8 +1,10 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ISeat {
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
   seatIndex: number;
+  status: 'open' | 'locked' | 'occupied';
+  isMuted: boolean;
 }
 
 export interface IRoom extends Document {
@@ -46,7 +48,9 @@ const RoomSchema: Schema = new Schema(
     seats: [
       {
         userId: { type: Schema.Types.ObjectId, ref: 'User' },
-        seatIndex: { type: Number }
+        seatIndex: { type: Number, required: true },
+        status: { type: String, enum: ['open', 'locked', 'occupied'], default: 'open' },
+        isMuted: { type: Boolean, default: false }
       }
     ],
     startedAt: { type: Date, default: Date.now },

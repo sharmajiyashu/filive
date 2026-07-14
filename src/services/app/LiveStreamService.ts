@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import Room from '../../models/Room';
 import User from '../../models/User';
+import RoomSetting from '../../models/RoomSetting';
 import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
 import RoomFollow from '../../models/RoomFollow';
@@ -53,11 +54,17 @@ export class LiveStreamService {
       throw new Error('Invalid host ID');
     }
 
-    // Check if the user already has a room
-    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has a room`);
-    const activeStream = await Room.findOne({ hostId });
+    // Fetch or create RoomSetting
+    let roomSetting = await RoomSetting.findOne({ hostId });
+    if (!roomSetting) {
+      roomSetting = await RoomSetting.create({ hostId });
+    }
+
+    // Check if the user already has an active room
+    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active room`);
+    const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
-      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has a room: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details, setting status to live, and returning.`);
+      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active room: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
 
       activeStream.title = title;
       activeStream.status = 'live';
@@ -119,6 +126,14 @@ export class LiveStreamService {
       ? new mongoose.Types.ObjectId(roomThemeId)
       : undefined;
 
+    let initialSeats: any[] = [];
+    if (roomType === 'party_room') {
+      const maxSeats = roomSetting.maxSeats || 4;
+      for (let i = 0; i < maxSeats; i++) {
+        initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+      }
+    }
+
     AppLogger.info(`[LiveStreamService: startLiveStream] Creating LiveStream DB entry...`);
     const liveStream = await Room.create({
       hostId: new mongoose.Types.ObjectId(hostId),
@@ -133,6 +148,7 @@ export class LiveStreamService {
       partyRoomOption,
       roomTheme: themeObjectId,
       blockedUsers: [],
+      seats: initialSeats,
       startedAt: new Date()
     });
     AppLogger.info(`[LiveStreamService: startLiveStream] LiveStream created successfully. streamId=${liveStream._id}, channelName=${channelName}`);
@@ -642,7 +658,9 @@ export class LiveStreamService {
     // Add user to the new seat
     liveStream.seats.push({
       userId: new mongoose.Types.ObjectId(userId),
-      seatIndex
+      seatIndex,
+      status: 'occupied',
+      isMuted: false
     });
 
     await liveStream.save();
@@ -885,5 +903,189 @@ export class LiveStreamService {
     roomObj.totalMember = roomObj.roomFollowerCount || 0;
 
     return roomObj;
+  }
+
+  // ==========================================
+  // New Seat Management Methods (Taka App Flow)
+  // ==========================================
+
+  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string }) {
+    AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}`);
+    let roomSetting = await RoomSetting.findOne({ hostId });
+    if (!roomSetting) {
+      roomSetting = await RoomSetting.create({ hostId });
+    }
+
+    if (data.maxSeats !== undefined) roomSetting.maxSeats = data.maxSeats;
+    if (data.admins !== undefined) roomSetting.admins = data.admins.map(id => new mongoose.Types.ObjectId(id));
+    if (data.roomTheme !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.roomTheme);
+    if (data.announcement !== undefined) roomSetting.announcement = data.announcement;
+
+    await roomSetting.save();
+
+    // If there is an active room, notify users of setting changes
+    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    if (activeStream) {
+      const io = this.getSocketIo();
+      if (io) {
+        io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', roomSetting);
+      }
+    }
+
+    return roomSetting;
+  }
+
+  public async changeSeat(userId: string, channelName: string, newSeatIndex: number) {
+    AppLogger.info(`[LiveStreamService: changeSeat] userId=${userId}, channelName=${channelName}, newSeatIndex=${newSeatIndex}`);
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+
+    const targetSeat = liveStream.seats.find(s => s.seatIndex === newSeatIndex);
+    if (!targetSeat) throw new Error('Seat index not found');
+    if (targetSeat.status !== 'open') throw new Error('Seat is not open');
+
+    // Remove user from old seat
+    const oldSeat = liveStream.seats.find(s => s.userId && s.userId.toString() === userId);
+    if (oldSeat) {
+      oldSeat.userId = undefined;
+      oldSeat.status = 'open';
+      oldSeat.isMuted = false;
+    }
+
+    // Assign to new seat
+    targetSeat.userId = new mongoose.Types.ObjectId(userId);
+    targetSeat.status = 'occupied';
+
+    await liveStream.save();
+    const io = this.getSocketIo();
+    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+
+    return liveStream;
+  }
+
+  public async lockSeat(requesterId: string, channelName: string, seatIndex: number, lock: boolean) {
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+
+    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+
+    const seat = liveStream.seats.find(s => s.seatIndex === seatIndex);
+    if (!seat) throw new Error('Seat index not found');
+
+    if (lock) {
+      if (seat.userId) throw new Error('Cannot lock an occupied seat. Remove user first.');
+      seat.status = 'locked';
+    } else {
+      seat.status = 'open';
+    }
+
+    await liveStream.save();
+    const io = this.getSocketIo();
+    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+
+    return liveStream;
+  }
+
+  public async muteSeat(requesterId: string, channelName: string, seatIndex: number, mute: boolean) {
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+
+    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+
+    const seat = liveStream.seats.find(s => s.seatIndex === seatIndex);
+    if (!seat) throw new Error('Seat index not found');
+
+    seat.isMuted = mute;
+
+    await liveStream.save();
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: seat.userId });
+    }
+
+    return liveStream;
+  }
+
+  public async kickUser(requesterId: string, channelName: string, userIdToKick: string) {
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream) throw new Error('Active room not found');
+
+    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+
+    // Remove from seat if they are on one
+    if (liveStream.seats) {
+      const seat = liveStream.seats.find(s => s.userId && s.userId.toString() === userIdToKick);
+      if (seat) {
+        seat.userId = undefined;
+        seat.status = 'open';
+        seat.isMuted = false;
+      }
+    }
+
+    // Remove from viewers
+    liveStream.viewers = liveStream.viewers.filter(uid => uid.toString() !== userIdToKick);
+    liveStream.viewerCount = liveStream.viewers.length;
+
+    await liveStream.save();
+
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+      io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName });
+    }
+
+    return liveStream;
+  }
+
+  public async inviteToSeat(requesterId: string, channelName: string, targetUserId: string, seatIndex: number) {
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream) throw new Error('Active room not found');
+
+    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`live_${channelName}`).emit('user_invited_to_seat', { targetUserId, seatIndex, channelName });
+    }
+    return { success: true };
+  }
+
+  public async makeAdmin(hostId: string, targetUserId: string, isAdmin: boolean) {
+    let roomSetting = await RoomSetting.findOne({ hostId });
+    if (!roomSetting) roomSetting = await RoomSetting.create({ hostId });
+
+    const targetObjId = new mongoose.Types.ObjectId(targetUserId);
+    const isAdminNow = roomSetting.admins.some(id => id.toString() === targetUserId);
+
+    if (isAdmin && !isAdminNow) {
+      roomSetting.admins.push(targetObjId);
+    } else if (!isAdmin && isAdminNow) {
+      roomSetting.admins = roomSetting.admins.filter(id => id.toString() !== targetUserId);
+    }
+
+    await roomSetting.save();
+
+    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    if (activeStream) {
+      const io = this.getSocketIo();
+      if (io) io.to(`live_${activeStream.channelName}`).emit('user_made_admin', { targetUserId, isAdmin });
+    }
+
+    return roomSetting;
+  }
+
+  private async verifyAdmin(requesterId: string, hostId: string) {
+    if (requesterId === hostId) return true; // Host is always admin
+
+    const roomSetting = await RoomSetting.findOne({ hostId });
+    if (roomSetting && roomSetting.admins.some(id => id.toString() === requesterId)) {
+      return true;
+    }
+
+    const requestor = await User.findById(requesterId);
+    if (requestor && requestor.userRole === 'admin') return true; // Super admin
+
+    throw new Error('Unauthorized. Only the host or room admin can perform this action.');
   }
 }

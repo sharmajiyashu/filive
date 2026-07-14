@@ -278,6 +278,86 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
+  // Change seat
+  socket.on('change_seat', async (data: { channelName: string; newSeatIndex: number }) => {
+    AppLogger.info(`[Socket Event: change_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, newSeatIndex } = data;
+      if (!channelName || newSeatIndex === undefined) {
+        socket.emit('error_message', 'channelName and newSeatIndex are required');
+        return;
+      }
+      await liveStreamService.changeSeat(userId, channelName, newSeatIndex);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: change_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to change seat');
+    }
+  });
+
+  // Lock seat
+  socket.on('lock_seat', async (data: { channelName: string; seatIndex: number; lock: boolean }) => {
+    AppLogger.info(`[Socket Event: lock_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, seatIndex, lock } = data;
+      if (!channelName || seatIndex === undefined || lock === undefined) {
+        socket.emit('error_message', 'channelName, seatIndex, and lock are required');
+        return;
+      }
+      await liveStreamService.lockSeat(userId, channelName, seatIndex, lock);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: lock_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to lock seat');
+    }
+  });
+
+  // Mute seat
+  socket.on('mute_seat', async (data: { channelName: string; seatIndex: number; mute: boolean }) => {
+    AppLogger.info(`[Socket Event: mute_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, seatIndex, mute } = data;
+      if (!channelName || seatIndex === undefined || mute === undefined) {
+        socket.emit('error_message', 'channelName, seatIndex, and mute are required');
+        return;
+      }
+      await liveStreamService.muteSeat(userId, channelName, seatIndex, mute);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: mute_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to mute seat');
+    }
+  });
+
+  // Invite to seat
+  socket.on('invite_to_seat', async (data: { channelName: string; targetUserId: string; seatIndex: number }) => {
+    AppLogger.info(`[Socket Event: invite_to_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, targetUserId, seatIndex } = data;
+      if (!channelName || !targetUserId || seatIndex === undefined) {
+        socket.emit('error_message', 'channelName, targetUserId, and seatIndex are required');
+        return;
+      }
+      await liveStreamService.inviteToSeat(userId, channelName, targetUserId, seatIndex);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: invite_to_seat] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to send invitation');
+    }
+  });
+
+  // Make admin
+  socket.on('make_admin', async (data: { targetUserId: string; isAdmin: boolean }) => {
+    AppLogger.info(`[Socket Event: make_admin] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { targetUserId, isAdmin } = data;
+      if (!targetUserId || isAdmin === undefined) {
+        socket.emit('error_message', 'targetUserId and isAdmin are required');
+        return;
+      }
+      await liveStreamService.makeAdmin(userId, targetUserId, isAdmin);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: make_admin] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to update admin status');
+    }
+  });
+
   // Handle socket disconnect (clean up if host or viewer)
   socket.on('disconnect', async () => {
     AppLogger.info(`[Socket Event: disconnect] Entered. socket.id=${socket.id}, userId=${userId}`);
@@ -345,3 +425,4 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 };
+

@@ -779,4 +779,279 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  // ==========================================
+  // New Seat Management Routes (Taka App Flow)
+  // ==========================================
+
+  /**
+   * @swagger
+   * /app/room/settings:
+   *   post:
+   *     summary: Update room settings (maxSeats, admins, etc)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               maxSeats:
+   *                 type: integer
+   *               admins:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               roomTheme:
+   *                 type: string
+   *               announcement:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Room settings updated
+   */
+  liveRouter.post('/settings', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const result = await liveStreamService.updateRoomSettings(userId, req.body);
+      return ResponseWrapper.success(res, result, 'Room settings updated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/seat/change:
+   *   post:
+   *     summary: Change the seat of a user
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - seatIndex
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               seatIndex:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Seat changed
+   */
+  liveRouter.post('/seat/change', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, seatIndex } = req.body;
+      const result = await liveStreamService.changeSeat(userId, channelName, Number(seatIndex));
+      return ResponseWrapper.success(res, result, 'Seat changed');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/seat/lock:
+   *   post:
+   *     summary: Lock or unlock a seat (Host/Admin only)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - seatIndex
+   *               - lock
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               seatIndex:
+   *                 type: integer
+   *               lock:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Seat lock status updated
+   */
+  liveRouter.post('/seat/lock', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, seatIndex, lock } = req.body;
+      const result = await liveStreamService.lockSeat(userId, channelName, Number(seatIndex), lock);
+      return ResponseWrapper.success(res, result, 'Seat lock status updated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/seat/mute:
+   *   post:
+   *     summary: Mute or unmute a seat (Host/Admin only)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - seatIndex
+   *               - mute
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               seatIndex:
+   *                 type: integer
+   *               mute:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Seat mute status updated
+   */
+  liveRouter.post('/seat/mute', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, seatIndex, mute } = req.body;
+      const result = await liveStreamService.muteSeat(userId, channelName, Number(seatIndex), mute);
+      return ResponseWrapper.success(res, result, 'Seat mute status updated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/kick:
+   *   post:
+   *     summary: Kick a user out of the room (Host/Admin only)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - userIdToKick
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               userIdToKick:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: User kicked from room
+   */
+  liveRouter.post('/kick', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, userIdToKick } = req.body;
+      const result = await liveStreamService.kickUser(userId, channelName, userIdToKick);
+      return ResponseWrapper.success(res, result, 'User kicked from room');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/invite:
+   *   post:
+   *     summary: Invite a user to a seat (Host/Admin only)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - targetUserId
+   *               - seatIndex
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               targetUserId:
+   *                 type: string
+   *               seatIndex:
+   *                 type: integer
+   *     responses:
+   *       200:
+   *         description: Invitation sent
+   */
+  liveRouter.post('/invite', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, targetUserId, seatIndex } = req.body;
+      const result = await liveStreamService.inviteToSeat(userId, channelName, targetUserId, Number(seatIndex));
+      return ResponseWrapper.success(res, result, 'Invitation sent');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/admin:
+   *   post:
+   *     summary: Make a user admin for the host's room
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - targetUserId
+   *               - isAdmin
+   *             properties:
+   *               targetUserId:
+   *                 type: string
+   *               isAdmin:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Admin status updated
+   */
+  liveRouter.post('/admin', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { targetUserId, isAdmin } = req.body;
+      const result = await liveStreamService.makeAdmin(userId, targetUserId, isAdmin);
+      return ResponseWrapper.success(res, result, 'Admin status updated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };
+
