@@ -666,21 +666,26 @@ export class LiveStreamService {
     }
 
     // Check if the seat is already occupied
-    const isOccupied = liveStream.seats.some(seat => seat.seatIndex === seatIndex);
-    if (isOccupied) {
-      throw new Error(`Seat ${seatIndex} is already occupied`);
+    const targetSeat = liveStream.seats.find(seat => seat.seatIndex === seatIndex);
+    if (!targetSeat) {
+      throw new Error(`Seat ${seatIndex} not found`);
+    }
+    if (targetSeat.status !== 'open') {
+      throw new Error(`Seat ${seatIndex} is not open`);
     }
 
     // If the user is already on another seat, remove them from that seat first
-    liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
+    const oldSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
+    if (oldSeat) {
+      oldSeat.userId = undefined;
+      oldSeat.status = 'open';
+      oldSeat.isMuted = false;
+    }
 
     // Add user to the new seat
-    liveStream.seats.push({
-      userId: new mongoose.Types.ObjectId(userId),
-      seatIndex,
-      status: 'occupied',
-      isMuted: false
-    });
+    targetSeat.userId = new mongoose.Types.ObjectId(userId);
+    targetSeat.status = 'occupied';
+    targetSeat.isMuted = false;
 
     await liveStream.save();
 
@@ -717,10 +722,16 @@ export class LiveStreamService {
     }
 
     // Remove user from seats
-    const originalLength = liveStream.seats.length;
-    liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
+    let seatUpdated = false;
+    const targetSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
+    if (targetSeat) {
+      targetSeat.userId = undefined;
+      targetSeat.status = 'open';
+      targetSeat.isMuted = false;
+      seatUpdated = true;
+    }
 
-    if (liveStream.seats.length !== originalLength) {
+    if (seatUpdated) {
       await liveStream.save();
 
       // Emit socket event
