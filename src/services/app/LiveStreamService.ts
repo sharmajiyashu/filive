@@ -186,6 +186,13 @@ export class LiveStreamService {
         populate: {
           path: 'media'
         }
+      })
+      .populate({
+        path: 'seats.userId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+        populate: {
+          path: 'profileImage'
+        }
       });
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
@@ -577,6 +584,13 @@ export class LiveStreamService {
         populate: {
           path: 'media'
         }
+      })
+      .populate({
+        path: 'seats.userId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+        populate: {
+          path: 'profileImage'
+        }
       });
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
@@ -959,6 +973,15 @@ export class LiveStreamService {
   // New Seat Management Methods (Taka App Flow)
   // ==========================================
 
+  public async getRoomSettings(hostId: string) {
+    AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}`);
+    let roomSetting = await RoomSetting.findOne({ hostId });
+    if (!roomSetting) {
+      roomSetting = await RoomSetting.create({ hostId });
+    }
+    return roomSetting;
+  }
+
   public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string }) {
     AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}`);
     let roomSetting = await RoomSetting.findOne({ hostId });
@@ -1009,7 +1032,7 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
-    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
 
     return liveStream;
   }
@@ -1034,7 +1057,7 @@ export class LiveStreamService {
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
     }
 
     return liveStream;
@@ -1059,7 +1082,7 @@ export class LiveStreamService {
       const userObj = seat.userId ? (seat.userId as any) : null;
       const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
 
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
       io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
     }
 
@@ -1092,7 +1115,7 @@ export class LiveStreamService {
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
       const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
       io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName, user });
     }
 

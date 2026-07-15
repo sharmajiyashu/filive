@@ -818,6 +818,46 @@ export default (router: Router) => {
    *               announcement:
    *                 type: string
    *     responses:
+   *     responses:
+   *       200:
+   *         description: Room settings updated
+   */
+  liveRouter.get('/settings', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const result = await liveStreamService.getRoomSettings(userId);
+      return ResponseWrapper.success(res, result, 'Room settings fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/settings:
+   *   post:
+   *     summary: Update room settings (maxSeats, admins, etc)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               maxSeats:
+   *                 type: integer
+   *               admins:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               roomTheme:
+   *                 type: string
+   *               announcement:
+   *                 type: string
+   *     responses:
    *       200:
    *         description: Room settings updated
    */

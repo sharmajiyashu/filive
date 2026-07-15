@@ -65,7 +65,9 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         viewerCount: liveStream.viewerCount,
         charmRankingDaily: userJson?.charmRankingDaily,
         totalGiftRevenue: liveStream?.totalGiftRevenue || 0,
-        roomFollowerCount: liveStream?.roomFollowerCount || 0
+        roomFollowerCount: liveStream?.roomFollowerCount || 0,
+        seats: liveStream.seats || [],
+        maxSeats: liveStream.seats ? liveStream.seats.length : 0
       };
 
       AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
