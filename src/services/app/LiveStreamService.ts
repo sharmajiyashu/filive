@@ -176,6 +176,7 @@ export class LiveStreamService {
     const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -219,6 +220,7 @@ export class LiveStreamService {
     const updatedRoom = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -565,6 +567,7 @@ export class LiveStreamService {
     const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -609,7 +612,7 @@ export class LiveStreamService {
         // Emit seat_updated event to the room
         const io = this.getSocketIo();
         if (io) {
-          await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+          await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
           io.to(`live_${channelName}`).emit('seat_updated', {
             channelName,
             seats: liveStream.seats
@@ -626,6 +629,7 @@ export class LiveStreamService {
     const populatedStream = await Room.findById(liveStream._id)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -693,7 +697,7 @@ export class LiveStreamService {
     // Emit socket event
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
       const payload = {
         channelName,
         seats: liveStream.seats
@@ -739,7 +743,7 @@ export class LiveStreamService {
       // Emit socket event
       const io = this.getSocketIo();
       if (io) {
-        await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+        await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
         const payload = {
           channelName,
           seats: liveStream.seats
@@ -776,6 +780,7 @@ export class LiveStreamService {
     const streams = await Room.find(query)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -838,6 +843,7 @@ export class LiveStreamService {
         .sort({ createdAt: -1 })
         .populate({
           path: 'hostId',
+          select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
           populate: { path: 'profileImage' }
         })
         .populate({
@@ -855,6 +861,7 @@ export class LiveStreamService {
     const liveStream = await Room.findOne({ channelName })
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -885,6 +892,7 @@ export class LiveStreamService {
     const streams = await Room.find(query)
       .populate({
         path: 'hostId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
         }
@@ -1000,7 +1008,7 @@ export class LiveStreamService {
 
     await liveStream.save();
     const io = this.getSocketIo();
-    await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+    await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
     if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
 
     return liveStream;
@@ -1025,7 +1033,7 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
       io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
     }
 
@@ -1046,10 +1054,13 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
-      const user = await User.findById(seat.userId).select('-password').populate('profileImage');
+      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+
+      const userObj = seat.userId ? (seat.userId as any) : null;
+      const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
+
       io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
-      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: seat.userId, user });
+      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
     }
 
     return liveStream;
@@ -1079,8 +1090,8 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
-      const user = await User.findById(userIdToKick).select('-password').populate('profileImage');
+      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
       io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
       io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName, user });
     }
@@ -1096,7 +1107,7 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      const user = await User.findById(targetUserId).select('-password').populate('profileImage');
+      const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
       io.to(`live_${channelName}`).emit('user_invited_to_seat', { targetUserId, seatIndex, channelName, user });
     }
     return { success: true };
@@ -1121,7 +1132,7 @@ export class LiveStreamService {
     if (activeStream) {
       const io = this.getSocketIo();
       if (io) {
-        const user = await User.findById(targetUserId).select('-password').populate('profileImage');
+        const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
         io.to(`live_${activeStream.channelName}`).emit('user_made_admin', { targetUserId, isAdmin, user });
       }
     }
