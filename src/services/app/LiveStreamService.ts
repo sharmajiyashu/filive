@@ -609,6 +609,7 @@ export class LiveStreamService {
         // Emit seat_updated event to the room
         const io = this.getSocketIo();
         if (io) {
+          await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
           io.to(`live_${channelName}`).emit('seat_updated', {
             channelName,
             seats: liveStream.seats
@@ -692,6 +693,7 @@ export class LiveStreamService {
     // Emit socket event
     const io = this.getSocketIo();
     if (io) {
+      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
       const payload = {
         channelName,
         seats: liveStream.seats
@@ -737,6 +739,7 @@ export class LiveStreamService {
       // Emit socket event
       const io = this.getSocketIo();
       if (io) {
+        await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
         const payload = {
           channelName,
           seats: liveStream.seats
@@ -997,6 +1000,7 @@ export class LiveStreamService {
 
     await liveStream.save();
     const io = this.getSocketIo();
+    await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
     if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
 
     return liveStream;
@@ -1020,7 +1024,10 @@ export class LiveStreamService {
 
     await liveStream.save();
     const io = this.getSocketIo();
-    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+    if (io) {
+      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
+    }
 
     return liveStream;
   }
@@ -1039,8 +1046,10 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     if (io) {
+      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+      const user = await User.findById(seat.userId).select('-password').populate('profileImage');
       io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
-      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: seat.userId });
+      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: seat.userId, user });
     }
 
     return liveStream;
@@ -1070,8 +1079,10 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
+      await liveStream.populate({ path: 'seats.userId', select: '-password', populate: { path: 'profileImage' } });
+      const user = await User.findById(userIdToKick).select('-password').populate('profileImage');
       io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.seats });
-      io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName });
+      io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName, user });
     }
 
     return liveStream;
@@ -1085,7 +1096,8 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      io.to(`live_${channelName}`).emit('user_invited_to_seat', { targetUserId, seatIndex, channelName });
+      const user = await User.findById(targetUserId).select('-password').populate('profileImage');
+      io.to(`live_${channelName}`).emit('user_invited_to_seat', { targetUserId, seatIndex, channelName, user });
     }
     return { success: true };
   }
@@ -1108,7 +1120,10 @@ export class LiveStreamService {
     const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
       const io = this.getSocketIo();
-      if (io) io.to(`live_${activeStream.channelName}`).emit('user_made_admin', { targetUserId, isAdmin });
+      if (io) {
+        const user = await User.findById(targetUserId).select('-password').populate('profileImage');
+        io.to(`live_${activeStream.channelName}`).emit('user_made_admin', { targetUserId, isAdmin, user });
+      }
     }
 
     return roomSetting;
