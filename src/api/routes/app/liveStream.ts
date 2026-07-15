@@ -818,7 +818,6 @@ export default (router: Router) => {
    *               announcement:
    *                 type: string
    *     responses:
-   *     responses:
    *       200:
    *         description: Room settings updated
    */
