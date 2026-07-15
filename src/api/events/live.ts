@@ -338,6 +338,23 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
+  // Kick user
+  socket.on('kick_user', async (data: { channelName: string; targetUserId: string }) => {
+    AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, targetUserId } = data;
+      if (!channelName || !targetUserId) {
+        socket.emit('error_message', 'channelName and targetUserId are required');
+        return;
+      }
+      await liveStreamService.kickUser(userId, channelName, targetUserId);
+      AppLogger.info(`[Socket Event: kick_user] Success. userId=${userId} kicked targetUserId=${targetUserId}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: kick_user] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to kick user');
+    }
+  });
+
   // Invite to seat
   socket.on('invite_to_seat', async (data: { channelName: string; targetUserId: string; seatIndex: number }) => {
     AppLogger.info(`[Socket Event: invite_to_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
