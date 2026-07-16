@@ -592,9 +592,12 @@ export class LiveStreamService {
           const io = this.getSocketIo();
           if (io) {
             await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+            const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
             io.to(`live_${channelName}`).emit('seat_updated', {
               channelName,
-              seats: liveStream.seats
+              seats: liveStream.seats,
+              roomAdmins,
+              roomAdmin: roomAdmins
             });
           }
         }
@@ -665,9 +668,12 @@ export class LiveStreamService {
         const io = this.getSocketIo();
         if (io) {
           await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
           io.to(`live_${channelName}`).emit('seat_updated', {
             channelName,
-            seats: liveStream.seats
+            seats: liveStream.seats,
+            roomAdmins,
+            roomAdmin: roomAdmins
           });
         }
       }
@@ -748,9 +754,12 @@ export class LiveStreamService {
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
       const payload = {
         channelName,
-        seats: liveStream.seats
+        seats: liveStream.seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
       };
       AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${channelName}`).emit('seat_updated', payload);
@@ -793,9 +802,12 @@ export class LiveStreamService {
       const io = this.getSocketIo();
       if (io) {
         await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+        const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
         const payload = {
           channelName,
-          seats: liveStream.seats
+          seats: liveStream.seats,
+          roomAdmins,
+          roomAdmin: roomAdmins
         };
         AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
         io.to(`live_${channelName}`).emit('seat_updated', payload);
@@ -1066,7 +1078,15 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
-    if (io) io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
+    const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+    if (io) {
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
+    }
 
     return liveStream;
   }
@@ -1091,7 +1111,13 @@ export class LiveStreamService {
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
     }
 
     return liveStream;
@@ -1116,7 +1142,13 @@ export class LiveStreamService {
       const userObj = seat.userId ? (seat.userId as any) : null;
       const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
 
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
       io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
     }
 
@@ -1148,7 +1180,13 @@ export class LiveStreamService {
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
       const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
-      io.to(`live_${channelName}`).emit('seat_updated', { seats: liveStream.toObject().seats });
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
       io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName, user });
     }
 
@@ -1208,5 +1246,14 @@ export class LiveStreamService {
     if (requestor && requestor.userRole === 'admin') return true; // Super admin
 
     throw new Error('Unauthorized. Only the host or room admin can perform this action.');
+  }
+
+  private async getRoomAdmins(hostId: any) {
+    const roomSetting = await RoomSetting.findOne({ hostId }).populate({
+      path: 'admins',
+      select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+      populate: { path: 'profileImage' }
+    });
+    return roomSetting ? roomSetting.admins : [];
   }
 }
