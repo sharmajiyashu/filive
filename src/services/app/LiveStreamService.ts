@@ -570,6 +570,28 @@ export class LiveStreamService {
       AppLogger.info(`[LiveStreamService: joinLiveStream] No update needed for viewers/joinedUsers list.`);
     }
 
+    if (liveStream.roomType === 'party_room') {
+      if (!liveStream.seats) liveStream.seats = [];
+      const userAlreadyHasSeat = liveStream.seats.some(seat => seat.userId && seat.userId.toString() === userId);
+      if (!userAlreadyHasSeat) {
+        const openSeat = liveStream.seats.find(seat => seat.status === 'open');
+        if (openSeat) {
+          openSeat.userId = userObjectId;
+          openSeat.status = 'occupied';
+          await liveStream.save();
+          AppLogger.info(`[LiveStreamService: joinLiveStream] Auto-assigned userId=${userId} to seatIndex=${openSeat.seatIndex}`);
+          const io = this.getSocketIo();
+          if (io) {
+            await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+            io.to(`live_${channelName}`).emit('seat_updated', {
+              channelName,
+              seats: liveStream.seats
+            });
+          }
+        }
+      }
+    }
+
     AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
       .populate({
@@ -698,13 +720,11 @@ export class LiveStreamService {
     if (oldSeat) {
       oldSeat.userId = undefined;
       oldSeat.status = 'open';
-      oldSeat.isMuted = false;
     }
 
     // Add user to the new seat
     targetSeat.userId = new mongoose.Types.ObjectId(userId);
     targetSeat.status = 'occupied';
-    targetSeat.isMuted = false;
 
     await liveStream.save();
 
@@ -747,7 +767,6 @@ export class LiveStreamService {
     if (targetSeat) {
       targetSeat.userId = undefined;
       targetSeat.status = 'open';
-      targetSeat.isMuted = false;
       seatUpdated = true;
     }
 
@@ -1022,7 +1041,6 @@ export class LiveStreamService {
     if (oldSeat) {
       oldSeat.userId = undefined;
       oldSeat.status = 'open';
-      oldSeat.isMuted = false;
     }
 
     // Assign to new seat
@@ -1101,7 +1119,6 @@ export class LiveStreamService {
       if (seat) {
         seat.userId = undefined;
         seat.status = 'open';
-        seat.isMuted = false;
       }
     }
 
