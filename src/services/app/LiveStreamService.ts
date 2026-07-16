@@ -650,10 +650,17 @@ export class LiveStreamService {
     liveStream.viewerCount = liveStream.viewers.length;
 
     // Remove user from seats if party room
-    if (liveStream.seats) {
-      const originalSeatCount = liveStream.seats.length;
-      liveStream.seats = liveStream.seats.filter(seat => seat.userId && seat.userId.toString() !== userId);
-      if (liveStream.seats.length !== originalSeatCount) {
+    let seatUpdated = false;
+    if (liveStream.seats && liveStream.seats.length > 0) {
+      for (const seat of liveStream.seats) {
+        if (seat.userId && seat.userId.toString() === userId) {
+          seat.userId = undefined;
+          seat.status = 'open';
+          seatUpdated = true;
+        }
+      }
+
+      if (seatUpdated) {
         // Emit seat_updated event to the room
         const io = this.getSocketIo();
         if (io) {
