@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ISeat {
+  _id?: mongoose.Types.ObjectId | string;
   userId?: mongoose.Types.ObjectId;
   seatIndex: number;
   status: 'open' | 'locked' | 'occupied';

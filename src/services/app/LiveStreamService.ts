@@ -94,12 +94,21 @@ export class LiveStreamService {
 
       if (roomType === 'party_room') {
         const maxSeats = roomSetting.maxSeats || 4;
-        let initialSeats = activeStream.seats || [];
-        initialSeats = [];
+        let existingSeats = activeStream.seats || [];
+        let newSeats: any[] = [];
         for (let i = 0; i < maxSeats; i++) {
-          initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+          const oldSeat = existingSeats.find(s => s.seatIndex === i);
+          if (oldSeat) {
+            if (oldSeat.status === 'occupied') {
+              oldSeat.status = 'open';
+              oldSeat.userId = undefined;
+            }
+            newSeats.push(oldSeat);
+          } else {
+            newSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+          }
         }
-        activeStream.seats = initialSeats;
+        activeStream.seats = newSeats;
       }
 
       // Regenerate token as it might have expired
