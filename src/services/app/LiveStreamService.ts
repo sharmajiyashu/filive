@@ -99,15 +99,11 @@ export class LiveStreamService {
         for (let i = 0; i < maxSeats; i++) {
           const oldSeat = existingSeats.find(s => s.seatIndex === i);
           if (oldSeat) {
-            let newStatus = oldSeat.status as "open" | "locked" | "occupied";
-            if (newStatus === 'occupied') newStatus = 'open';
-
-            newSeats.push({
-              _id: oldSeat._id,
-              seatIndex: oldSeat.seatIndex,
-              status: newStatus,
-              isMuted: oldSeat.isMuted
-            });
+            if (oldSeat.status === 'occupied') {
+              oldSeat.status = 'open';
+              oldSeat.userId = undefined;
+            }
+            newSeats.push(oldSeat);
           } else {
             newSeats.push({ seatIndex: i, status: 'open', isMuted: false });
           }
