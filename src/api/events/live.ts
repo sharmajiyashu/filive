@@ -269,9 +269,9 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
-  // Handle blocking/kicking user from host
-  socket.on('kick_user', async (data: { channelName: string; userIdToBlock: string }) => {
-    AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+  // Handle blocking user from host
+  socket.on('block_user', async (data: { channelName: string; userIdToBlock: string }) => {
+    AppLogger.info(`[Socket Event: block_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
       const { channelName, userIdToBlock } = data;
       if (!channelName || !userIdToBlock) {
@@ -280,10 +280,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       }
 
       const result = await liveStreamService.blockUserFromRoom(userId, channelName, userIdToBlock);
-      AppLogger.info(`[Socket Event: kick_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}. response=${JSON.stringify(result)}`);
+      AppLogger.info(`[Socket Event: block_user] Success. Blocked user ${userIdToBlock} in room live_${channelName}. response=${JSON.stringify(result)}`);
     } catch (error: any) {
-      AppLogger.error(`[Socket Event: kick_user] Error for user ${userId}: ${error.message}`);
-      socket.emit('error_message', error.message || 'Failed to block/kick user');
+      AppLogger.error(`[Socket Event: block_user] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to block user');
     }
   });
 
