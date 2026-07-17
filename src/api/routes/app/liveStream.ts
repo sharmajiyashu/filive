@@ -51,12 +51,12 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { title, roomType, partyRoomOption, roomTheme, announcement } = req.body;
+      const { title, roomType, partyRoomOption, roomTheme, announcement, gameId } = req.body;
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId);
       AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
@@ -101,11 +101,11 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { channelName, title, roomTheme, partyRoomOption, announcement } = req.body;
+      const { channelName, title, roomTheme, partyRoomOption, announcement, gameId } = req.body;
       if (!channelName) {
         throw new Error('channelName is required');
       }
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement });
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId });
 
       // Emit room_updated socket event
       try {

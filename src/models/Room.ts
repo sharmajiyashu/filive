@@ -19,6 +19,7 @@ export interface IRoom extends Document {
   roomType?: 'livestream' | 'party_room';
   partyRoomOption?: 'live' | 'chat';
   roomTheme?: mongoose.Types.ObjectId;
+  gameId?: mongoose.Types.ObjectId;
   blockedUsers?: mongoose.Types.ObjectId[];
   seats?: ISeat[];
   announcement?: string;
@@ -45,6 +46,7 @@ const RoomSchema: Schema = new Schema(
     roomType: { type: String, enum: ['livestream', 'party_room'], default: 'livestream' },
     partyRoomOption: { type: String, enum: ['live', 'chat'], default: 'live' },
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
+    gameId: { type: Schema.Types.ObjectId, ref: 'Game' },
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     seats: [
       {
