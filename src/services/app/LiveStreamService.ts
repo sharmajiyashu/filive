@@ -46,9 +46,10 @@ export class LiveStreamService {
     roomType: 'livestream' | 'party_room' = 'livestream',
     partyRoomOption: 'live' | 'chat' = 'live',
     roomThemeId?: string,
-    announcement?: string
+    announcement?: string,
+    gameId?: string
   ) {
-    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}, announcement="${announcement}"`);
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}, announcement="${announcement}", gameId=${gameId}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
@@ -86,6 +87,11 @@ export class LiveStreamService {
       if (roomThemeId !== undefined) {
         activeStream.roomTheme = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
           ? new mongoose.Types.ObjectId(roomThemeId)
+          : undefined;
+      }
+      if (gameId !== undefined) {
+        (activeStream as any).gameId = gameId && mongoose.Types.ObjectId.isValid(gameId)
+          ? new mongoose.Types.ObjectId(gameId)
           : undefined;
       }
       if (announcement !== undefined) {
@@ -129,6 +135,12 @@ export class LiveStreamService {
           populate: {
             path: 'media'
           }
+        })
+        .populate({
+          path: 'gameId',
+          populate: {
+            path: 'image'
+          }
         });
       return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
     }
@@ -154,6 +166,10 @@ export class LiveStreamService {
       ? new mongoose.Types.ObjectId(roomThemeId)
       : undefined;
 
+    const gameObjectId = gameId && mongoose.Types.ObjectId.isValid(gameId)
+      ? new mongoose.Types.ObjectId(gameId)
+      : undefined;
+
     let initialSeats: any[] = [];
     if (roomType === 'party_room') {
       const maxSeats = roomSetting.maxSeats || 4;
@@ -175,6 +191,7 @@ export class LiveStreamService {
       roomType,
       partyRoomOption,
       roomTheme: themeObjectId,
+      gameId: gameObjectId,
       blockedUsers: [],
       seats: initialSeats,
       startedAt: new Date()
@@ -202,6 +219,12 @@ export class LiveStreamService {
         populate: {
           path: 'profileImage'
         }
+      })
+      .populate({
+        path: 'gameId',
+        populate: {
+          path: 'image'
+        }
       });
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
@@ -213,7 +236,7 @@ export class LiveStreamService {
   public async updateLiveStream(
     hostId: string,
     channelName: string,
-    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string }
+    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName };
@@ -227,6 +250,11 @@ export class LiveStreamService {
     if (data.roomTheme !== undefined) {
       liveStream.roomTheme = data.roomTheme && mongoose.Types.ObjectId.isValid(data.roomTheme)
         ? new mongoose.Types.ObjectId(data.roomTheme)
+        : undefined;
+    }
+    if (data.gameId !== undefined) {
+      (liveStream as any).gameId = data.gameId && mongoose.Types.ObjectId.isValid(data.gameId)
+        ? new mongoose.Types.ObjectId(data.gameId)
         : undefined;
     }
     if (data.announcement !== undefined) liveStream.announcement = data.announcement;
@@ -245,6 +273,12 @@ export class LiveStreamService {
         path: 'roomTheme',
         populate: {
           path: 'media'
+        }
+      })
+      .populate({
+        path: 'gameId',
+        populate: {
+          path: 'image'
         }
       });
 
