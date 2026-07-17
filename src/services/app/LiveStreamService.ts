@@ -1149,7 +1149,9 @@ export class LiveStreamService {
         roomAdmins,
         roomAdmin: roomAdmins
       });
-      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
+      if (userIdStr) {
+        io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
+      }
     }
 
     return liveStream;
