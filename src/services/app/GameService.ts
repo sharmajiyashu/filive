@@ -5,7 +5,7 @@ import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class GameService {
-  constructor() {}
+  constructor() { }
 
   // ----------------------------------------------------
   // ADMIN APIS
@@ -21,7 +21,7 @@ export class GameService {
   }) {
     AppLogger.info(`[GameService: createGame] Creating game: ${data.name}`);
 
-    if (data.minWinPercent > data.maxWinPercent) {
+    if (Number(data.minWinPercent) > Number(data.maxWinPercent)) {
       throw new Error('minWinPercent cannot be greater than maxWinPercent');
     }
 
