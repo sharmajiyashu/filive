@@ -1079,9 +1079,12 @@ export default (router: Router) => {
    *           schema:
    *             type: object
    *             required:
+   *               - channelName
    *               - targetUserId
    *               - isAdmin
    *             properties:
+   *               channelName:
+   *                 type: string
    *               targetUserId:
    *                 type: string
    *               isAdmin:
@@ -1093,8 +1096,11 @@ export default (router: Router) => {
   liveRouter.post('/admin', async (req: any, res: Response) => {
     const userId = req.user?.id;
     try {
-      const { targetUserId, isAdmin } = req.body;
-      const result = await liveStreamService.makeAdmin(userId, targetUserId, isAdmin);
+      const { channelName, targetUserId, isAdmin } = req.body;
+      if (!channelName || !targetUserId || isAdmin === undefined) {
+        return ResponseWrapper.error(res, new Error('channelName, targetUserId and isAdmin are required'));
+      }
+      const result = await liveStreamService.makeAdmin(userId, channelName, targetUserId, isAdmin);
       return ResponseWrapper.success(res, result, 'Admin status updated');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

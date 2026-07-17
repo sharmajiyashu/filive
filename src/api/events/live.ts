@@ -372,15 +372,16 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Make admin
-  socket.on('make_admin', async (data: { targetUserId: string; isAdmin: boolean }) => {
+  socket.on('make_admin', async (data: { channelName: string; targetUserId: string; isAdmin: boolean }) => {
     AppLogger.info(`[Socket Event: make_admin] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
-      const { targetUserId, isAdmin } = data;
-      if (!targetUserId || isAdmin === undefined) {
-        socket.emit('error_message', 'targetUserId and isAdmin are required');
+      const { channelName, targetUserId, isAdmin } = data;
+      if (!channelName || !targetUserId || isAdmin === undefined) {
+        socket.emit('error_message', 'channelName, targetUserId and isAdmin are required');
         return;
       }
-      await liveStreamService.makeAdmin(userId, targetUserId, isAdmin);
+      await liveStreamService.makeAdmin(userId, channelName, targetUserId, isAdmin);
+      AppLogger.info(`[Socket Event: make_admin] Success. userId=${userId} set targetUserId=${targetUserId} isAdmin=${isAdmin} in channel=${channelName}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: make_admin] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', error.message || 'Failed to update admin status');

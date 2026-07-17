@@ -1209,7 +1209,19 @@ export class LiveStreamService {
     return { success: true };
   }
 
-  public async makeAdmin(hostId: string, targetUserId: string, isAdmin: boolean) {
+  public async makeAdmin(requesterId: string, channelName: string, targetUserId: string, isAdmin: boolean) {
+    // 1. Find the live room by channelName
+    const activeStream = await Room.findOne({ channelName, status: 'live' });
+    if (!activeStream) throw new Error('No active room found for this channel');
+
+    const hostId = activeStream.hostId.toString();
+
+    // 2. Verify the requester is the Host (only Host can promote/demote admins)
+    if (requesterId !== hostId) {
+      throw new Error('Unauthorized. Only the Host can make or remove admins');
+    }
+
+    // 3. Find or create RoomSetting for this host
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) roomSetting = await RoomSetting.create({ hostId });
 
@@ -1224,13 +1236,11 @@ export class LiveStreamService {
 
     await roomSetting.save();
 
-    const activeStream = await Room.findOne({ hostId, status: 'live' });
-    if (activeStream) {
-      const io = this.getSocketIo();
-      if (io) {
-        const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
-        io.to(`live_${activeStream.channelName}`).emit('user_made_admin', { targetUserId, isAdmin, user });
-      }
+    // 4. Broadcast to the correct room
+    const io = this.getSocketIo();
+    if (io) {
+      const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
+      io.to(`live_${channelName}`).emit('user_made_admin', { targetUserId, isAdmin, channelName, user });
     }
 
     return roomSetting;
