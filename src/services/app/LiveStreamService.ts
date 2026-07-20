@@ -328,9 +328,14 @@ export class LiveStreamService {
     if (io) {
       if (data.maxSeats !== undefined) {
         try {
+          await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
           io.to(`live_${liveStream.channelName}`).emit('seat_updated', {
-            seats: liveStream.seats || [],
-            maxSeats: liveStream.seats ? liveStream.seats.length : 0
+            channelName: liveStream.channelName,
+            seats: liveStream.toObject().seats,
+            maxSeats: liveStream.seats ? liveStream.seats.length : 0,
+            roomAdmins,
+            roomAdmin: roomAdmins
           });
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit seat_updated event: ${e.message}`, e);
@@ -375,6 +380,16 @@ export class LiveStreamService {
           path: 'image'
         }
       });
+
+    // Always emit room_updated for ANY field change so all clients stay in sync
+    const io2 = this.getSocketIo();
+    if (io2 && updatedRoom) {
+      try {
+        io2.to(`live_${liveStream.channelName}`).emit('room_updated', updatedRoom);
+      } catch (e: any) {
+        AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_updated event: ${e.message}`, e);
+      }
+    }
 
     return await this.populateRoomWithDailyRank(updatedRoom, hostId);
   }
@@ -1303,6 +1318,15 @@ export class LiveStreamService {
 
     liveStream.muteAllSeats = mute;
 
+    // Update isMuted flag on every seat (same as single muteSeat)
+    if (liveStream.seats) {
+      for (const seat of liveStream.seats) {
+        if (seat.status === 'occupied') {
+          seat.isMuted = mute;
+        }
+      }
+    }
+
     await liveStream.save();
 
     const io = this.getSocketIo();
@@ -1311,7 +1335,15 @@ export class LiveStreamService {
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
 
-      // Optionally emit a general event for UI
+      // Emit seat_updated with populated seats (same as muteSeat does)
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
+
+      // Emit all_seats_muted/unmuted event for UI
       io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
 
       // Emit room_updated so clients get the new muteAllSeats boolean
