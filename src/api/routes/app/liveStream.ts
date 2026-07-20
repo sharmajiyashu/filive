@@ -989,6 +989,43 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/room/seat/mute-all:
+   *   post:
+   *     summary: Mute or unmute all seats (Host/Admin only)
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *               - mute
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               mute:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: All seats mute status updated
+   */
+  liveRouter.post('/seat/mute-all', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName, mute } = req.body;
+      const result = await liveStreamService.muteAllSeats(userId, channelName, mute);
+      return ResponseWrapper.success(res, result, 'All seats mute status updated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/room/kick:
    *   post:
    *     summary: Kick a user out of the room (Host/Admin only)

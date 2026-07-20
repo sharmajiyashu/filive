@@ -1191,6 +1191,37 @@ export class LiveStreamService {
     return liveStream;
   }
 
+  public async muteAllSeats(requesterId: string, channelName: string, mute: boolean) {
+    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+
+    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+
+    liveStream.seats.forEach(seat => {
+      seat.isMuted = mute;
+    });
+
+    await liveStream.save();
+    
+    const io = this.getSocketIo();
+    if (io) {
+      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
+      
+      // Optionally emit a general event for UI
+      io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
+    }
+
+    return liveStream;
+  }
+
   public async kickUser(requesterId: string, channelName: string, userIdToKick: string) {
     const liveStream = await Room.findOne({ channelName, status: 'live' });
     if (!liveStream) throw new Error('Active room not found');
