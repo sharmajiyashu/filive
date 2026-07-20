@@ -1287,7 +1287,22 @@ export class LiveStreamService {
 
     seat.isMuted = mute;
 
+    let settingsUpdated = false;
+    let roomSetting = null;
+
+    // If unmuting a single seat and 'muteAllSeats' was true, we should turn off the global 'muteAllSeats' flag
+    if (!mute && liveStream.muteAllSeats) {
+      liveStream.muteAllSeats = false;
+      settingsUpdated = true;
+      roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
+      if (roomSetting) {
+        roomSetting.muteAllSeats = false;
+        await roomSetting.save();
+      }
+    }
+
     await liveStream.save();
+    
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
@@ -1304,6 +1319,15 @@ export class LiveStreamService {
       });
       if (userIdStr) {
         io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
+      }
+
+      if (settingsUpdated) {
+        if (roomSetting) {
+          const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
+          settingsPayload.allMute = false;
+          io.to(`live_${channelName}`).emit('room_settings_updated', settingsPayload);
+        }
+        io.to(`live_${channelName}`).emit('room_updated', liveStream);
       }
     }
 
