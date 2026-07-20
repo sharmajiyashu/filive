@@ -328,9 +328,14 @@ export class LiveStreamService {
     if (io) {
       if (data.maxSeats !== undefined) {
         try {
+          await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
           io.to(`live_${liveStream.channelName}`).emit('seat_updated', {
-            seats: liveStream.seats || [],
-            maxSeats: liveStream.seats ? liveStream.seats.length : 0
+            channelName: liveStream.channelName,
+            seats: liveStream.toObject().seats,
+            maxSeats: liveStream.seats ? liveStream.seats.length : 0,
+            roomAdmins,
+            roomAdmin: roomAdmins
           });
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit seat_updated event: ${e.message}`, e);
@@ -375,6 +380,16 @@ export class LiveStreamService {
           path: 'image'
         }
       });
+
+    // Always emit room_updated for ANY field change so all clients stay in sync
+    const io2 = this.getSocketIo();
+    if (io2 && updatedRoom) {
+      try {
+        io2.to(`live_${liveStream.channelName}`).emit('room_updated', updatedRoom);
+      } catch (e: any) {
+        AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_updated event: ${e.message}`, e);
+      }
+    }
 
     return await this.populateRoomWithDailyRank(updatedRoom, hostId);
   }
