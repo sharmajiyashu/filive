@@ -1303,6 +1303,15 @@ export class LiveStreamService {
 
     liveStream.muteAllSeats = mute;
 
+    // Update isMuted flag on every seat (same as single muteSeat)
+    if (liveStream.seats) {
+      for (const seat of liveStream.seats) {
+        if (seat.status === 'occupied') {
+          seat.isMuted = mute;
+        }
+      }
+    }
+
     await liveStream.save();
 
     const io = this.getSocketIo();
@@ -1311,7 +1320,15 @@ export class LiveStreamService {
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
 
-      // Optionally emit a general event for UI
+      // Emit seat_updated with populated seats (same as muteSeat does)
+      io.to(`live_${channelName}`).emit('seat_updated', {
+        channelName,
+        seats: liveStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
+
+      // Emit all_seats_muted/unmuted event for UI
       io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
 
       // Emit room_updated so clients get the new muteAllSeats boolean
