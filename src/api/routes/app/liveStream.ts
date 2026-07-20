@@ -103,7 +103,7 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      let { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats } = req.body;
+      let { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats } = req.body;
 
       if (!channelName) {
         AppLogger.info(`[HTTP POST /app/room/edit] channelName not provided. Fetching latest room for hostId=${userId}`);
@@ -118,7 +118,7 @@ export default (router: Router) => {
         throw new Error('channelName is required, or you must have started a room before');
       }
 
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats });
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats });
 
       // Emit room_updated socket event
       try {

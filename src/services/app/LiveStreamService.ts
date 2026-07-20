@@ -236,7 +236,7 @@ export class LiveStreamService {
   public async updateLiveStream(
     hostId: string,
     channelName: string | undefined | null,
-    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string; muteAllSeats?: boolean }
+    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string; muteAllSeats?: boolean; roomType?: 'livestream' | 'party_room'; maxSeats?: number }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query: any = { hostId: new mongoose.Types.ObjectId(hostId) };
@@ -269,8 +269,50 @@ export class LiveStreamService {
     }
     if (data.announcement !== undefined) liveStream.announcement = data.announcement;
     if (data.muteAllSeats !== undefined) liveStream.muteAllSeats = data.muteAllSeats;
+    if (data.roomType !== undefined) liveStream.roomType = data.roomType;
+
+    if (data.maxSeats !== undefined) {
+      const maxSeatsNum = Number(data.maxSeats);
+      if (!isNaN(maxSeatsNum) && maxSeatsNum > 0) {
+        // Find or create RoomSetting
+        let roomSetting = await RoomSetting.findOne({ hostId: new mongoose.Types.ObjectId(hostId) });
+        if (!roomSetting) {
+          roomSetting = await RoomSetting.create({ hostId: new mongoose.Types.ObjectId(hostId) });
+        }
+        roomSetting.maxSeats = maxSeatsNum;
+        await roomSetting.save();
+
+        // Resize seats array in the active room
+        let existingSeats = liveStream.seats || [];
+        let newSeats: any[] = [];
+        for (let i = 0; i < maxSeatsNum; i++) {
+          const oldSeat = existingSeats.find(s => s.seatIndex === i);
+          if (oldSeat) {
+            newSeats.push(oldSeat);
+          } else {
+            newSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+          }
+        }
+        liveStream.seats = newSeats;
+      }
+    }
 
     await liveStream.save();
+
+    // Broadcast seat updated event if seats were resized
+    if (data.maxSeats !== undefined) {
+      try {
+        const io = this.getSocketIo();
+        if (io) {
+          io.to(`live_${liveStream.channelName}`).emit('seat_updated', {
+            seats: liveStream.seats || [],
+            maxSeats: liveStream.seats ? liveStream.seats.length : 0
+          });
+        }
+      } catch (e: any) {
+        AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit seat_updated event: ${e.message}`, e);
+      }
+    }
 
     const updatedRoom = await Room.findById(liveStream._id)
       .populate({
