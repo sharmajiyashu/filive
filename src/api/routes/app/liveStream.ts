@@ -93,6 +93,8 @@ export default (router: Router) => {
    *                 enum: [live, chat]
    *               announcement:
    *                 type: string
+   *               muteAllSeats:
+   *                 type: boolean
    *     responses:
    *       200:
    *         description: Room details updated successfully
@@ -101,11 +103,11 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { channelName, title, roomTheme, partyRoomOption, announcement, gameId } = req.body;
+      const { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats } = req.body;
       if (!channelName) {
         throw new Error('channelName is required');
       }
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId });
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats });
 
       // Emit room_updated socket event
       try {
