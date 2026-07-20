@@ -235,11 +235,21 @@ export class LiveStreamService {
    */
   public async updateLiveStream(
     hostId: string,
-    channelName: string,
+    channelName: string | undefined | null,
     data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string; muteAllSeats?: boolean }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
-    const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName };
+    const query: any = { hostId: new mongoose.Types.ObjectId(hostId) };
+    if (channelName) {
+      query.channelName = channelName;
+    } else {
+      const latestRoom = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) }).sort({ createdAt: -1 });
+      if (!latestRoom) {
+        throw new Error('Room/livestream not found or you are not the host');
+      }
+      query.channelName = latestRoom.channelName;
+    }
+
     const liveStream = await Room.findOne(query);
     if (!liveStream) {
       throw new Error('Room/livestream not found or you are not the host');
@@ -1201,16 +1211,16 @@ export class LiveStreamService {
     liveStream.muteAllSeats = mute;
 
     await liveStream.save();
-    
+
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      
+
       // Optionally emit a general event for UI
       io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
-      
+
       // Emit room_updated so clients get the new muteAllSeats boolean
       io.to(`live_${channelName}`).emit('room_updated', liveStream);
     }
