@@ -300,6 +300,11 @@ export class LiveStreamService {
       }
     }
 
+    if (data.muteAllSeats !== undefined) {
+      roomSetting.muteAllSeats = data.muteAllSeats;
+      settingsUpdated = true;
+    }
+
     if (data.roomTheme !== undefined) {
       roomSetting.roomTheme = data.roomTheme && mongoose.Types.ObjectId.isValid(data.roomTheme)
         ? new mongoose.Types.ObjectId(data.roomTheme)
@@ -334,7 +339,9 @@ export class LiveStreamService {
 
       if (settingsUpdated) {
         try {
-          io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', roomSetting);
+          const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
+          settingsPayload.allMute = roomSetting.muteAllSeats;
+          io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
         }
@@ -1150,7 +1157,7 @@ export class LiveStreamService {
     return roomSetting;
   }
 
-  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string }) {
+  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string; muteAllSeats?: boolean }) {
     AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}`);
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) {
@@ -1161,19 +1168,29 @@ export class LiveStreamService {
     if (data.admins !== undefined) roomSetting.admins = data.admins.map(id => new mongoose.Types.ObjectId(id));
     if (data.roomTheme !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.roomTheme);
     if (data.announcement !== undefined) roomSetting.announcement = data.announcement;
+    if (data.muteAllSeats !== undefined) roomSetting.muteAllSeats = data.muteAllSeats;
 
     await roomSetting.save();
 
     // If there is an active room, notify users of setting changes
     const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
+      if (data.muteAllSeats !== undefined) {
+        activeStream.muteAllSeats = data.muteAllSeats;
+        await activeStream.save();
+      }
+
       const io = this.getSocketIo();
       if (io) {
-        io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', roomSetting);
+        const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
+        settingsPayload.allMute = roomSetting.muteAllSeats;
+        io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', settingsPayload);
       }
     }
 
-    return roomSetting;
+    const finalObj = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
+    finalObj.allMute = roomSetting.muteAllSeats;
+    return finalObj;
   }
 
   public async changeSeat(userId: string, channelName: string, newSeatIndex: number) {

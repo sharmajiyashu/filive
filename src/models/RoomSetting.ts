@@ -6,6 +6,7 @@ export interface IRoomSetting extends Document {
   admins: mongoose.Types.ObjectId[];
   roomTheme?: mongoose.Types.ObjectId;
   announcement?: string;
+  muteAllSeats?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +18,7 @@ const RoomSettingSchema: Schema = new Schema(
     admins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
     announcement: { type: String, default: '' },
+    muteAllSeats: { type: Boolean, default: false },
   },
   {
     timestamps: true,
