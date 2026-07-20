@@ -350,6 +350,13 @@ export class LiveStreamService {
         }
       })
       .populate({
+        path: 'seats.userId',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+        populate: {
+          path: 'profileImage'
+        }
+      })
+      .populate({
         path: 'roomTheme',
         populate: {
           path: 'media'
