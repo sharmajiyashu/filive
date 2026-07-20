@@ -338,6 +338,23 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
+  // Mute all seats
+  socket.on('mute_all_seats', async (data: { channelName: string; mute: boolean }) => {
+    AppLogger.info(`[Socket Event: mute_all_seats] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, mute } = data;
+      if (!channelName || mute === undefined) {
+        socket.emit('error_message', 'channelName and mute are required');
+        return;
+      }
+      const result = await liveStreamService.muteAllSeats(userId, channelName, mute);
+      AppLogger.info(`[Socket Event: mute_all_seats] Success. userId=${userId}, response=${JSON.stringify(result)}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: mute_all_seats] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', error.message || 'Failed to mute all seats');
+    }
+  });
+
   // Kick user
   socket.on('kick_user', async (data: { channelName: string; targetUserId: string }) => {
     AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
