@@ -236,7 +236,7 @@ export class LiveStreamService {
   public async updateLiveStream(
     hostId: string,
     channelName: string,
-    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string }
+    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string; muteAllSeats?: boolean }
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query = { hostId: new mongoose.Types.ObjectId(hostId), channelName };
@@ -258,6 +258,7 @@ export class LiveStreamService {
         : undefined;
     }
     if (data.announcement !== undefined) liveStream.announcement = data.announcement;
+    if (data.muteAllSeats !== undefined) liveStream.muteAllSeats = data.muteAllSeats;
 
     await liveStream.save();
 
@@ -1193,13 +1194,11 @@ export class LiveStreamService {
 
   public async muteAllSeats(requesterId: string, channelName: string, mute: boolean) {
     const liveStream = await Room.findOne({ channelName, status: 'live' });
-    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+    if (!liveStream) throw new Error('Active room not found');
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
 
-    liveStream.seats.forEach(seat => {
-      seat.isMuted = mute;
-    });
+    liveStream.muteAllSeats = mute;
 
     await liveStream.save();
     
@@ -1208,15 +1207,12 @@ export class LiveStreamService {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
-        seats: liveStream.toObject().seats,
-        roomAdmins,
-        roomAdmin: roomAdmins
-      });
       
       // Optionally emit a general event for UI
       io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
+      
+      // Emit room_updated so clients get the new muteAllSeats boolean
+      io.to(`live_${channelName}`).emit('room_updated', liveStream);
     }
 
     return liveStream;

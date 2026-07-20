@@ -22,6 +22,7 @@ export interface IRoom extends Document {
   gameId?: mongoose.Types.ObjectId;
   blockedUsers?: mongoose.Types.ObjectId[];
   seats?: ISeat[];
+  muteAllSeats?: boolean;
   announcement?: string;
   startedAt: Date;
   endedAt?: Date;
@@ -56,6 +57,7 @@ const RoomSchema: Schema = new Schema(
         isMuted: { type: Boolean, default: false }
       }
     ],
+    muteAllSeats: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
     joinedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
