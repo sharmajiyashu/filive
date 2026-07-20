@@ -1288,6 +1288,7 @@ export class LiveStreamService {
     seat.isMuted = mute;
 
     await liveStream.save();
+    
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
