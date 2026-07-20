@@ -103,20 +103,36 @@ export default (router: Router) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
-      const { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats } = req.body;
+      let { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats } = req.body;
+
       if (!channelName) {
-        throw new Error('channelName is required');
+        AppLogger.info(`[HTTP POST /app/room/edit] channelName not provided. Fetching latest room for hostId=${userId}`);
+        const latestRoom = await Room.findOne({ hostId: userId }).sort({ createdAt: -1 });
+        if (latestRoom) {
+          channelName = latestRoom.channelName;
+          AppLogger.info(`[HTTP POST /app/room/edit] Resolved channelName to: ${channelName}`);
+        }
       }
+
+      if (!channelName) {
+        throw new Error('channelName is required, or you must have started a room before');
+      }
+
       const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats });
 
       // Emit room_updated socket event
       try {
         const io = Container.get('socket') as any;
         if (io) {
-          io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_updated', result);
+          AppLogger.info(`[HTTP POST /app/room/edit] Emitting room_updated socket event to rooms: live_${channelName}, room_${channelName}`);
+          io.to(`live_${channelName}`).emit('room_updated', result);
+          io.to(`room_${channelName}`).emit('room_updated', result);
+          AppLogger.info(`[HTTP POST /app/room/edit] room_updated socket event emitted successfully`);
+        } else {
+          AppLogger.warn(`[HTTP POST /app/room/edit] Socket instance not found in Container`);
         }
-      } catch (e) {
-        AppLogger.error('Failed to emit room_updated socket event', e);
+      } catch (e: any) {
+        AppLogger.error(`[HTTP POST /app/room/edit] Failed to emit room_updated socket event: ${e.message}`, e);
       }
 
       return ResponseWrapper.success(res, result, 'Room details updated successfully');
