@@ -111,7 +111,7 @@ export class LiveStreamService {
             }
             newSeats.push(oldSeat);
           } else {
-            newSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+            newSeats.push({ seatIndex: i, status: 'open', isMuted: roomSetting.muteAllSeats || false });
           }
         }
         activeStream.seats = newSeats;
@@ -274,11 +274,7 @@ export class LiveStreamService {
       liveStream.muteAllSeats = data.muteAllSeats;
       if (liveStream.seats) {
         for (const seat of liveStream.seats) {
-          if (seat.status === 'occupied') {
-            seat.isMuted = data.muteAllSeats;
-          } else {
-            seat.isMuted = false;
-          }
+          seat.isMuted = data.muteAllSeats;
         }
         seatsMutedChanged = true;
       }
@@ -308,7 +304,7 @@ export class LiveStreamService {
           if (oldSeat) {
             newSeats.push(oldSeat);
           } else {
-            newSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+            newSeats.push({ seatIndex: i, status: 'open', isMuted: liveStream.muteAllSeats || false });
           }
         }
         liveStream.seats = newSeats;
