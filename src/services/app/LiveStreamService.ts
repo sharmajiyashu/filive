@@ -1152,8 +1152,10 @@ export class LiveStreamService {
     }
     
     const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
-    settingsPayload.themeid = roomSetting.roomTheme;
-    settingsPayload.gameid = roomSetting.gameId;
+    settingsPayload.roomTheme = settingsPayload.roomTheme || null;
+    settingsPayload.gameId = settingsPayload.gameId || null;
+    settingsPayload.themeid = settingsPayload.roomTheme;
+    settingsPayload.gameid = settingsPayload.gameId;
 
     AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId and themeid`);
     return settingsPayload;
@@ -1215,8 +1217,10 @@ export class LiveStreamService {
 
     const finalObj = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
     finalObj.allMute = roomSetting.muteAllSeats;
-    finalObj.themeid = roomSetting.roomTheme;
-    finalObj.gameid = roomSetting.gameId;
+    finalObj.roomTheme = finalObj.roomTheme || null;
+    finalObj.gameId = finalObj.gameId || null;
+    finalObj.themeid = finalObj.roomTheme;
+    finalObj.gameid = finalObj.gameId;
     return finalObj;
   }
 
