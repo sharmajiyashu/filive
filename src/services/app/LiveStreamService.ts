@@ -1172,7 +1172,7 @@ export class LiveStreamService {
     return roomSetting;
   }
 
-  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string; muteAllSeats?: boolean }) {
+  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string; muteAllSeats?: boolean; gameId?: string }) {
     AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}`);
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) {
@@ -1184,6 +1184,7 @@ export class LiveStreamService {
     if (data.roomTheme !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.roomTheme);
     if (data.announcement !== undefined) roomSetting.announcement = data.announcement;
     if (data.muteAllSeats !== undefined) roomSetting.muteAllSeats = data.muteAllSeats;
+    if (data.gameId !== undefined) roomSetting.gameId = new mongoose.Types.ObjectId(data.gameId);
 
     await roomSetting.save();
 
@@ -1192,6 +1193,19 @@ export class LiveStreamService {
     if (activeStream) {
       if (data.muteAllSeats !== undefined) {
         activeStream.muteAllSeats = data.muteAllSeats;
+        if (activeStream.seats) {
+          for (const seat of activeStream.seats) {
+            if (seat.status === 'occupied') {
+              seat.isMuted = data.muteAllSeats;
+            } else {
+              seat.isMuted = false;
+            }
+          }
+        }
+        await activeStream.save();
+      }
+      if (data.gameId !== undefined) {
+        activeStream.gameId = new mongoose.Types.ObjectId(data.gameId);
         await activeStream.save();
       }
 
@@ -1200,6 +1214,18 @@ export class LiveStreamService {
         const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
         settingsPayload.allMute = roomSetting.muteAllSeats;
         io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', settingsPayload);
+
+        if (data.muteAllSeats !== undefined) {
+          await activeStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          const roomAdmins = await this.getRoomAdmins(activeStream.hostId);
+          io.to(`live_${activeStream.channelName}`).emit('seat_updated', {
+            channelName: activeStream.channelName,
+            seats: activeStream.toObject().seats,
+            roomAdmins,
+            roomAdmin: roomAdmins
+          });
+          io.to(`live_${activeStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: activeStream.channelName });
+        }
       }
     }
 
@@ -1288,7 +1314,7 @@ export class LiveStreamService {
     seat.isMuted = mute;
 
     await liveStream.save();
-    
+
     const io = this.getSocketIo();
     if (io) {
       await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
@@ -1324,6 +1350,8 @@ export class LiveStreamService {
       for (const seat of liveStream.seats) {
         if (seat.status === 'occupied') {
           seat.isMuted = mute;
+        } else {
+          seat.isMuted = false;
         }
       }
     }

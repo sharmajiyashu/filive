@@ -813,31 +813,14 @@ export default (router: Router) => {
   /**
    * @swagger
    * /app/room/settings:
-   *   post:
-   *     summary: Update room settings (maxSeats, admins, etc)
+   *   get:
+   *     summary: Get room settings (maxSeats, admins, etc)
    *     tags: [LiveStream]
    *     security:
    *       - bearerAuth: []
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
-   *             properties:
-   *               maxSeats:
-   *                 type: integer
-   *               admins:
-   *                 type: array
-   *                 items:
-   *                   type: string
-   *               roomTheme:
-   *                 type: string
-   *               announcement:
-   *                 type: string
    *     responses:
    *       200:
-   *         description: Room settings updated
+   *         description: Room settings fetched
    */
   liveRouter.get('/settings', async (req: any, res: Response) => {
     const userId = req.user?.id;
@@ -873,6 +856,8 @@ export default (router: Router) => {
    *               roomTheme:
    *                 type: string
    *               announcement:
+   *                 type: string
+   *               gameId:
    *                 type: string
    *     responses:
    *       200:

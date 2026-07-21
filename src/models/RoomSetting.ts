@@ -7,6 +7,7 @@ export interface IRoomSetting extends Document {
   roomTheme?: mongoose.Types.ObjectId;
   announcement?: string;
   muteAllSeats?: boolean;
+  gameId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +20,7 @@ const RoomSettingSchema: Schema = new Schema(
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
     announcement: { type: String, default: '' },
     muteAllSeats: { type: Boolean, default: false },
+    gameId: { type: Schema.Types.ObjectId, ref: 'Game' },
   },
   {
     timestamps: true,
