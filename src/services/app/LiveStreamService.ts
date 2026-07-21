@@ -352,6 +352,11 @@ export class LiveStreamService {
             roomAdmins,
             roomAdmin: roomAdmins
           });
+          
+          if (seatsMutedChanged) {
+            io.to(`live_${liveStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
+            AppLogger.info(`[LiveStreamService: updateLiveStream] Emitted ${data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted'} and seat_updated`);
+          }
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit seat_updated event: ${e.message}`, e);
         }
@@ -745,6 +750,9 @@ export class LiveStreamService {
         if (openSeat) {
           openSeat.userId = userObjectId;
           openSeat.status = 'occupied';
+          if (liveStream.muteAllSeats) {
+            openSeat.isMuted = true;
+          }
           await liveStream.save();
           AppLogger.info(`[LiveStreamService: joinLiveStream] Auto-assigned userId=${userId} to seatIndex=${openSeat.seatIndex}`);
           const io = this.getSocketIo();
@@ -905,6 +913,9 @@ export class LiveStreamService {
     // Add user to the new seat
     targetSeat.userId = new mongoose.Types.ObjectId(userId);
     targetSeat.status = 'occupied';
+    if (liveStream.muteAllSeats) {
+      targetSeat.isMuted = true;
+    }
 
     await liveStream.save();
 
