@@ -855,9 +855,13 @@ export default (router: Router) => {
    *                   type: string
    *               roomTheme:
    *                 type: string
+   *               themeid:
+   *                 type: string
    *               announcement:
    *                 type: string
    *               gameId:
+   *                 type: string
+   *               gameid:
    *                 type: string
    *     responses:
    *       200:
