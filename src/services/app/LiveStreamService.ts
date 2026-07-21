@@ -268,7 +268,7 @@ export class LiveStreamService {
         : undefined;
     }
     if (data.announcement !== undefined) liveStream.announcement = data.announcement;
-    
+
     let seatsMutedChanged = false;
     if (data.muteAllSeats !== undefined) {
       liveStream.muteAllSeats = data.muteAllSeats;
@@ -283,7 +283,7 @@ export class LiveStreamService {
         seatsMutedChanged = true;
       }
     }
-    
+
     if (data.roomType !== undefined) liveStream.roomType = data.roomType;
 
     // Find or create RoomSetting to keep it in sync
@@ -1055,6 +1055,10 @@ export class LiveStreamService {
       .populate({
         path: 'roomTheme',
         populate: { path: 'media' }
+      })
+      .populate({
+        path: 'gameId',
+        populate: { path: 'image' }
       });
 
     if (!activeStream) {
@@ -1068,6 +1072,10 @@ export class LiveStreamService {
         .populate({
           path: 'roomTheme',
           populate: { path: 'media' }
+        })
+        .populate({
+          path: 'gameId',
+          populate: { path: 'image' }
         });
     }
     return await this.populateRoomWithDailyRank(activeStream, hostId);
@@ -1090,6 +1098,10 @@ export class LiveStreamService {
         populate: {
           path: 'media'
         }
+      })
+      .populate({
+        path: 'gameId',
+        populate: { path: 'image' }
       });
     if (!liveStream) {
       throw new Error('Room not found');
@@ -1180,10 +1192,14 @@ export class LiveStreamService {
 
   public async getRoomSettings(hostId: string) {
     AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}`);
-    let roomSetting = await RoomSetting.findOne({ hostId });
+    let roomSetting = await RoomSetting.findOne({ hostId }).populate({
+      path: 'gameId',
+      populate: { path: 'image' }
+    });
     if (!roomSetting) {
       roomSetting = await RoomSetting.create({ hostId });
     }
+    AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId`);
     return roomSetting;
   }
 
@@ -1202,6 +1218,10 @@ export class LiveStreamService {
     if (data.gameId !== undefined) roomSetting.gameId = new mongoose.Types.ObjectId(data.gameId);
 
     await roomSetting.save();
+    await roomSetting.populate({
+      path: 'gameId',
+      populate: { path: 'image' }
+    });
 
     // If there is an active room, notify users of setting changes
     const activeStream = await Room.findOne({ hostId, status: 'live' });
