@@ -268,7 +268,22 @@ export class LiveStreamService {
         : undefined;
     }
     if (data.announcement !== undefined) liveStream.announcement = data.announcement;
-    if (data.muteAllSeats !== undefined) liveStream.muteAllSeats = data.muteAllSeats;
+    
+    let seatsMutedChanged = false;
+    if (data.muteAllSeats !== undefined) {
+      liveStream.muteAllSeats = data.muteAllSeats;
+      if (liveStream.seats) {
+        for (const seat of liveStream.seats) {
+          if (seat.status === 'occupied') {
+            seat.isMuted = data.muteAllSeats;
+          } else {
+            seat.isMuted = false;
+          }
+        }
+        seatsMutedChanged = true;
+      }
+    }
+    
     if (data.roomType !== undefined) liveStream.roomType = data.roomType;
 
     // Find or create RoomSetting to keep it in sync
@@ -326,7 +341,7 @@ export class LiveStreamService {
     // Broadcast socket events
     const io = this.getSocketIo();
     if (io) {
-      if (data.maxSeats !== undefined) {
+      if (data.maxSeats !== undefined || seatsMutedChanged) {
         try {
           await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
@@ -1331,25 +1346,6 @@ export class LiveStreamService {
       });
       if (userIdStr) {
         io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', { seatIndex, userId: userIdStr, user: userObj });
-      }
-
-      // Calculate allMute and emit room_settings_updated
-      const occupiedSeats = liveStream.seats.filter(s => s.status === 'occupied');
-      const areAllMuted = occupiedSeats.length > 0 && occupiedSeats.every(s => s.isMuted);
-
-      if (liveStream.muteAllSeats !== areAllMuted) {
-        liveStream.muteAllSeats = areAllMuted;
-        await liveStream.save();
-
-        let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
-        if (roomSetting) {
-          roomSetting.muteAllSeats = areAllMuted;
-          await roomSetting.save();
-
-          const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
-          settingsPayload.allMute = areAllMuted;
-          io.to(`live_${channelName}`).emit('room_settings_updated', settingsPayload);
-        }
       }
     }
 
