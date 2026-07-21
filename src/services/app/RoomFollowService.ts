@@ -115,17 +115,27 @@ export class RoomFollowService {
         populate: {
           path: 'profileImage'
         }
-      })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
       });
+
+    // Fetch settings for all hosts to populate roomTheme and gameId
+    const hostIds = rooms.map(r => r.hostId && (r.hostId as any)._id ? (r.hostId as any)._id : r.hostId).filter(id => id);
+    const roomSettings = await mongoose.model('RoomSetting').find({ hostId: { $in: hostIds } })
+      .populate({ path: 'roomTheme', populate: { path: 'media' } })
+      .populate({ path: 'gameId', populate: { path: 'image' } });
 
     // Map to include isFollowingRoom: true since they are in the followed list
     const results = rooms.map(room => {
       const roomObj = room.toObject ? room.toObject() : room;
+      const hostIdStr = roomObj.hostId && roomObj.hostId._id ? roomObj.hostId._id.toString() : (roomObj.hostId ? roomObj.hostId.toString() : '');
+      const setting = roomSettings.find((s: any) => s.hostId.toString() === hostIdStr);
+
+      if (setting) {
+        (roomObj as any).roomTheme = (setting as any).roomTheme;
+        (roomObj as any).gameId = (setting as any).gameId;
+        (roomObj as any).muteAllSeats = (setting as any).muteAllSeats;
+        (roomObj as any).announcement = (setting as any).announcement;
+      }
+
       return {
         ...roomObj,
         isFollowingRoom: true,

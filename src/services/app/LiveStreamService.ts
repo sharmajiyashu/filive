@@ -84,18 +84,21 @@ export class LiveStreamService {
       activeStream.startedAt = new Date();
       activeStream.endedAt = undefined;
       activeStream.totalGiftRevenue = 0;
-      if (roomThemeId !== undefined) {
-        activeStream.roomTheme = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
-          ? new mongoose.Types.ObjectId(roomThemeId)
-          : undefined;
+      let settingsUpdated = false;
+      if (roomThemeId !== undefined && mongoose.Types.ObjectId.isValid(roomThemeId)) {
+        roomSetting.roomTheme = new mongoose.Types.ObjectId(roomThemeId);
+        settingsUpdated = true;
       }
-      if (gameId !== undefined) {
-        (activeStream as any).gameId = gameId && mongoose.Types.ObjectId.isValid(gameId)
-          ? new mongoose.Types.ObjectId(gameId)
-          : undefined;
+      if (gameId !== undefined && mongoose.Types.ObjectId.isValid(gameId)) {
+        roomSetting.gameId = new mongoose.Types.ObjectId(gameId);
+        settingsUpdated = true;
       }
       if (announcement !== undefined) {
-        activeStream.announcement = announcement;
+        roomSetting.announcement = announcement;
+        settingsUpdated = true;
+      }
+      if (settingsUpdated) {
+        await roomSetting.save();
       }
 
       if (roomType === 'party_room') {
@@ -131,15 +134,9 @@ export class LiveStreamService {
           }
         })
         .populate({
-          path: 'roomTheme',
+          path: 'seats.userId',
           populate: {
-            path: 'media'
-          }
-        })
-        .populate({
-          path: 'gameId',
-          populate: {
-            path: 'image'
+            path: 'profileImage'
           }
         });
       return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
@@ -162,13 +159,22 @@ export class LiveStreamService {
     const token = this.generateAgoraToken(channelName, 0, 'publisher');
     AppLogger.info(`[LiveStreamService: startLiveStream] Agora token successfully generated.`);
 
-    const themeObjectId = roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)
-      ? new mongoose.Types.ObjectId(roomThemeId)
-      : undefined;
-
-    const gameObjectId = gameId && mongoose.Types.ObjectId.isValid(gameId)
-      ? new mongoose.Types.ObjectId(gameId)
-      : undefined;
+    let settingsUpdated = false;
+    if (roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)) {
+      roomSetting.roomTheme = new mongoose.Types.ObjectId(roomThemeId);
+      settingsUpdated = true;
+    }
+    if (gameId && mongoose.Types.ObjectId.isValid(gameId)) {
+      roomSetting.gameId = new mongoose.Types.ObjectId(gameId);
+      settingsUpdated = true;
+    }
+    if (announcement !== undefined) {
+      roomSetting.announcement = announcement;
+      settingsUpdated = true;
+    }
+    if (settingsUpdated) {
+      await roomSetting.save();
+    }
 
     let initialSeats: any[] = [];
     if (roomType === 'party_room') {
@@ -183,15 +189,8 @@ export class LiveStreamService {
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
       title,
-      announcement: announcement || '',
-      status: 'live',
-      token,
-      viewerCount: 0,
-      viewers: [],
       roomType,
       partyRoomOption,
-      roomTheme: themeObjectId,
-      gameId: gameObjectId,
       blockedUsers: [],
       seats: initialSeats,
       startedAt: new Date()
@@ -208,22 +207,10 @@ export class LiveStreamService {
         }
       })
       .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
-      .populate({
         path: 'seats.userId',
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: {
           path: 'profileImage'
-        }
-      })
-      .populate({
-        path: 'gameId',
-        populate: {
-          path: 'image'
         }
       });
 
@@ -257,21 +244,8 @@ export class LiveStreamService {
 
     if (data.title !== undefined) liveStream.title = data.title;
     if (data.partyRoomOption !== undefined) liveStream.partyRoomOption = data.partyRoomOption;
-    if (data.roomTheme !== undefined) {
-      liveStream.roomTheme = data.roomTheme && mongoose.Types.ObjectId.isValid(data.roomTheme)
-        ? new mongoose.Types.ObjectId(data.roomTheme)
-        : undefined;
-    }
-    if (data.gameId !== undefined) {
-      (liveStream as any).gameId = data.gameId && mongoose.Types.ObjectId.isValid(data.gameId)
-        ? new mongoose.Types.ObjectId(data.gameId)
-        : undefined;
-    }
-    if (data.announcement !== undefined) liveStream.announcement = data.announcement;
-
     let seatsMutedChanged = false;
     if (data.muteAllSeats !== undefined) {
-      liveStream.muteAllSeats = data.muteAllSeats;
       if (liveStream.seats) {
         for (const seat of liveStream.seats) {
           seat.isMuted = data.muteAllSeats;
@@ -304,7 +278,7 @@ export class LiveStreamService {
           if (oldSeat) {
             newSeats.push(oldSeat);
           } else {
-            newSeats.push({ seatIndex: i, status: 'open', isMuted: liveStream.muteAllSeats || false });
+            newSeats.push({ seatIndex: i, status: 'open', isMuted: data.muteAllSeats !== undefined ? data.muteAllSeats : (roomSetting.muteAllSeats || false) });
           }
         }
         liveStream.seats = newSeats;
@@ -348,7 +322,7 @@ export class LiveStreamService {
             roomAdmins,
             roomAdmin: roomAdmins
           });
-          
+
           if (seatsMutedChanged) {
             io.to(`live_${liveStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
             AppLogger.info(`[LiveStreamService: updateLiveStream] Emitted ${data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted'} and seat_updated`);
@@ -384,18 +358,8 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
-      .populate({
-        path: 'gameId',
-        populate: {
-          path: 'image'
-        }
-      });
+
+      ;
 
     // Always emit room_updated for ANY field change so all clients stay in sync
     const io2 = this.getSocketIo();
@@ -746,7 +710,8 @@ export class LiveStreamService {
         if (openSeat) {
           openSeat.userId = userObjectId;
           openSeat.status = 'occupied';
-          if (liveStream.muteAllSeats) {
+          let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
+          if (roomSetting && roomSetting.muteAllSeats) {
             openSeat.isMuted = true;
           }
           await liveStream.save();
@@ -775,12 +740,7 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
+
       .populate({
         path: 'seats.userId',
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
@@ -854,12 +814,7 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      });
+      ;
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
   }
@@ -909,7 +864,8 @@ export class LiveStreamService {
     // Add user to the new seat
     targetSeat.userId = new mongoose.Types.ObjectId(userId);
     targetSeat.status = 'occupied';
-    if (liveStream.muteAllSeats) {
+    let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
+    if (roomSetting && roomSetting.muteAllSeats) {
       targetSeat.isMuted = true;
     }
 
@@ -1011,12 +967,7 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
+
       .sort({ viewerCount: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -1059,14 +1010,8 @@ export class LiveStreamService {
         path: 'hostId',
         populate: { path: 'profileImage' }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: { path: 'media' }
-      })
-      .populate({
-        path: 'gameId',
-        populate: { path: 'image' }
-      });
+
+      ;
 
     if (!activeStream) {
       activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) })
@@ -1076,14 +1021,8 @@ export class LiveStreamService {
           select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
           populate: { path: 'profileImage' }
         })
-        .populate({
-          path: 'roomTheme',
-          populate: { path: 'media' }
-        })
-        .populate({
-          path: 'gameId',
-          populate: { path: 'image' }
-        });
+
+        ;
     }
     return await this.populateRoomWithDailyRank(activeStream, hostId);
   }
@@ -1100,16 +1039,8 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
-      .populate({
-        path: 'gameId',
-        populate: { path: 'image' }
-      });
+
+      ;
     if (!liveStream) {
       throw new Error('Room not found');
     }
@@ -1135,12 +1066,7 @@ export class LiveStreamService {
           path: 'profileImage'
         }
       })
-      .populate({
-        path: 'roomTheme',
-        populate: {
-          path: 'media'
-        }
-      })
+
       .sort({ endedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -1190,6 +1116,20 @@ export class LiveStreamService {
     roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
     roomObj.totalMember = roomObj.roomFollowerCount || 0;
 
+    // Fetch and merge RoomSetting
+    if (roomObj.hostId) {
+      const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
+      const roomSetting = await RoomSetting.findOne({ hostId: hostIdStr })
+        .populate({ path: 'roomTheme', populate: { path: 'media' } })
+        .populate({ path: 'gameId', populate: { path: 'image' } });
+      if (roomSetting) {
+        (roomObj as any).roomTheme = roomSetting.roomTheme;
+        (roomObj as any).gameId = roomSetting.gameId;
+        (roomObj as any).muteAllSeats = roomSetting.muteAllSeats;
+        (roomObj as any).announcement = roomSetting.announcement;
+      }
+    }
+
     return roomObj;
   }
 
@@ -1200,17 +1140,26 @@ export class LiveStreamService {
   public async getRoomSettings(hostId: string) {
     AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}`);
     let roomSetting = await RoomSetting.findOne({ hostId }).populate({
+      path: 'roomTheme',
+      populate: { path: 'media' }
+    }).populate({
       path: 'gameId',
       populate: { path: 'image' }
     });
+
     if (!roomSetting) {
       roomSetting = await RoomSetting.create({ hostId });
     }
-    AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId`);
-    return roomSetting;
+    
+    const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
+    settingsPayload.themeid = roomSetting.roomTheme;
+    settingsPayload.gameid = roomSetting.gameId;
+
+    AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId and themeid`);
+    return settingsPayload;
   }
 
-  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; announcement?: string; muteAllSeats?: boolean; gameId?: string }) {
+  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; themeid?: string; announcement?: string; muteAllSeats?: boolean; gameId?: string; gameid?: string }) {
     AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}`);
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) {
@@ -1220,21 +1169,19 @@ export class LiveStreamService {
     if (data.maxSeats !== undefined) roomSetting.maxSeats = data.maxSeats;
     if (data.admins !== undefined) roomSetting.admins = data.admins.map(id => new mongoose.Types.ObjectId(id));
     if (data.roomTheme !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.roomTheme);
+    if (data.themeid !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.themeid);
     if (data.announcement !== undefined) roomSetting.announcement = data.announcement;
     if (data.muteAllSeats !== undefined) roomSetting.muteAllSeats = data.muteAllSeats;
     if (data.gameId !== undefined) roomSetting.gameId = new mongoose.Types.ObjectId(data.gameId);
+    if (data.gameid !== undefined) roomSetting.gameId = new mongoose.Types.ObjectId(data.gameid);
 
     await roomSetting.save();
-    await roomSetting.populate({
-      path: 'gameId',
-      populate: { path: 'image' }
-    });
+    await roomSetting;
 
     // If there is an active room, notify users of setting changes
     const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
       if (data.muteAllSeats !== undefined) {
-        activeStream.muteAllSeats = data.muteAllSeats;
         if (activeStream.seats) {
           for (const seat of activeStream.seats) {
             if (seat.status === 'occupied') {
@@ -1246,11 +1193,6 @@ export class LiveStreamService {
         }
         await activeStream.save();
       }
-      if (data.gameId !== undefined) {
-        activeStream.gameId = new mongoose.Types.ObjectId(data.gameId);
-        await activeStream.save();
-      }
-
       const io = this.getSocketIo();
       if (io) {
         const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
@@ -1273,6 +1215,8 @@ export class LiveStreamService {
 
     const finalObj = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
     finalObj.allMute = roomSetting.muteAllSeats;
+    finalObj.themeid = roomSetting.roomTheme;
+    finalObj.gameid = roomSetting.gameId;
     return finalObj;
   }
 
@@ -1385,7 +1329,11 @@ export class LiveStreamService {
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
 
-    liveStream.muteAllSeats = mute;
+    const roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
+    if (roomSetting) {
+      roomSetting.muteAllSeats = mute;
+      await roomSetting.save();
+    }
 
     // Update isMuted flag on every seat (same as single muteSeat)
     if (liveStream.seats) {
@@ -1417,7 +1365,7 @@ export class LiveStreamService {
       // Emit all_seats_muted/unmuted event for UI
       io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
 
-      // Emit room_updated so clients get the new muteAllSeats boolean
+      // Emit room_updated so clients get the new muteAllSeats boolean (no longer on room, but they will receive the event)
       io.to(`live_${channelName}`).emit('room_updated', liveStream);
     }
 

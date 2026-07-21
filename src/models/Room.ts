@@ -18,12 +18,8 @@ export interface IRoom extends Document {
   viewers: mongoose.Types.ObjectId[];
   roomType?: 'livestream' | 'party_room';
   partyRoomOption?: 'live' | 'chat';
-  roomTheme?: mongoose.Types.ObjectId;
-  gameId?: mongoose.Types.ObjectId;
   blockedUsers?: mongoose.Types.ObjectId[];
   seats?: ISeat[];
-  muteAllSeats?: boolean;
-  announcement?: string;
   startedAt: Date;
   endedAt?: Date;
   joinedUsers?: mongoose.Types.ObjectId[];
@@ -39,15 +35,12 @@ const RoomSchema: Schema = new Schema(
     hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     channelName: { type: String, required: true, unique: true },
     title: { type: String, required: true },
-    announcement: { type: String, default: '' },
     status: { type: String, enum: ['live', 'ended'], default: 'live' },
     token: { type: String, required: true },
     viewerCount: { type: Number, default: 0 },
     viewers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     roomType: { type: String, enum: ['livestream', 'party_room'], default: 'livestream' },
     partyRoomOption: { type: String, enum: ['live', 'chat'], default: 'live' },
-    roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
-    gameId: { type: Schema.Types.ObjectId, ref: 'Game' },
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     seats: [
       {
@@ -57,7 +50,6 @@ const RoomSchema: Schema = new Schema(
         isMuted: { type: Boolean, default: false }
       }
     ],
-    muteAllSeats: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
     joinedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
