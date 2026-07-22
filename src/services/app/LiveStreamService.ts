@@ -326,7 +326,7 @@ export class LiveStreamService {
         try {
           await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-          io.to(`live_${liveStream.channelName}`).emit('seat_updated', {
+          io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('seat_updated', {
             channelName: liveStream.channelName,
             seats: liveStream.toObject().seats,
             maxSeats: liveStream.seats ? liveStream.seats.length : 0,
@@ -335,7 +335,7 @@ export class LiveStreamService {
           });
 
           if (seatsMutedChanged) {
-            io.to(`live_${liveStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
+            io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
             AppLogger.info(`[LiveStreamService: updateLiveStream] Emitted ${data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted'} and seat_updated`);
           }
         } catch (e: any) {
@@ -355,7 +355,7 @@ export class LiveStreamService {
           settingsPayload.partyRoomOption = liveStream.partyRoomOption;
           settingsPayload.channelName = liveStream.channelName;
           settingsPayload.token = liveStream.token;
-          io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
+          io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
         }
@@ -387,7 +387,7 @@ export class LiveStreamService {
     const io2 = this.getSocketIo();
     if (io2 && fullyPopulatedRoom) {
       try {
-        io2.to(`live_${liveStream.channelName}`).emit('room_updated', fullyPopulatedRoom);
+        io2.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_updated', fullyPopulatedRoom);
       } catch (e: any) {
         AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_updated event: ${e.message}`, e);
       }
