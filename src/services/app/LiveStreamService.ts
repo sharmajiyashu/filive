@@ -341,6 +341,10 @@ export class LiveStreamService {
 
       if (settingsUpdated) {
         try {
+          await roomSetting.populate([
+            { path: 'roomTheme', populate: { path: 'media' } },
+            { path: 'gameId', populate: { path: 'image' } }
+          ]);
           const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
           settingsPayload.allMute = roomSetting.muteAllSeats;
           io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
