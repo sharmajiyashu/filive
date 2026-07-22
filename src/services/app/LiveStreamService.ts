@@ -263,6 +263,9 @@ export class LiveStreamService {
     }
 
     let settingsUpdated = false;
+    if (data.roomType !== undefined || data.partyRoomOption !== undefined) {
+      settingsUpdated = true;
+    }
 
     if (data.maxSeats !== undefined) {
       const maxSeatsNum = Number(data.maxSeats);
@@ -341,12 +344,12 @@ export class LiveStreamService {
 
       if (settingsUpdated) {
         try {
-          await roomSetting.populate([
+          const populatedSetting = await RoomSetting.findById(roomSetting._id).populate([
             { path: 'roomTheme', populate: { path: 'media' } },
             { path: 'gameId', populate: { path: 'image' } }
           ]);
-          const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
-          settingsPayload.allMute = roomSetting.muteAllSeats;
+          const settingsPayload = (populatedSetting ? (populatedSetting.toObject ? populatedSetting.toObject() : populatedSetting) : roomSetting.toObject()) as any;
+          settingsPayload.allMute = populatedSetting ? populatedSetting.muteAllSeats : roomSetting.muteAllSeats;
           settingsPayload.roomType = liveStream.roomType;
           settingsPayload.partyRoomOption = liveStream.partyRoomOption;
           io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
@@ -374,17 +377,20 @@ export class LiveStreamService {
 
       ;
 
+    // Populate the room with settings and ranks before emitting room_updated
+    const fullyPopulatedRoom = await this.populateRoomWithDailyRank(updatedRoom, hostId);
+
     // Always emit room_updated for ANY field change so all clients stay in sync
     const io2 = this.getSocketIo();
-    if (io2 && updatedRoom) {
+    if (io2 && fullyPopulatedRoom) {
       try {
-        io2.to(`live_${liveStream.channelName}`).emit('room_updated', updatedRoom);
+        io2.to(`live_${liveStream.channelName}`).emit('room_updated', fullyPopulatedRoom);
       } catch (e: any) {
         AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_updated event: ${e.message}`, e);
       }
     }
 
-    return await this.populateRoomWithDailyRank(updatedRoom, hostId);
+    return fullyPopulatedRoom;
   }
 
   /**
@@ -1163,7 +1169,7 @@ export class LiveStreamService {
     if (!roomSetting) {
       roomSetting = await RoomSetting.create({ hostId });
     }
-    
+
     const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
     settingsPayload.roomTheme = settingsPayload.roomTheme || null;
     settingsPayload.gameId = settingsPayload.gameId || null;
