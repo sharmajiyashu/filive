@@ -352,6 +352,8 @@ export class LiveStreamService {
           settingsPayload.allMute = populatedSetting ? populatedSetting.muteAllSeats : roomSetting.muteAllSeats;
           settingsPayload.roomType = liveStream.roomType;
           settingsPayload.partyRoomOption = liveStream.partyRoomOption;
+          settingsPayload.channelName = liveStream.channelName;
+          settingsPayload.token = liveStream.token;
           io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
