@@ -302,6 +302,13 @@ export class LiveStreamService {
       settingsUpdated = true;
     }
 
+    if (data.gameId !== undefined) {
+      roomSetting.gameId = data.gameId && mongoose.Types.ObjectId.isValid(data.gameId)
+        ? new mongoose.Types.ObjectId(data.gameId)
+        : undefined;
+      settingsUpdated = true;
+    }
+
     if (settingsUpdated) {
       await roomSetting.save();
     }
