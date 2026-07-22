@@ -193,7 +193,8 @@ export class LiveStreamService {
       partyRoomOption,
       blockedUsers: [],
       seats: initialSeats,
-      startedAt: new Date()
+      startedAt: new Date(),
+      token
     });
     AppLogger.info(`[LiveStreamService: startLiveStream] LiveStream created successfully. streamId=${liveStream._id}, channelName=${channelName}`);
 
