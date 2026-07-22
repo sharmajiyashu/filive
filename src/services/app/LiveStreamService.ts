@@ -347,6 +347,7 @@ export class LiveStreamService {
           ]);
           const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
           settingsPayload.allMute = roomSetting.muteAllSeats;
+          settingsPayload.roomType = liveStream.roomType;
           io.to(`live_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
@@ -1167,6 +1168,14 @@ export class LiveStreamService {
     settingsPayload.gameId = settingsPayload.gameId || null;
     settingsPayload.themeid = settingsPayload.roomTheme;
     settingsPayload.gameid = settingsPayload.gameId;
+
+    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    if (activeStream) {
+      settingsPayload.roomType = activeStream.roomType;
+    } else {
+      const latestStream = await Room.findOne({ hostId }).sort({ createdAt: -1 });
+      settingsPayload.roomType = latestStream ? latestStream.roomType : 'livestream';
+    }
 
     AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId and themeid`);
     return settingsPayload;
