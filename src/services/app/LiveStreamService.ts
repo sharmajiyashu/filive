@@ -653,6 +653,15 @@ export class LiveStreamService {
       AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('live_ended', payload);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_ended', payload);
+      
+      // Also emit seat_updated with empty seats to clear viewer sockets
+      io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('seat_updated', {
+        channelName: liveStream.channelName,
+        seats: [],
+        maxSeats: 0,
+        roomAdmins: [],
+        roomAdmin: []
+      });
       AppLogger.info(`[Socket] Successfully emitted events to rooms.`);
     } else {
       AppLogger.error('[Socket] io is null, cannot emit live_ended event');
@@ -742,9 +751,9 @@ export class LiveStreamService {
           if (io) {
             await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
             const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-            io.to(`live_${channelName}`).emit('seat_updated', {
+            io.to(`live_${channelName}`).to(`room_${channelName}`).emit('seat_updated', {
               channelName,
-              seats: liveStream.seats,
+              seats: liveStream.toObject().seats,
               roomAdmins,
               roomAdmin: roomAdmins
             });
