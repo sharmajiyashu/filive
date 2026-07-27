@@ -20,6 +20,7 @@ import gift from './gift';
 import roomTheme from './roomTheme';
 import call from './call';
 import game from './game';
+import music from './music';
 
 export default (router: Router): Router => {
   profile(router);
@@ -43,5 +44,6 @@ export default (router: Router): Router => {
   roomTheme(router);
   call(router);
   game(router);
+  music(router);
   return router;
 };

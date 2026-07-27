@@ -192,6 +192,39 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   socket.on('room_comment', handleComment);
   socket.on('room_message', handleComment);
 
+  // Handle Music events
+  socket.on('play_music', async (data: { channelName: string; musicUrl: string; musicTitle: string }) => {
+    AppLogger.info(`[Socket Event: play_music] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, musicUrl, musicTitle } = data;
+      if (!channelName || !musicUrl) {
+        socket.emit('error_message', 'channelName and musicUrl are required');
+        return;
+      }
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('music_playing', { musicUrl, musicTitle, senderId: userId });
+      AppLogger.info(`[Socket Event: play_music] Broadcasted music_playing to rooms live_${channelName} and room_${channelName}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: play_music] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to play music');
+    }
+  });
+
+  socket.on('stop_music', async (data: { channelName: string }) => {
+    AppLogger.info(`[Socket Event: stop_music] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName } = data;
+      if (!channelName) {
+        socket.emit('error_message', 'channelName is required');
+        return;
+      }
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('music_stopped', { senderId: userId });
+      AppLogger.info(`[Socket Event: stop_music] Broadcasted music_stopped to rooms live_${channelName} and room_${channelName}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: stop_music] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to stop music');
+    }
+  });
+
   // Handle gift sending via sockets
   socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }) => {
     AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
