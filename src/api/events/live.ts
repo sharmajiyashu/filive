@@ -3,6 +3,7 @@ import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { LiveStreamService } from '../../services/app/LiveStreamService';
 import { GiftService } from '../../services/app/GiftService';
 import Room from '../../models/Room';
+import mongoose from 'mongoose';
 import User from '../../models/User';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
@@ -222,6 +223,97 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: stop_music] Error for user ${userId}: ${error.message}`);
       socket.emit('error_message', 'Failed to stop music');
+    }
+  });
+
+  // Handle Game events
+  socket.on('start_game', async (data: { channelName: string; gameId: string }) => {
+    AppLogger.info(`[Socket Event: start_game] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, gameId } = data;
+      if (!channelName || !gameId) {
+        socket.emit('error_message', 'channelName and gameId are required');
+        return;
+      }
+      
+      const game = await mongoose.model('Game').findById(gameId).populate('image');
+      if (!game) {
+        socket.emit('error_message', 'Game not found');
+        return;
+      }
+
+      // Update the room setting to reflect the active game
+      const liveStream = await Room.findOne({ channelName });
+      if (liveStream) {
+         await mongoose.model('RoomSetting').findOneAndUpdate(
+           { hostId: liveStream.hostId },
+           { gameId: new mongoose.Types.ObjectId(gameId) }
+         );
+      }
+
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('game_started', { game, senderId: userId });
+      AppLogger.info(`[Socket Event: start_game] Broadcasted game_started to rooms`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: start_game] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to start game');
+    }
+  });
+
+  socket.on('end_game', async (data: { channelName: string }) => {
+    AppLogger.info(`[Socket Event: end_game] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName } = data;
+      if (!channelName) {
+        socket.emit('error_message', 'channelName is required');
+        return;
+      }
+
+      const liveStream = await Room.findOne({ channelName });
+      if (liveStream) {
+         await mongoose.model('RoomSetting').findOneAndUpdate(
+           { hostId: liveStream.hostId },
+           { $unset: { gameId: "" } }
+         );
+      }
+
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('game_ended', { senderId: userId });
+      AppLogger.info(`[Socket Event: end_game] Broadcasted game_ended to rooms`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: end_game] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to end game');
+    }
+  });
+
+  // Handle Emoji and GIF events
+  socket.on('send_emoji', async (data: { channelName: string; emoji: string }) => {
+    AppLogger.info(`[Socket Event: send_emoji] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, emoji } = data;
+      if (!channelName || !emoji) {
+        socket.emit('error_message', 'channelName and emoji are required');
+        return;
+      }
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('emoji_received', { emoji, senderId: userId });
+      AppLogger.info(`[Socket Event: send_emoji] Broadcasted emoji_received to rooms`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: send_emoji] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to send emoji');
+    }
+  });
+
+  socket.on('send_gif', async (data: { channelName: string; gifUrl: string }) => {
+    AppLogger.info(`[Socket Event: send_gif] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, gifUrl } = data;
+      if (!channelName || !gifUrl) {
+        socket.emit('error_message', 'channelName and gifUrl are required');
+        return;
+      }
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gif_received', { gifUrl, senderId: userId });
+      AppLogger.info(`[Socket Event: send_gif] Broadcasted gif_received to rooms`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: send_gif] Error for user ${userId}: ${error.message}`);
+      socket.emit('error_message', 'Failed to send gif');
     }
   });
 
