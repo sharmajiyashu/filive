@@ -16,6 +16,7 @@ import giftType from './giftType';
 import roomTheme from './roomTheme';
 import live from './live';
 import game from './game';
+import music from './music';
 
 export default (router: Router): Router => {
   auth(router);
@@ -35,5 +36,6 @@ export default (router: Router): Router => {
   roomTheme(router);
   live(router);
   game(router);
+  music(router);
   return router;
 };

@@ -26,6 +26,7 @@ import { seedLevels } from './LevelSeeder';
 import { seedCommissionSlabs } from './CommissionSlabSeeder';
 import { seedGifts } from './GiftSeeder';
 import { seedRoomThemes } from './RoomThemeSeeder';
+import { seedMusic } from './MusicSeeder';
 
 async function main() {
   try {
@@ -47,6 +48,7 @@ async function main() {
     await seedCommissionSlabs();
     await seedGifts();
     await seedRoomThemes();
+    await seedMusic();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);
