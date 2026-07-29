@@ -1,4 +1,7 @@
 import { Service } from 'typedi';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+import config from '../../config';
 import CoinPackage from '../../models/CoinPackage';
 import CoinHistory from '../../models/CoinHistory';
 import User from '../../models/User';
@@ -89,6 +92,126 @@ export class CoinService {
 
       await session.commitTransaction();
       return { success: true, coins: pkg.coins };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async createRazorpayOrder(userId: string, packageId: string) {
+    const pkg = await CoinPackage.findById(packageId);
+    if (!pkg) throw new Error('Coin package not found');
+
+    const keyId = config.razorpay.keyId;
+    const keySecret = config.razorpay.keySecret;
+
+    if (!keyId || !keySecret) {
+      throw new Error('Razorpay API keys are not configured on the server');
+    }
+
+    const razorpay = new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
+
+    const user = await User.findById(userId);
+
+    // Razorpay amount is in paise (1 INR = 100 paise)
+    const amountInPaise = Math.round(pkg.price * 100);
+
+    const options = {
+      amount: amountInPaise,
+      currency: 'INR',
+      receipt: `rcg_${userId.toString().slice(-6)}_${Date.now()}`,
+      notes: {
+        userId: userId.toString(),
+        packageId: packageId.toString(),
+        packageName: pkg.name,
+        coins: pkg.coins,
+      },
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    return {
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      package: {
+        id: pkg._id,
+        name: pkg.name,
+        coins: pkg.coins,
+        price: pkg.price,
+      },
+      keyId,
+      user: {
+        name: user?.name || 'User',
+        email: user?.email || '',
+        phone: user?.mobile || '',
+      },
+    };
+  }
+
+  async verifyRazorpayPayment(
+    userId: string,
+    packageId: string,
+    razorpayOrderId: string,
+    razorpayPaymentId: string,
+    razorpaySignature: string
+  ) {
+    const keySecret = config.razorpay.keySecret;
+    if (!keySecret) throw new Error('Razorpay secret key is not configured');
+
+    const generatedSignature = crypto
+      .createHmac('sha256', keySecret)
+      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+      .digest('hex');
+
+    if (generatedSignature !== razorpaySignature) {
+      throw new Error('Invalid Razorpay signature. Payment verification failed.');
+    }
+
+    const pkg = await CoinPackage.findById(packageId);
+    if (!pkg) throw new Error('Coin package not found');
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      await User.findByIdAndUpdate(
+        userId,
+        { $inc: { coins: pkg.coins, wealthCoins: pkg.coins } },
+        { session }
+      );
+
+      const historyRecord = await CoinHistory.create(
+        [
+          {
+            userId,
+            amount: pkg.coins,
+            type: 'recharge',
+            description: `Recharged with ${pkg.name} via Razorpay`,
+            transactionId: razorpayPaymentId,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      const updatedUser = await User.findById(userId).select('coins beans');
+
+      return {
+        success: true,
+        message: 'Payment verified and coins added successfully',
+        transactionId: razorpayPaymentId,
+        orderId: razorpayOrderId,
+        addedCoins: pkg.coins,
+        currentCoins: updatedUser?.coins || 0,
+        history: historyRecord[0],
+      };
     } catch (error) {
       await session.abortTransaction();
       throw error;
