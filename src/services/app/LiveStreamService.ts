@@ -1170,13 +1170,20 @@ export class LiveStreamService {
 
   public async getRoomSettings(hostId: string) {
     AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}`);
-    let roomSetting = await RoomSetting.findOne({ hostId }).populate({
-      path: 'roomTheme',
-      populate: { path: 'media' }
-    }).populate({
-      path: 'gameId',
-      populate: { path: 'image' }
-    });
+    let roomSetting = await RoomSetting.findOne({ hostId })
+      .populate({
+        path: 'roomTheme',
+        populate: { path: 'media' }
+      })
+      .populate({
+        path: 'gameId',
+        populate: { path: 'image' }
+      })
+      .populate({
+        path: 'admins',
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+        populate: { path: 'profileImage' }
+      });
 
     if (!roomSetting) {
       roomSetting = await RoomSetting.create({ hostId });
@@ -1469,7 +1476,7 @@ export class LiveStreamService {
     return { success: true };
   }
 
-  public async makeAdmin(requesterId: string, channelName: string, targetUserId: string, isAdmin: boolean) {
+  public async makeAdmin(requesterId: string, channelName: string, targetUserId: string | number, isAdmin: boolean) {
     // 1. Find the live room by channelName
     const activeStream = await Room.findOne({ channelName, status: 'live' });
     if (!activeStream) throw new Error('No active room found for this channel');
@@ -1481,29 +1488,70 @@ export class LiveStreamService {
       throw new Error('Unauthorized. Only the Host can make or remove admins');
     }
 
+    // 2. Resolve target user by 10-digit numeric userId or Mongo _id
+    let targetUser: any = null;
+    const numId = Number(targetUserId);
+    if (!isNaN(numId) && targetUserId.toString().length >= 5) {
+      targetUser = await User.findOne({ userId: numId });
+    }
+    
+    if (!targetUser && mongoose.Types.ObjectId.isValid(targetUserId.toString())) {
+      targetUser = await User.findById(targetUserId);
+    }
+
+    if (!targetUser) {
+      throw new Error(`Target user with User ID '${targetUserId}' not found`);
+    }
+
+    const resolvedUserIdStr = targetUser._id.toString();
+
+    // Verify target user is currently in the room joined list / viewers
+    const isJoined =
+      activeStream.joinedUsers?.some(id => id.toString() === resolvedUserIdStr) ||
+      activeStream.viewers?.some(id => id.toString() === resolvedUserIdStr);
+
+    if (!isJoined) {
+      throw new Error('User is not joined in this room. User must join the room first to become an admin.');
+    }
+
     // 3. Find or create RoomSetting for this host
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) roomSetting = await RoomSetting.create({ hostId });
 
-    const targetObjId = new mongoose.Types.ObjectId(targetUserId);
-    const isAdminNow = roomSetting.admins.some(id => id.toString() === targetUserId);
+    const targetObjId = targetUser._id;
+    const isAdminNow = roomSetting.admins.some(id => id.toString() === resolvedUserIdStr);
 
     if (isAdmin && !isAdminNow) {
       roomSetting.admins.push(targetObjId);
     } else if (!isAdmin && isAdminNow) {
-      roomSetting.admins = roomSetting.admins.filter(id => id.toString() !== targetUserId);
+      roomSetting.admins = roomSetting.admins.filter(id => id.toString() !== resolvedUserIdStr);
     }
 
     await roomSetting.save();
 
+    // Populate admins before returning
+    const updatedSettings = await RoomSetting.findById(roomSetting._id).populate({
+      path: 'admins',
+      select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+      populate: { path: 'profileImage' }
+    });
+
     // 4. Broadcast to the correct room
     const io = this.getSocketIo();
     if (io) {
-      const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
-      io.to(`live_${channelName}`).emit('user_made_admin', { targetUserId, isAdmin, channelName, user });
+      const sanitizedUser = await User.findById(resolvedUserIdStr)
+        .select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins')
+        .populate('profileImage');
+      io.to(`live_${channelName}`).emit('user_made_admin', {
+        targetUserId: resolvedUserIdStr,
+        userId: targetUser.userId,
+        isAdmin,
+        channelName,
+        user: sanitizedUser
+      });
     }
 
-    return roomSetting;
+    return updatedSettings || roomSetting;
   }
 
   private async verifyAdmin(requesterId: string, hostId: string) {
