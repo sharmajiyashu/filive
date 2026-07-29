@@ -135,4 +135,96 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/coins/razorpay/create-order:
+   *   post:
+   *     summary: Create Razorpay Order for Coin Recharge
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - packageId
+   *             properties:
+   *               packageId:
+   *                 type: string
+   *                 description: Coin package ID
+   *     responses:
+   *       200:
+   *         description: Razorpay order created successfully
+   */
+  coinRouter.post('/razorpay/create-order', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId } = req.body;
+      if (!packageId) {
+        return ResponseWrapper.error(res, new Error('packageId is required'), 400);
+      }
+      const result = await coinService.createRazorpayOrder(req.user.id, packageId);
+      return ResponseWrapper.success(res, result, 'Razorpay order created successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/razorpay/verify-payment:
+   *   post:
+   *     summary: Verify Razorpay Payment Signature and Add Coins
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - packageId
+   *               - razorpayOrderId
+   *               - razorpayPaymentId
+   *               - razorpaySignature
+   *             properties:
+   *               packageId:
+   *                 type: string
+   *               razorpayOrderId:
+   *                 type: string
+   *               razorpayPaymentId:
+   *                 type: string
+   *               razorpaySignature:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Payment verified and coins added successfully
+   */
+  coinRouter.post('/razorpay/verify-payment', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+      if (!packageId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+        return ResponseWrapper.error(
+          res,
+          new Error('packageId, razorpayOrderId, razorpayPaymentId, and razorpaySignature are required'),
+          400
+        );
+      }
+      const result = await coinService.verifyRazorpayPayment(
+        req.user.id,
+        packageId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature
+      );
+      return ResponseWrapper.success(res, result, 'Payment verified successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };
