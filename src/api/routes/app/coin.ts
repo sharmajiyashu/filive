@@ -1,12 +1,14 @@
 import { Router, Request, Response } from 'express';
 import Container from 'typedi';
 import { CoinService } from '../../../services/app/CoinService';
+import { CoinSellerService } from '../../../services/app/CoinSellerService';
 import User from '../../../models/User';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 
 export default (router: Router) => {
   const coinService = Container.get(CoinService);
+  const coinSellerService = Container.get(CoinSellerService);
   const coinRouter = Router();
 
   router.use('/coins', coinRouter);
@@ -310,11 +312,42 @@ export default (router: Router) => {
    *       200:
    *         description: Cash out requested successfully
    */
-  coinRouter.post('/cash-out', appAuthMiddleware, async (req: any, res: Response) => {
+  /**
+   * @swagger
+   * /app/coins/convert-beans-to-coins:
+   *   post:
+   *     summary: Convert user beans to coins (Self, User to User, or User to CoinSeller transfer)
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - beansAmount
+   *             properties:
+   *               beansAmount:
+   *                 type: integer
+   *                 description: Amount of beans to convert
+   *               targetUserId:
+   *                 type: integer
+   *                 description: Optional 10-digit numeric ID of recipient user for direct transfer (omit for self conversion)
+   *     responses:
+   *       200:
+   *         description: Beans converted to coins successfully
+   */
+  coinRouter.post('/convert-beans-to-coins', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { amountBeans, paymentMethodDetails } = req.body;
-      const result = await coinService.cashOutBeans(req.user.id, Number(amountBeans), paymentMethodDetails || 'Bank/UPI');
-      return ResponseWrapper.success(res, result, 'Cash out requested successfully');
+      const { beansAmount, targetUserId } = req.body;
+      const result = await coinSellerService.convertBeansToCoins(
+        req.user.id,
+        Number(beansAmount),
+        targetUserId ? Number(targetUserId) : undefined
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Beans converted to coins successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

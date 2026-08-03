@@ -204,15 +204,28 @@ export class CoinSellerService {
     };
   }
 
-  async convertBeansToCoins(userId: string, beansAmount: number) {
+  async convertBeansToCoins(
+    userId: string,
+    beansAmount: number,
+    targetUserId?: number
+  ) {
     if (!beansAmount || beansAmount <= 0) {
       throw new Error('Beans amount must be greater than zero');
     }
 
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-    if ((user.beans || 0) < beansAmount) {
+    const sender = await User.findById(userId);
+    if (!sender) throw new Error('User not found');
+    if ((sender.beans || 0) < beansAmount) {
       throw new Error('Insufficient beans balance');
+    }
+
+    let recipient = sender;
+    if (targetUserId && targetUserId !== sender.userId) {
+      const foundTarget = await User.findOne({ userId: targetUserId });
+      if (!foundTarget) {
+        throw new Error('Recipient user with specified ID not found');
+      }
+      recipient = foundTarget;
     }
 
     const appSettingService = Container.get(AppSettingService);
@@ -228,29 +241,65 @@ export class CoinSellerService {
       throw new Error('Converted coins value is too low');
     }
 
+    const isTransfer = sender._id.toString() !== recipient._id.toString();
+    // Credit coinSellerCoins if recipient is a coin seller and converting for self, else credit coins
+    const incField = (recipient.isCoinseller && !isTransfer) ? 'coinSellerCoins' : 'coins';
+
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // Deduct beans and add coins
-      await User.findByIdAndUpdate(userId, {
-        $inc: { beans: -beansAmount, coins: coinsToCredit }
+      // 1. Deduct beans from sender
+      await User.findByIdAndUpdate(sender._id, {
+        $inc: { beans: -beansAmount }
       }, { session });
 
-      // Create history record
-      await CoinHistory.create([{
-        userId: user._id,
-        amount: coinsToCredit,
-        type: 'beans_to_coins',
-        description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
-      }], { session });
+      // 2. Credit coins or coinSellerCoins to recipient
+      await User.findByIdAndUpdate(recipient._id, {
+        $inc: { [incField]: coinsToCredit }
+      }, { session });
+
+      // 3. Create history records
+      if (isTransfer) {
+        // Record for sender
+        await CoinHistory.create([{
+          userId: sender._id,
+          relatedUserId: recipient._id,
+          amount: -coinsToCredit,
+          type: 'beans_to_coins',
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
+        }], { session });
+
+        // Record for recipient
+        await CoinHistory.create([{
+          userId: recipient._id,
+          relatedUserId: sender._id,
+          amount: coinsToCredit,
+          type: 'beans_to_coins',
+          description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
+        }], { session });
+      } else {
+        await CoinHistory.create([{
+          userId: sender._id,
+          amount: coinsToCredit,
+          type: 'beans_to_coins',
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
+        }], { session });
+      }
 
       await session.commitTransaction();
       return {
         success: true,
-        message: 'Beans converted to coins successfully',
+        message: isTransfer
+          ? `Beans converted to coins and transferred to User (ID: ${recipient.userId}) successfully`
+          : `Beans converted to coins successfully`,
         beansDeducted: beansAmount,
-        coinsCredited: coinsToCredit
+        coinsCredited: coinsToCredit,
+        recipient: {
+          id: recipient._id,
+          userId: recipient.userId,
+          name: recipient.name
+        }
       };
     } catch (error) {
       await session.abortTransaction();

@@ -134,7 +134,7 @@ export default (router: Router) => {
    * @swagger
    * /app/coin-seller/convert-beans-to-coins:
    *   post:
-   *     summary: Convert user beans to coins
+   *     summary: Convert user beans to coins with optional direct transfer to user or coin seller
    *     tags: [Coin Seller]
    *     security:
    *       - bearerAuth: []
@@ -149,15 +149,23 @@ export default (router: Router) => {
    *             properties:
    *               beansAmount:
    *                 type: integer
+   *                 description: Amount of beans to convert
+   *               targetUserId:
+   *                 type: integer
+   *                 description: Optional 10-digit numeric ID of recipient user for direct transfer (omit for self conversion)
    *     responses:
    *       200:
    *         description: Beans converted to coins successfully
    */
   sellerRouter.post('/convert-beans-to-coins', async (req: any, res: Response) => {
     try {
-      const { beansAmount } = req.body;
-      const result = await coinSellerService.convertBeansToCoins(req.user.id, Number(beansAmount));
-      return ResponseWrapper.success(res, result, 'Beans converted to coins successfully');
+      const { beansAmount, targetUserId } = req.body;
+      const result = await coinSellerService.convertBeansToCoins(
+        req.user.id,
+        Number(beansAmount),
+        targetUserId ? Number(targetUserId) : undefined
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Beans converted to coins successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
