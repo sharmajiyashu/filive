@@ -105,6 +105,63 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/coins/beans-wallet:
+   *   get:
+   *     summary: Get user beans wallet details (Total Beans, Withdrawal Beans, Beans to be confirmed)
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Beans Wallet details
+   */
+  coinRouter.get('/beans-wallet', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const result = await coinService.getBeansWallet(req.user.id);
+      return ResponseWrapper.success(res, result, 'Beans wallet fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/beans-history:
+   *   get:
+   *     summary: Get beans transaction history
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *         description: Page number
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *         description: Number of items per page
+   *     responses:
+   *       200:
+   *         description: Beans history details
+   */
+  coinRouter.get('/beans-history', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const result = await coinService.getBeansHistory(req.user.id, page, limit);
+      return ResponseWrapper.success(res, result, 'Beans history fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/coins/recharge:
    *   post:
    *     summary: Recharge coins (simulated)

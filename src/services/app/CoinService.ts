@@ -50,6 +50,25 @@ export class CoinService {
     };
   }
 
+  async getBeansWallet(userId: string) {
+    const user = await User.findById(userId).select('beans');
+    if (!user) throw new Error('User not found');
+    
+    // Total Beans balance
+    const totalBeans = user.beans || 0;
+    
+    // Calculate withdrawable beans and pending/to-be-confirmed beans
+    // For now, withdrawableBeans is current total beans, and beansToBeConfirmed is calculated from active pending requests or default split
+    const withdrawableBeans = totalBeans;
+    const beansToBeConfirmed = 0;
+
+    return {
+      totalBeans,
+      withdrawableBeans,
+      beansToBeConfirmed,
+    };
+  }
+
   async getHistory(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
@@ -59,6 +78,34 @@ export class CoinService {
         .skip(skip)
         .limit(limit),
       CoinHistory.countDocuments({ userId })
+    ]);
+
+    return {
+      history,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  async getBeansHistory(userId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    // Filter history entries relevant to Beans
+    const query = {
+      userId,
+      type: { $in: ['charm_received', 'coins_to_beans', 'beans_to_coins', 'cash_out', 'call_income', 'agency_commission'] }
+    };
+
+    const [history, total] = await Promise.all([
+      CoinHistory.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      CoinHistory.countDocuments(query)
     ]);
 
     return {

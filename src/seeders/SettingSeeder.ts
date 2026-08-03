@@ -16,6 +16,36 @@ export async function seedSettings() {
         value: ['bug_report', 'feature_request', 'billing_issue', 'general_inquiry'],
         description: 'List of available help & feedback types'
       },
+      {
+        key: 'home_banner_image_url',
+        value: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200',
+        description: 'Home screen banner URL'
+      },
+      {
+        key: 'party_room_banner_image_url',
+        value: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200',
+        description: 'Party room banner URL'
+      },
+      {
+        key: 'recharge_offer_banner_image_url',
+        value: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200',
+        description: 'Recharge offer banner URL'
+      },
+      {
+        key: 'home_banners',
+        value: ['https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200'],
+        description: 'List of home banners'
+      },
+      {
+        key: 'party_room_banners',
+        value: ['https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200'],
+        description: 'List of party room banners'
+      },
+      {
+        key: 'recharge_offer_banners',
+        value: ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200'],
+        description: 'List of recharge offer banners'
+      },
     ];
 
     for (const setting of settings) {
