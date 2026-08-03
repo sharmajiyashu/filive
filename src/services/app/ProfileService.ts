@@ -138,6 +138,22 @@ export class ProfileService {
       try { data.privacySettings = JSON.parse(data.privacySettings); } catch (e) { }
     }
 
+    const existingUser = await User.findById(userId);
+    if (!existingUser) throw new Error('USER_NOT_FOUND');
+
+    // Enforce "My Call Price" & "Go Live" call permissions for Female Hosts only
+    if (
+      'enableVoiceCall' in data ||
+      'enableVideoCall' in data ||
+      'voiceCallPrice' in data ||
+      'videoCallPrice' in data
+    ) {
+      const userGender = data.gender || existingUser.gender;
+      if (userGender !== 'Female') {
+        throw new Error('Call pricing and hosting features are available for Female hosts only.');
+      }
+    }
+
     if (typeof data.enableVoiceCall === 'string') {
       data.enableVoiceCall = data.enableVoiceCall === 'true';
     }

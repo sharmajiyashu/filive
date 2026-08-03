@@ -17,6 +17,8 @@ import roomTheme from './roomTheme';
 import live from './live';
 import game from './game';
 import music from './music';
+import family from './family';
+import coinPackage from './coinPackage';
 
 export default (router: Router): Router => {
   auth(router);
@@ -37,5 +39,7 @@ export default (router: Router): Router => {
   live(router);
   game(router);
   music(router);
+  family(router);
+  coinPackage(router);
   return router;
 };

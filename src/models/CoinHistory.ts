@@ -4,7 +4,7 @@ export interface ICoinHistory extends Document {
   userId: mongoose.Types.ObjectId;
   relatedUserId?: mongoose.Types.ObjectId;
   amount: number; // Positive for credit, negative for debit
-  type: 'recharge' | 'family_creation' | 'transfer' | 'charm_received' | 'beans_to_coins' | 'coins_to_beans' | 'agency_commission' | 'other';
+  type: 'recharge' | 'family_creation' | 'transfer' | 'charm_received' | 'beans_to_coins' | 'coins_to_beans' | 'agency_commission' | 'referral_reward' | 'gift_received' | 'call_income' | 'cash_out' | 'exchange' | 'other';
   description?: string;
   transactionId?: string; // For payment gateways
   channelName?: string;
@@ -19,7 +19,7 @@ const CoinHistorySchema: Schema = new Schema(
     amount: { type: Number, required: true },
     type: {
       type: String,
-      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'beans_to_coins', 'coins_to_beans', 'agency_commission', 'other'],
+      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'beans_to_coins', 'coins_to_beans', 'agency_commission', 'referral_reward', 'gift_received', 'call_income', 'cash_out', 'exchange', 'other'],
       required: true
     },
     description: { type: String },

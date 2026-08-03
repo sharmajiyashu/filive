@@ -55,6 +55,12 @@ export class LiveStreamService {
       throw new Error('Invalid host ID');
     }
 
+    const hostUser = await User.findById(hostId);
+    if (!hostUser) throw new Error('Host user not found');
+    if (hostUser.gender !== 'Female') {
+      throw new Error('Go Live streaming feature is restricted to Female hosts only.');
+    }
+
     // Fetch or create RoomSetting
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) {

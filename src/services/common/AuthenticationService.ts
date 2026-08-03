@@ -1,4 +1,4 @@
-import { Inject, Service } from "typedi";
+import { Container, Inject, Service } from "typedi";
 import mongoose from "mongoose";
 import User, { IUser } from '../../models/User';
 import Follow from '../../models/Follow';
@@ -189,7 +189,7 @@ export class AuthenticationService {
         };
     }
 
-    async userSendOTP(mobile: string, countryId?: string): Promise<{ otp: string }> {
+    async userSendOTP(mobile: string, countryId?: string, referredBy?: string): Promise<{ otp: string }> {
         let user = await User.findOne({ mobile });
 
         const otp = this.generateOTP(4);
@@ -203,7 +203,8 @@ export class AuthenticationService {
                 otp,
                 otpExpires,
                 userRole: 'user',
-                countryId: countryId ? new mongoose.Types.ObjectId(countryId) : undefined
+                countryId: countryId ? new mongoose.Types.ObjectId(countryId) : undefined,
+                referredBy: referredBy ? new mongoose.Types.ObjectId(referredBy) : undefined
             });
         } else {
             // Update existing user with new OTP
@@ -230,10 +231,24 @@ export class AuthenticationService {
         }
 
         // Clear OTP after successful verification
+        const isNewUserVerification = !!user.referredBy;
+        const referrerId = user.referredBy ? user.referredBy.toString() : null;
+
         user.otp = undefined;
         user.otpExpires = undefined;
+        user.referredBy = undefined; // Process only once
         user.lastLoginAt = new Date();
         await user.save();
+
+        if (isNewUserVerification && referrerId) {
+            try {
+                const { CoinService } = require('../app/CoinService');
+                const coinService: any = Container.get(CoinService);
+                await coinService.processReferralReward(referrerId, user._id.toString());
+            } catch (err) {
+                AppLogger.error(`Error rewarding referrer ${referrerId}: ${err}`);
+            }
+        }
 
         const token = this.generateToken(user._id.toString(), user.userRole);
 

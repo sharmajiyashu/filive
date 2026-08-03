@@ -50,6 +50,25 @@ export class CoinService {
     };
   }
 
+  async getBeansWallet(userId: string) {
+    const user = await User.findById(userId).select('beans');
+    if (!user) throw new Error('User not found');
+    
+    // Total Beans balance
+    const totalBeans = user.beans || 0;
+    
+    // Calculate withdrawable beans and pending/to-be-confirmed beans
+    // For now, withdrawableBeans is current total beans, and beansToBeConfirmed is calculated from active pending requests or default split
+    const withdrawableBeans = totalBeans;
+    const beansToBeConfirmed = 0;
+
+    return {
+      totalBeans,
+      withdrawableBeans,
+      beansToBeConfirmed,
+    };
+  }
+
   async getHistory(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
@@ -59,6 +78,34 @@ export class CoinService {
         .skip(skip)
         .limit(limit),
       CoinHistory.countDocuments({ userId })
+    ]);
+
+    return {
+      history,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  async getBeansHistory(userId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    // Filter history entries relevant to Beans
+    const query = {
+      userId,
+      type: { $in: ['charm_received', 'coins_to_beans', 'beans_to_coins', 'cash_out', 'call_income', 'agency_commission'] }
+    };
+
+    const [history, total] = await Promise.all([
+      CoinHistory.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      CoinHistory.countDocuments(query)
     ]);
 
     return {
@@ -215,6 +262,77 @@ export class CoinService {
     } catch (error) {
       await session.abortTransaction();
       throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async cashOutBeans(userId: string, amountBeans: number, paymentMethodDetails: string) {
+    if (amountBeans <= 0) throw new Error('Cash out amount must be greater than zero');
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    if ((user.beans || 0) < amountBeans) {
+      throw new Error('Insufficient beans balance for cash out');
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      user.beans = (user.beans || 0) - amountBeans;
+      await user.save({ session });
+
+      const record = await CoinHistory.create([
+        {
+          userId,
+          amount: -amountBeans,
+          type: 'cash_out',
+          description: `Cash out request of ${amountBeans} beans (${paymentMethodDetails})`,
+        }
+      ], { session });
+
+      await session.commitTransaction();
+      return {
+        success: true,
+        message: 'Cash out request submitted successfully',
+        remainingBeans: user.beans,
+        transaction: record[0],
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async processReferralReward(referrerUserId: string, referredUserId: string) {
+    const AppSetting = mongoose.model('AppSetting');
+    const rewardSetting = await AppSetting.findOne({ key: 'invite_reward_coins' });
+    const rewardAmount = rewardSetting ? Number(rewardSetting.value) : 2000;
+
+    if (rewardAmount <= 0) return null;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      await User.findByIdAndUpdate(referrerUserId, { $inc: { coins: rewardAmount } }, { session });
+      const record = await CoinHistory.create([
+        {
+          userId: referrerUserId,
+          relatedUserId: referredUserId,
+          amount: rewardAmount,
+          type: 'referral_reward',
+          description: `Invite reward for referring user ${referredUserId}`,
+        }
+      ], { session });
+
+      await session.commitTransaction();
+      return record[0];
+    } catch (error) {
+      await session.abortTransaction();
+      console.error('Failed to process referral reward:', error);
+      return null;
     } finally {
       session.endSession();
     }
