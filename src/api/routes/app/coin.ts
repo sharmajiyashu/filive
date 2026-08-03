@@ -227,4 +227,39 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/coins/cash-out:
+   *   post:
+   *     summary: Cash out Beans
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - amountBeans
+   *             properties:
+   *               amountBeans:
+   *                 type: number
+   *               paymentMethodDetails:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Cash out requested successfully
+   */
+  coinRouter.post('/cash-out', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { amountBeans, paymentMethodDetails } = req.body;
+      const result = await coinService.cashOutBeans(req.user.id, Number(amountBeans), paymentMethodDetails || 'Bank/UPI');
+      return ResponseWrapper.success(res, result, 'Cash out requested successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

@@ -70,6 +70,7 @@ export interface IUser extends Document {
   coinSellerCoins: number;
   videoVerificationVideo?: mongoose.Types.ObjectId;
   videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
+  referredBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -150,6 +151,7 @@ const UserSchema: Schema = new Schema(
     coinSellerCoins: { type: Number, default: 0 },
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
     videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
+    referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   {
     timestamps: true,

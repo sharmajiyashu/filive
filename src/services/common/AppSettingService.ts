@@ -12,6 +12,13 @@ export class AppSettingService {
     agency_auto_settlement_enabled: true,
     agency_settlement_day: 1,
     call_platform_fee_percent: 10,
+    invite_reward_coins: 2000,
+    home_banner_image_url: '',
+    party_room_banner_image_url: '',
+    recharge_offer_banner_image_url: '',
+    home_banners: [],
+    party_room_banners: [],
+    recharge_offer_banners: [],
   };
 
   async getSettings() {
