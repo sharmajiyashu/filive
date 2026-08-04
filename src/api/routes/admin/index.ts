@@ -19,6 +19,9 @@ import game from './game';
 import music from './music';
 import family from './family';
 import coinPackage from './coinPackage';
+import payoutMethod from './payoutMethod';
+import payoutRequest from './payoutRequest';
+import country from './country';
 
 export default (router: Router): Router => {
   auth(router);
@@ -41,5 +44,8 @@ export default (router: Router): Router => {
   music(router);
   family(router);
   coinPackage(router);
+  payoutMethod(router);
+  payoutRequest(router);
+  country(router);
   return router;
 };

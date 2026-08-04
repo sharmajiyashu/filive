@@ -21,6 +21,8 @@ import roomTheme from './roomTheme';
 import call from './call';
 import game from './game';
 import music from './music';
+import payoutMethod from './payoutMethod';
+import payoutRequest from './payoutRequest';
 
 export default (router: Router): Router => {
   profile(router);
@@ -45,5 +47,7 @@ export default (router: Router): Router => {
   call(router);
   game(router);
   music(router);
+  payoutMethod(router);
+  payoutRequest(router);
   return router;
 };
