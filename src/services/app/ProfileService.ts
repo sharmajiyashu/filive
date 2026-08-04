@@ -117,7 +117,17 @@ export class ProfileService {
     }
 
     if (data.dob) {
-      data.dob = new Date(data.dob);
+      const birthDate = new Date(data.dob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      if (age < 18) {
+        throw new Error('Users under 18 years of age are not allowed to register or use this platform.');
+      }
+      data.dob = birthDate;
     }
 
     // Parse JSON strings for multipart/form-data

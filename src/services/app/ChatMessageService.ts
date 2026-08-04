@@ -532,10 +532,16 @@ export class ChatMessageService {
       throw new Error('Chat conversation not found or access denied');
     }
 
-    const total = await Message.countDocuments({ chatId: chatObjectId, deletedAt: { $exists: false } });
+    const participant = chat.participants.find(p => p.userId.toString() === userId);
+    const messageQuery: any = { chatId: chatObjectId, deletedAt: { $exists: false } };
+    if (participant && participant.clearedAt) {
+      messageQuery.createdAt = { $gt: participant.clearedAt };
+    }
+
+    const total = await Message.countDocuments(messageQuery);
     const totalPages = Math.ceil(total / limit);
 
-    const messages = await Message.find({ chatId: chatObjectId, deletedAt: { $exists: false } })
+    const messages = await Message.find(messageQuery)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)

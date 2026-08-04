@@ -384,5 +384,51 @@ export class ChatService {
 
     return { message: 'Chat deleted successfully' };
   }
+
+  async togglePinChat(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    const participant = chat.participants.find(p => p.userId.toString() === userId);
+    if (!participant) {
+      throw new Error('Participant not found');
+    }
+
+    participant.isPinned = !participant.isPinned;
+    await chat.save();
+
+    return { isPinned: participant.isPinned, message: participant.isPinned ? 'Chat pinned successfully' : 'Chat unpinned successfully' };
+  }
+
+  async clearChatHistory(userId: string, chatId: string) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+    const chat = await Chat.findOne({
+      _id: chatObjectId,
+      'participants.userId': userObjectId
+    });
+
+    if (!chat) {
+      throw new Error('Chat not found or access denied');
+    }
+
+    const participant = chat.participants.find(p => p.userId.toString() === userId);
+    if (participant) {
+      participant.clearedAt = new Date();
+      await chat.save();
+    }
+
+    return { message: 'Chat history cleared for you successfully' };
+  }
 }
 
