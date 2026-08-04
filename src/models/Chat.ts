@@ -7,6 +7,7 @@ export interface IChatParticipant {
   isPinned: boolean;
   lastSeenAt?: Date;
   archiveAt?: Date;
+  clearedAt?: Date;
   joinedAt: Date;
 }
 
@@ -26,6 +27,7 @@ const ChatParticipantSchema = new Schema({
   isPinned: { type: Boolean, default: false },
   lastSeenAt: { type: Date },
   archiveAt: { type: Date },
+  clearedAt: { type: Date },
   joinedAt: { type: Date, default: Date.now }
 }, { _id: false });
 

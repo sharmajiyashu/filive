@@ -31,13 +31,15 @@ export class RankingService {
       }));
     } else {
       const startDate = getPeriodStartDate(period);
-      const historyType = type === 'rich' ? 'recharge' : 'charm_received';
+      const historyTypeMatch = type === 'rich'
+        ? { $in: ['recharge', 'coin_purchased'] }
+        : { $in: ['charm_received', 'gift_received', 'bean_received', 'call_received', 'agency_host_earning'] };
 
       // Get all unique user IDs who have activity in the period (to exclude them from fallback)
       const allPeriodUserIdsAgg = await CoinHistory.aggregate([
         {
           $match: {
-            type: historyType,
+            type: historyTypeMatch,
             createdAt: { $gte: startDate }
           }
         },
@@ -57,7 +59,7 @@ export class RankingService {
         const aggregation = await CoinHistory.aggregate([
           {
             $match: {
-              type: historyType,
+              type: historyTypeMatch,
               createdAt: { $gte: startDate }
             }
           },
@@ -82,7 +84,7 @@ export class RankingService {
         const aggregation = await CoinHistory.aggregate([
           {
             $match: {
-              type: historyType,
+              type: historyTypeMatch,
               createdAt: { $gte: startDate }
             }
           },

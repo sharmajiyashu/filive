@@ -350,12 +350,88 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /app/chats/{chatId}:
+   *   get:
+   *     summary: Get chat details with participants
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: chatId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Chat details fetched successfully
+   */
   appRouter.get('/:chatId', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
       const chatId = req.params.chatId;
       const result = await chatService.getChatDetails(userId, chatId);
       return ResponseWrapper.success(res, result, 'Chat details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/chats/{chatId}/pin:
+   *   patch:
+   *     summary: Pin or unpin a chat for the user
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: chatId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Chat pinned or unpinned successfully
+   */
+  appRouter.patch('/:chatId/pin', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const chatId = req.params.chatId;
+      const result = await chatService.togglePinChat(userId, chatId);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/chats/{chatId}/clear:
+   *   delete:
+   *     summary: Clear chat history for the requesting user
+   *     tags: [Chats]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: chatId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Chat history cleared for user successfully
+   */
+  appRouter.delete('/:chatId/clear', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const chatId = req.params.chatId;
+      const result = await chatService.clearChatHistory(userId, chatId);
+      return ResponseWrapper.success(res, result, 'Chat history cleared successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
