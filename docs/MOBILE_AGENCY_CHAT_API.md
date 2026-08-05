@@ -389,8 +389,13 @@ POST /app/agencies/{agencyId}/add-host
 ### 5.1 Chat list
 
 ```http
-GET /app/chats?page=1&limit=20
+GET /app/chats?page=1&limit=20&search=10001
 ```
+
+> **Search Parameters (Global User & Chat List Search)**:
+> - `search` (string, optional): Search by User ID (integer e.g. `10001`), User Name, Email, or Mobile.
+> - `userId` (string, optional): Alias parameter for `search` specifically by User ID.
+> - **Note**: If a user is not in the current chat list, this search performs a global search across all registered users and returns them formatted in the chat list.
 
 Each chat item may include:
 
