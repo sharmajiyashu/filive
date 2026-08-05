@@ -208,7 +208,8 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
-      const followers = await socialService.getFollowers(req.user.id, page, limit);
+      const search = req.query.search?.toString() || req.query.userId?.toString();
+      const followers = await socialService.getFollowers(req.user.id, page, limit, search);
       return ResponseWrapper.success(res, followers, 'Followers fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -230,6 +231,10 @@ export default (router: Router) => {
    *         name: limit
    *         schema:
    *           type: integer
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
    *     responses:
    *       200:
    *         description: List of followed users
@@ -238,7 +243,8 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
-      const following = await socialService.getFollowing(req.user.id, page, limit);
+      const search = req.query.search?.toString() || req.query.userId?.toString();
+      const following = await socialService.getFollowing(req.user.id, page, limit, search);
       return ResponseWrapper.success(res, following, 'Following list fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

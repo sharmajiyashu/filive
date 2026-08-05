@@ -16,7 +16,7 @@ import { LevelService } from './LevelService';
 export class UserService {
   constructor(private levelService: LevelService) { }
 
-  public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string) {
+  public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string, search?: string) {
     let query: any = { userRole: 'user' };
 
     if (currentUserId) {
@@ -36,8 +36,24 @@ export class UserService {
       }
     }
 
+    if (search && search.trim() !== '') {
+      const searchStr = search.trim();
+      const searchConditions: any[] = [
+        { name: { $regex: searchStr, $options: 'i' } },
+        { email: { $regex: searchStr, $options: 'i' } },
+        { mobile: { $regex: searchStr, $options: 'i' } }
+      ];
+
+      const searchNum = Number(searchStr);
+      if (!isNaN(searchNum)) {
+        searchConditions.push({ userId: searchNum });
+      }
+
+      query.$or = searchConditions;
+    }
+
     const users = await User.find(query)
-      .select('userId name email profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+      .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
       .populate('profileImage')
       .skip((page - 1) * limit)
       .limit(limit);
