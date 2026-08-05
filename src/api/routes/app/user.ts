@@ -29,6 +29,16 @@ export default (router: Router) => {
    *         name: limit
    *         schema:
    *           type: integer
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search by integer userId, name, email, or mobile
+   *       - in: query
+   *         name: userId
+   *         schema:
+   *           type: string
+   *         description: Alias parameter for search by userId
    *     responses:
    *       200:
    *         description: List of users
@@ -37,8 +47,9 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString() || req.query.userId?.toString();
       const currentUserId = req.user.id;
-      const result = await userService.getAllUsers(page, limit, currentUserId);
+      const result = await userService.getAllUsers(page, limit, currentUserId, search);
       return ResponseWrapper.success(res, result, 'Users fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

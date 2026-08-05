@@ -64,20 +64,36 @@ export class SocialService {
     return request;
   }
 
-  public async getFollowers(userId: string, page: number = 1, limit: number = 10) {
-    const followers = await Follow.find({ followingId: userId, status: 'accepted' })
+  public async getFollowers(userId: string, page: number = 1, limit: number = 10, search?: string) {
+    let followerMatch: any = {};
+    if (search && search.trim() !== '') {
+      const searchStr = search.trim();
+      const userConditions: any[] = [
+        { name: { $regex: searchStr, $options: 'i' } },
+        { email: { $regex: searchStr, $options: 'i' } },
+        { mobile: { $regex: searchStr, $options: 'i' } }
+      ];
+      const searchNum = Number(searchStr);
+      if (!isNaN(searchNum)) {
+        userConditions.push({ userId: searchNum });
+      }
+      followerMatch = { $or: userConditions };
+    }
+
+    const rawFollowers = await Follow.find({ followingId: userId, status: 'accepted' })
       .populate({
         path: 'followerId',
-        select: 'name email profileImage bio isPremium location country',
+        match: followerMatch,
+        select: 'userId name email mobile profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
-      })
-      .skip((page - 1) * limit)
-      .limit(limit);
+      });
 
-    const total = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
+    const validFollowers = rawFollowers.filter(f => f.followerId !== null);
+    const total = validFollowers.length;
+    const paginatedFollowers = validFollowers.slice((page - 1) * limit, page * limit);
 
     return {
-      followers,
+      followers: paginatedFollowers,
       pagination: {
         total,
         page,
@@ -87,20 +103,36 @@ export class SocialService {
     };
   }
 
-  public async getFollowing(userId: string, page: number = 1, limit: number = 10) {
-    const following = await Follow.find({ followerId: userId, status: 'accepted' })
+  public async getFollowing(userId: string, page: number = 1, limit: number = 10, search?: string) {
+    let followingMatch: any = {};
+    if (search && search.trim() !== '') {
+      const searchStr = search.trim();
+      const userConditions: any[] = [
+        { name: { $regex: searchStr, $options: 'i' } },
+        { email: { $regex: searchStr, $options: 'i' } },
+        { mobile: { $regex: searchStr, $options: 'i' } }
+      ];
+      const searchNum = Number(searchStr);
+      if (!isNaN(searchNum)) {
+        userConditions.push({ userId: searchNum });
+      }
+      followingMatch = { $or: userConditions };
+    }
+
+    const rawFollowing = await Follow.find({ followerId: userId, status: 'accepted' })
       .populate({
         path: 'followingId',
-        select: 'name email profileImage bio isPremium location country',
+        match: followingMatch,
+        select: 'userId name email mobile profileImage bio isPremium location country',
         populate: { path: 'profileImage' }
-      })
-      .skip((page - 1) * limit)
-      .limit(limit);
+      });
 
-    const total = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
+    const validFollowing = rawFollowing.filter(f => f.followingId !== null);
+    const total = validFollowing.length;
+    const paginatedFollowing = validFollowing.slice((page - 1) * limit, page * limit);
 
     return {
-      following,
+      following: paginatedFollowing,
       pagination: {
         total,
         page,
