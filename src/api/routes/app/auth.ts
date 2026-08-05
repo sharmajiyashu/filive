@@ -84,4 +84,38 @@ export default (router: Router) => {
                 return ResponseWrapper.error(res, error);
             }
         });
+
+    /**
+     * @swagger
+     * /app/auth/logout:
+     *   post:
+     *     summary: User logout
+     *     tags: [Auth]
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               fcmToken:
+     *                 type: string
+     *     responses:
+     *       200:
+     *         description: Logged out successfully
+     */
+    router.post('/auth/logout', async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            const { fcmToken } = req.body || {};
+            if (userId) {
+                await authService.logout(userId, fcmToken);
+            }
+            return ResponseWrapper.success(res, null, 'Logged out successfully');
+        } catch (error: any) {
+            return ResponseWrapper.error(res, error);
+        }
+    });
 }
+
