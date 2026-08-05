@@ -23,6 +23,7 @@ import game from './game';
 import music from './music';
 import payoutMethod from './payoutMethod';
 import payoutRequest from './payoutRequest';
+import liveData from './liveData';
 
 export default (router: Router): Router => {
   profile(router);
@@ -49,5 +50,6 @@ export default (router: Router): Router => {
   music(router);
   payoutMethod(router);
   payoutRequest(router);
+  liveData(router);
   return router;
 };
