@@ -41,4 +41,29 @@ export default (router: Router) => {
             return ResponseWrapper.error(res, error.message);
         }
     });
+
+    /**
+     * @swagger
+     * /admin/logout:
+     *   post:
+     *     summary: Admin logout
+     *     tags: [Admin Auth]
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Admin logged out successfully
+     */
+    router.post('/logout', async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            if (userId) {
+                await authService.logout(userId);
+            }
+            return ResponseWrapper.success(res, null, 'Admin logged out successfully');
+        } catch (error: any) {
+            return ResponseWrapper.error(res, error.message);
+        }
+    });
 }
+

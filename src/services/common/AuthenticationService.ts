@@ -362,4 +362,15 @@ export class AuthenticationService {
             AppLogger.info(`Resending mobile OTP ${otp} to ${data.mobile}`);
         }
     }
+
+    async logout(userId: string, fcmToken?: string): Promise<void> {
+        const user = await User.findById(userId);
+        if (!user) return;
+
+        if (fcmToken && user.fcmTokens) {
+            user.fcmTokens = user.fcmTokens.filter(t => t.token !== fcmToken);
+            await user.save();
+        }
+    }
 }
+
