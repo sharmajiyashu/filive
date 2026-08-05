@@ -58,11 +58,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     });
 
     // Retrieve user's inbox / chat threads
-    socket.on('get_chats', async (data: { page?: number; limit?: number; filter?: 'online' | 'frequent' | 'follow' }) => {
+    socket.on('get_chats', async (data: { page?: number; limit?: number; filter?: 'online' | 'frequent' | 'follow'; search?: string }) => {
         try {
             const page = Number(data.page ?? 1);
             const limit = Number(data.limit ?? 20);
-            const chats = await chatService.getUserChats(userId, page, limit, data.filter);
+            const chats = await chatService.getUserChats(userId, page, limit, data.filter, data.search);
             socket.emit('user_chats', chats);
         } catch (error: any) {
             socket.emit('error_message', error.message || 'Failed to load chats');

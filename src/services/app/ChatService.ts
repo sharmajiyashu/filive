@@ -9,7 +9,13 @@ import Follow from '../../models/Follow';
 export class ChatService {
   constructor() { }
 
-  async getUserChats(userId: string, page: number = 1, limit: number = 20, filter?: 'online' | 'frequent' | 'follow') {
+  async getUserChats(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+    filter?: 'online' | 'frequent' | 'follow',
+    search?: string
+  ) {
     const skip = (page - 1) * limit;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
@@ -18,7 +24,7 @@ export class ChatService {
     })
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole coins gender dob location country bio userId',
+        select: 'name email profileImage userRole coins gender dob location country bio userId mobile',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -29,12 +35,12 @@ export class ChatService {
     } catch (e) { }
 
     const followedUserIds = new Set<string>();
-    if (filter === 'follow') {
+    if (filter === 'follow' || search) {
       const follows = await Follow.find({ followerId: userObjectId, status: 'accepted' }).select('followingId');
       follows.forEach(f => followedUserIds.add(f.followingId.toString()));
     }
 
-    const data = await Promise.all(
+    let data = await Promise.all(
       chats.map(async (chat) => {
         const lastMessage = await Message.findOne({ chatId: chat._id, deletedAt: { $exists: false } })
           .sort({ createdAt: -1 })
@@ -155,6 +161,95 @@ export class ChatService {
         };
       })
     );
+
+    if (search && search.trim() !== '') {
+      const searchStr = search.trim();
+      const searchLower = searchStr.toLowerCase();
+      const searchNum = Number(searchStr);
+      const isSearchNum = !isNaN(searchNum);
+
+      data = data.filter((item: any) => {
+        const nameMatch = item.name && item.name.toLowerCase().includes(searchLower);
+        const otherUser = item.otherParticipant;
+        if (!otherUser) return nameMatch;
+
+        const otherNameMatch = otherUser.name && otherUser.name.toLowerCase().includes(searchLower);
+        const otherEmailMatch = otherUser.email && otherUser.email.toLowerCase().includes(searchLower);
+        const otherMobileMatch = otherUser.mobile && otherUser.mobile.toLowerCase().includes(searchLower);
+        const otherUserIdNumMatch = isSearchNum && otherUser.userId === searchNum;
+        const otherUserIdStrMatch = otherUser.userId !== undefined && String(otherUser.userId).includes(searchStr);
+
+        return nameMatch || otherNameMatch || otherEmailMatch || otherMobileMatch || otherUserIdNumMatch || otherUserIdStrMatch;
+      });
+
+      const userSearchConditions: any[] = [
+        { name: { $regex: searchStr, $options: 'i' } },
+        { email: { $regex: searchStr, $options: 'i' } },
+        { mobile: { $regex: searchStr, $options: 'i' } }
+      ];
+      if (isSearchNum) {
+        userSearchConditions.push({ userId: searchNum });
+      }
+
+      const globalUsers = await User.find({
+        _id: { $ne: userObjectId },
+        $or: userSearchConditions
+      })
+        .select('name email profileImage userRole coins gender dob location country bio userId mobile')
+        .populate('profileImage')
+        .limit(20);
+
+      for (const globalUser of globalUsers) {
+        const globalUserIdStr = globalUser._id.toString();
+        const alreadyInChats = data.some(
+          (d: any) => d.otherParticipant && (d.otherParticipant.id === globalUserIdStr || d.otherParticipant._id?.toString() === globalUserIdStr)
+        );
+
+        if (!alreadyInChats) {
+          const existingSingleChat = await Chat.findOne({
+            type: 'private',
+            'participants.userId': { $all: [userObjectId, globalUser._id] }
+          });
+
+          let isOnline = false;
+          if (io) {
+            const room = io.sockets.adapter.rooms.get(`user_${globalUserIdStr}`);
+            isOnline = room && room.size > 0;
+          }
+          const isFollowed = followedUserIds.has(globalUserIdStr);
+          const globalUserObj = globalUser.toObject ? globalUser.toObject() : globalUser;
+
+          data.push({
+            id: existingSingleChat ? existingSingleChat._id : (null as any),
+            type: 'private',
+            name: globalUser.name || globalUser.email || 'User',
+            mediaUrl: globalUser.profileImage ? (globalUser.profileImage as any).url : '',
+            role: 'member',
+            isMuted: false,
+            isPinned: false,
+            lastSeenAt: null,
+            archiveAt: null,
+            unreadCount: 0,
+            messageCount: 0,
+            isOnline,
+            isFollowed,
+            lastMessage: null,
+            lastMessageType: null,
+            agencyHostRequest: null,
+            userId: globalUserIdStr,
+            otherParticipant: {
+              id: globalUserIdStr,
+              ...globalUserObj
+            },
+            participants: [
+              { userId: userObjectId as any, role: 'admin', isMuted: false, isPinned: false, joinedAt: new Date() },
+              { userId: globalUser._id as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
+            ],
+            updatedAt: (globalUser as any).updatedAt || new Date()
+          });
+        }
+      }
+    }
 
     let filteredData = data;
     if (filter === 'online') {

@@ -33,6 +33,16 @@ export default (router: Router) => {
    *         schema:
    *           type: string
    *           enum: [online, frequent, follow]
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search by user name, email, mobile, or integer userId
+   *       - in: query
+   *         name: userId
+   *         schema:
+   *           type: string
+   *         description: Search specifically by integer userId or string query
    *     responses:
    *       200:
    *         description: List of user chats fetched successfully
@@ -136,7 +146,8 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '20');
       const filter = req.query.filter as 'online' | 'frequent' | 'follow' | undefined;
-      const result = await chatService.getUserChats(userId, page, limit, filter);
+      const search = req.query.search?.toString() || req.query.userId?.toString();
+      const result = await chatService.getUserChats(userId, page, limit, filter, search);
       return ResponseWrapper.success(res, result, 'Chats fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
