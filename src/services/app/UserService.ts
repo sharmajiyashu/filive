@@ -8,6 +8,7 @@ import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
 import Chat from '../../models/Chat';
 import Room from '../../models/Room';
+import FamilyMember from '../../models/FamilyMember';
 import mongoose from 'mongoose';
 
 import { LevelService } from './LevelService';
@@ -41,7 +42,14 @@ export class UserService {
       const searchConditions: any[] = [
         { name: { $regex: searchStr, $options: 'i' } },
         { email: { $regex: searchStr, $options: 'i' } },
-        { mobile: { $regex: searchStr, $options: 'i' } }
+        { mobile: { $regex: searchStr, $options: 'i' } },
+        { country: { $regex: searchStr, $options: 'i' } },
+        { nationality: { $regex: searchStr, $options: 'i' } },
+        { 'location.city': { $regex: searchStr, $options: 'i' } },
+        { 'location.state': { $regex: searchStr, $options: 'i' } },
+        { gender: { $regex: searchStr, $options: 'i' } },
+        { bio: { $regex: searchStr, $options: 'i' } },
+        { selfIntroduce: { $regex: searchStr, $options: 'i' } }
       ];
 
       const searchNum = Number(searchStr);
@@ -52,13 +60,29 @@ export class UserService {
       query.$or = searchConditions;
     }
 
-    const users = await User.find(query)
-      .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
-      .populate('profileImage')
+    const total = await User.countDocuments(query);
+    const userDocs = await User.find(query)
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const total = await User.countDocuments(query);
+    let users: any[];
+    if (search && search.trim() !== '') {
+      users = await Promise.all(
+        userDocs.map(async (u) => {
+          try {
+            return await this.getUserDetail(u._id.toString(), currentUserId);
+          } catch (err) {
+            return u;
+          }
+        })
+      );
+    } else {
+      users = await User.find(query)
+        .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+        .populate('profileImage')
+        .skip((page - 1) * limit)
+        .limit(limit);
+    }
 
     return {
       users,
@@ -236,6 +260,27 @@ export class UserService {
     // Check if the user has an active livestream
     const activeLive = await Room.findOne({ hostId: user._id, status: 'live' });
 
+    // Fetch user's family membership details
+    const familyMemberDoc = await FamilyMember.findOne({ userId: user._id })
+      .populate({
+        path: 'familyId',
+        populate: [
+          { path: 'creatorId', select: 'name email profileImage userId' },
+          { path: 'image' }
+        ]
+      });
+
+    const family = familyMemberDoc && familyMemberDoc.familyId ? familyMemberDoc.familyId : null;
+    const familyRole = familyMemberDoc ? familyMemberDoc.role : null;
+
+    // Fetch user's joined group chats
+    const groupChats = await Chat.find({
+      type: 'group',
+      'participants.userId': user._id
+    })
+      .select('name mediaId type participants createdAt')
+      .populate('mediaId');
+
     return {
       user: {
         ...user.toObject(),
@@ -243,12 +288,18 @@ export class UserService {
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
         charmLevelInfo,
+        family,
+        familyRole,
+        groups: groupChats,
         isChatCreated,
         chatId,
         isPinned,
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null
       },
+      family,
+      familyRole,
+      groups: groupChats,
       isFollowing: isFollowingAuthor,
       isChatCreated,
       chatId,

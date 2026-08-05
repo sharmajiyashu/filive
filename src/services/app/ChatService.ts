@@ -178,14 +178,21 @@ export class ChatService {
         const otherMobileMatch = otherUser.mobile && otherUser.mobile.toLowerCase().includes(searchLower);
         const otherUserIdNumMatch = isSearchNum && otherUser.userId === searchNum;
         const otherUserIdStrMatch = otherUser.userId !== undefined && String(otherUser.userId).includes(searchStr);
+        const otherCountryMatch = otherUser.country && otherUser.country.toLowerCase().includes(searchLower);
+        const otherBioMatch = otherUser.bio && otherUser.bio.toLowerCase().includes(searchLower);
 
-        return nameMatch || otherNameMatch || otherEmailMatch || otherMobileMatch || otherUserIdNumMatch || otherUserIdStrMatch;
+        return nameMatch || otherNameMatch || otherEmailMatch || otherMobileMatch || otherUserIdNumMatch || otherUserIdStrMatch || otherCountryMatch || otherBioMatch;
       });
 
       const userSearchConditions: any[] = [
         { name: { $regex: searchStr, $options: 'i' } },
         { email: { $regex: searchStr, $options: 'i' } },
-        { mobile: { $regex: searchStr, $options: 'i' } }
+        { mobile: { $regex: searchStr, $options: 'i' } },
+        { country: { $regex: searchStr, $options: 'i' } },
+        { nationality: { $regex: searchStr, $options: 'i' } },
+        { 'location.city': { $regex: searchStr, $options: 'i' } },
+        { gender: { $regex: searchStr, $options: 'i' } },
+        { bio: { $regex: searchStr, $options: 'i' } }
       ];
       if (isSearchNum) {
         userSearchConditions.push({ userId: searchNum });
