@@ -201,6 +201,7 @@ export class UserService {
 
     let isChatCreated = false;
     let chatId = null;
+    let isPinned = false;
     if (currentUserId && user._id) {
       const existingChat = await Chat.findOne({
         type: 'private',
@@ -209,6 +210,10 @@ export class UserService {
       if (existingChat) {
         isChatCreated = true;
         chatId = existingChat._id;
+        const currentParticipant = existingChat.participants.find(
+          p => p.userId.toString() === currentUserId.toString()
+        );
+        isPinned = currentParticipant ? !!currentParticipant.isPinned : false;
       }
     }
 
@@ -224,12 +229,14 @@ export class UserService {
         charmLevelInfo,
         isChatCreated,
         chatId,
+        isPinned,
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null
       },
       isFollowing: isFollowingAuthor,
       isChatCreated,
       chatId,
+      isPinned,
       followersCount,
       followingCount,
       friendsCount,
