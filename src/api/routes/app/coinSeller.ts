@@ -203,4 +203,57 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/coin-seller/list:
+   *   get:
+   *     summary: Get public list of active coin sellers for Recharge Service with pagination & filters
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter by country code or name (e.g. IND, India)
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search by seller name or 10-digit userId
+   *     responses:
+   *       200:
+   *         description: Public list of coin sellers fetched successfully
+   */
+  sellerRouter.get('/list', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '20');
+      const country = req.query.country?.toString();
+      const search = req.query.search?.toString();
+
+      const result = await coinSellerService.getPublicCoinSellersList({
+        page,
+        limit,
+        country,
+        search,
+      });
+      return ResponseWrapper.success(res, result, 'Coin sellers list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };
+
