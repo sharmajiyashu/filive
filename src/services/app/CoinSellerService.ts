@@ -385,4 +385,110 @@ export class CoinSellerService {
       charmLevelInfo,
     };
   }
+
+  /**
+   * Get public paginated coin sellers list for app users (Recharge Service)
+   */
+  async getPublicCoinSellersList(params: {
+    page?: number;
+    limit?: number;
+    country?: string;
+    search?: string;
+  }) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, Math.min(100, params.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const query: any = { isCoinseller: true, isBlocked: false };
+
+    if (params.country) {
+      query.$or = [
+        { country: new RegExp(`^${params.country}$`, 'i') },
+        { nationality: new RegExp(`^${params.country}$`, 'i') }
+      ];
+    }
+
+    if (params.search) {
+      const searchRegex = new RegExp(params.search, 'i');
+      const numericSearch = Number(params.search);
+      query.$or = [
+        { name: searchRegex },
+        { mobile: searchRegex },
+        { whatsapp: searchRegex },
+        ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : [])
+      ];
+    }
+
+    const total = await User.countDocuments(query);
+    const sellers = await User.find(query)
+      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins createdAt')
+      .populate('profileImage')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const list = await Promise.all(
+      sellers.map(async (seller) => {
+        const sellerObjectId = seller._id;
+
+        // 30 days deals calculation
+        const deals30DaysAgg = await CoinHistory.aggregate([
+          {
+            $match: {
+              userId: sellerObjectId,
+              type: 'transfer',
+              amount: { $lt: 0 },
+              createdAt: { $gte: thirtyDaysAgo }
+            }
+          },
+          { $group: { _id: null, totalCoinsSold: { $sum: { $abs: '$amount' } } } }
+        ]);
+        const dealsLast30Days = deals30DaysAgg[0]?.totalCoinsSold || 0;
+
+        // Unique buyers count
+        const uniqueCustomers = await CoinHistory.distinct('relatedUserId', {
+          userId: sellerObjectId,
+          type: 'transfer',
+          amount: { $lt: 0 }
+        });
+        const buyersCount = uniqueCustomers.length;
+
+        // Format deals number (e.g. 183.9M, 1.2K, 500)
+        let dealsFormatted = dealsLast30Days.toString();
+        if (dealsLast30Days >= 1_000_000) {
+          dealsFormatted = (dealsLast30Days / 1_000_000).toFixed(1) + 'M';
+        } else if (dealsLast30Days >= 1_000) {
+          dealsFormatted = (dealsLast30Days / 1_000).toFixed(1) + 'K';
+        }
+
+        return {
+          _id: seller._id,
+          userId: seller.userId,
+          name: seller.name || 'Seller',
+          profileImage: seller.profileImage || null,
+          mobile: seller.mobile || '',
+          whatsapp: seller.whatsapp || seller.mobile || '',
+          country: seller.country || 'IND',
+          badge: 'Senior Seller',
+          buyersCount,
+          dealsLast30Days,
+          dealsLast30DaysFormatted: dealsFormatted,
+        };
+      })
+    );
+
+    return {
+      sellers: list,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
 }
+
