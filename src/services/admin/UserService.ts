@@ -216,14 +216,51 @@ export class UserService {
     if (updateData.name !== undefined) user.name = updateData.name;
     if (updateData.email !== undefined) user.email = updateData.email;
     if (updateData.mobile !== undefined) user.mobile = updateData.mobile;
+    if (updateData.whatsapp !== undefined) user.whatsapp = updateData.whatsapp;
     if (updateData.gender !== undefined) user.gender = updateData.gender;
     if (updateData.country !== undefined) user.country = updateData.country;
     if (updateData.dob !== undefined) user.dob = new Date(updateData.dob);
     if (updateData.bio !== undefined) user.bio = updateData.bio;
     if (updateData.coins !== undefined) user.coins = Number(updateData.coins);
+    if (updateData.coinSellerCoins !== undefined) user.coinSellerCoins = Number(updateData.coinSellerCoins);
     if (updateData.isCoinseller !== undefined) user.isCoinseller = Boolean(updateData.isCoinseller);
     if (updateData.isPremium !== undefined) user.isPremium = Boolean(updateData.isPremium);
+    if (updateData.isVerified !== undefined) user.isVerified = Boolean(updateData.isVerified);
+    if (updateData.voiceCallPrice !== undefined) user.voiceCallPrice = Number(updateData.voiceCallPrice);
+    if (updateData.videoCallPrice !== undefined) user.videoCallPrice = Number(updateData.videoCallPrice);
+    if (updateData.userRole !== undefined) user.userRole = updateData.userRole;
     if (updateData.profileImage !== undefined) user.profileImage = updateData.profileImage;
+
+    await user.save();
+    return user;
+  }
+
+  public async blockUserWithDuration(userId: string, params: { blockType: 'permanent' | 'temporary'; durationHours?: number; reason?: string }) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    user.isBlocked = true;
+    user.blockReason = params.reason || (params.blockType === 'permanent' ? 'Permanently blocked by Admin' : 'Temporarily blocked by Admin');
+
+    if (params.blockType === 'temporary' && params.durationHours && params.durationHours > 0) {
+      user.blockedUntil = new Date(Date.now() + params.durationHours * 3600 * 1000);
+    } else {
+      user.blockedUntil = undefined;
+    }
+
+    await user.save();
+    return user;
+  }
+
+  public async unblockUser(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    user.isBlocked = false;
+    user.blockedUntil = undefined;
+    user.blockReason = undefined;
+    user.instantBlock = false;
+    user.deviceBan = false;
 
     await user.save();
     return user;
@@ -235,6 +272,10 @@ export class UserService {
     user.instantBlock = !user.instantBlock;
     if (user.instantBlock) {
       user.isBlocked = true;
+      user.blockReason = 'Instant Blocked by Admin';
+    } else {
+      user.isBlocked = false;
+      user.blockedUntil = undefined;
     }
     await user.save();
     return user;
@@ -246,6 +287,10 @@ export class UserService {
     user.deviceBan = !user.deviceBan;
     if (user.deviceBan) {
       user.isBlocked = true;
+      user.blockReason = 'Device Banned by Admin';
+    } else {
+      user.isBlocked = false;
+      user.blockedUntil = undefined;
     }
     await user.save();
     return user;

@@ -73,6 +73,8 @@ export interface IUser extends Document {
   referredBy?: mongoose.Types.ObjectId;
   instantBlock: boolean;
   deviceBan: boolean;
+  blockReason?: string;
+  blockedUntil?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -156,6 +158,8 @@ const UserSchema: Schema = new Schema(
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
     instantBlock: { type: Boolean, default: false },
     deviceBan: { type: Boolean, default: false },
+    blockReason: { type: String },
+    blockedUntil: { type: Date },
   },
   {
     timestamps: true,

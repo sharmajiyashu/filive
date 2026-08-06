@@ -12,6 +12,10 @@ import CoinHistory from '../../../models/CoinHistory';
 import { ResponseWrapper } from '../../responseWrapper';
 import { LevelService } from '../../../services/app/LevelService';
 import { UserService } from '../../../services/admin/UserService';
+import upload from '../../middleware/upload';
+import { CloudinaryService } from '../../../services/common/CloudinaryService';
+import { MediaService } from '../../../services/common/MediaService';
+import { resolveMediaType } from '../../../utils/mediaType';
 
 export default (router: Router) => {
   const userRouter = Router();
@@ -49,11 +53,45 @@ export default (router: Router) => {
     }
   });
 
-  userRouter.put('/:id/profile', async (req: any, res: Response) => {
+  userRouter.put('/:id/profile', upload.single('profileImage'), async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const user = await userService.updateUserProfile(userId, req.body);
+      let updateData = { ...req.body };
+      const cloudinaryService = Container.get(CloudinaryService);
+      const mediaService = Container.get(MediaService);
+
+      if (req.file) {
+        const mediaType = resolveMediaType(req.file);
+        const uploadResults = await cloudinaryService.uploadMedia(mediaType, [req.file], 'profiles');
+        if (uploadResults.length > 0) {
+          const media = await mediaService.createMedia({ ...uploadResults[0] });
+          updateData.profileImage = media._id;
+        }
+      }
+
+      const user = await userService.updateUserProfile(userId, updateData);
       return ResponseWrapper.success(res, user, 'User profile updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/block-duration', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { blockType, durationHours, reason } = req.body;
+      const user = await userService.blockUserWithDuration(userId, { blockType, durationHours: Number(durationHours), reason });
+      return ResponseWrapper.success(res, user, 'User block status updated with duration');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/unblock', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.unblockUser(userId);
+      return ResponseWrapper.success(res, user, 'User unblocked successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
