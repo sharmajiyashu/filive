@@ -22,6 +22,7 @@ import coinPackage from './coinPackage';
 import payoutMethod from './payoutMethod';
 import payoutRequest from './payoutRequest';
 import country from './country';
+import reaction from './reaction';
 
 export default (router: Router): Router => {
   auth(router);
@@ -47,5 +48,7 @@ export default (router: Router): Router => {
   payoutMethod(router);
   payoutRequest(router);
   country(router);
+  reaction(router);
   return router;
 };
+
