@@ -71,6 +71,8 @@ export interface IUser extends Document {
   videoVerificationVideo?: mongoose.Types.ObjectId;
   videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
   referredBy?: mongoose.Types.ObjectId;
+  instantBlock: boolean;
+  deviceBan: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -152,6 +154,8 @@ const UserSchema: Schema = new Schema(
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
     videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    instantBlock: { type: Boolean, default: false },
+    deviceBan: { type: Boolean, default: false },
   },
   {
     timestamps: true,

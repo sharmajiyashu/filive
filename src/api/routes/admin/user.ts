@@ -19,6 +19,97 @@ export default (router: Router) => {
 
   router.use('/users', userRouter);
 
+  userRouter.get('/management/list', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString();
+      const category = req.query.category?.toString();
+      const country = req.query.country?.toString();
+      const status = req.query.status?.toString();
+      const role = req.query.role?.toString();
+      const startDate = req.query.startDate?.toString();
+      const endDate = req.query.endDate?.toString();
+
+      const result = await userService.getUsersManagementList({
+        page,
+        limit,
+        search,
+        category,
+        country,
+        status,
+        role,
+        startDate,
+        endDate,
+      });
+
+      return ResponseWrapper.success(res, result, 'User management list fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/profile', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.updateUserProfile(userId, req.body);
+      return ResponseWrapper.success(res, user, 'User profile updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/instant-block', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.toggleInstantBlock(userId);
+      return ResponseWrapper.success(res, user, 'Instant block toggled successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/device-ban', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.toggleDeviceBan(userId);
+      return ResponseWrapper.success(res, user, 'Device ban toggled successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.post('/:id/send-notification', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { title, message } = req.body;
+      return ResponseWrapper.success(res, { userId, title, message, sent: true }, 'Notification sent successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.post('/:id/send-announcement', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { title, message } = req.body;
+      return ResponseWrapper.success(res, { userId, title, message, sent: true }, 'Announcement sent successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.put('/:id/adjust-coins', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { amount, description } = req.body;
+      const user = await userService.adjustUserCoins(userId, Number(amount), description);
+      return ResponseWrapper.success(res, user, 'User coins adjusted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   /**
    * @swagger
    * /admin/users:

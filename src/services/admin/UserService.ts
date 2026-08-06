@@ -2,7 +2,9 @@ import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import AgencyHost from '../../models/AgencyHost';
+import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
+import Follow from '../../models/Follow';
 import { LevelService } from '../app/LevelService';
 import { getUserCountryAndLevels } from '../../utils/userLookup';
 
@@ -46,6 +48,228 @@ export class UserService {
       },
     };
   }
+
+  public async getUsersManagementList(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    country?: string;
+    status?: string;
+    role?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, Math.min(100, params.limit || 10));
+    const skip = (page - 1) * limit;
+
+    const query: any = {};
+
+    // Category filter
+    if (params.category && params.category !== 'all') {
+      if (params.category === 'vip') {
+        query.isPremium = true;
+      } else if (params.category === 'normal' || params.category === 'real') {
+        query.isPremium = false;
+      }
+    }
+
+    // Country filter
+    if (params.country && params.country !== 'all') {
+      query.country = new RegExp(params.country, 'i');
+    }
+
+    // Status filter
+    if (params.status && params.status !== 'all') {
+      if (params.status === 'blocked') {
+        query.isBlocked = true;
+      } else if (params.status === 'active') {
+        query.isBlocked = false;
+      } else if (params.status === 'online') {
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        query.lastLoginAt = { $gte: fifteenMinsAgo };
+      } else if (params.status === 'offline') {
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        query.$or = [{ lastLoginAt: { $lt: fifteenMinsAgo } }, { lastLoginAt: { $exists: false } }];
+      }
+    }
+
+    // Role filter
+    if (params.role && params.role !== 'all') {
+      if (params.role === 'coinseller') {
+        query.isCoinseller = true;
+      } else if (params.role === 'admin') {
+        query.userRole = 'admin';
+      } else if (params.role === 'user') {
+        query.userRole = 'user';
+      }
+    }
+
+    // Search filter
+    if (params.search) {
+      const searchRegex = new RegExp(params.search, 'i');
+      const numericSearch = Number(params.search);
+      query.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { mobile: searchRegex },
+        { whatsapp: searchRegex },
+        ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : []),
+      ];
+    }
+
+    // Date range filter
+    if (params.startDate || params.endDate) {
+      query.createdAt = {};
+      if (params.startDate) query.createdAt.$gte = new Date(params.startDate);
+      if (params.endDate) query.createdAt.$lte = new Date(params.endDate);
+    }
+
+    // Aggregated Header Stats
+    const [totalUsers, totalActiveUsers, males, females] = await Promise.all([
+      User.countDocuments({}),
+      User.countDocuments({ isBlocked: false }),
+      User.countDocuments({ gender: 'Male' }),
+      User.countDocuments({ gender: 'Female' }),
+    ]);
+
+    const filteredTotal = await User.countDocuments(query);
+    const users = await User.find(query)
+      .populate('profileImage')
+      .populate('countryId')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const levelService = Container.get(LevelService);
+
+    const populatedUsers = await Promise.all(
+      users.map(async (u) => {
+        const userObj: any = u;
+        const [followersCount, followingCount, friendsCount] = await Promise.all([
+          Follow.countDocuments({ followingId: userObj._id }),
+          Follow.countDocuments({ followerId: userObj._id }),
+          Follow.countDocuments({ followerId: userObj._id, status: 'accepted' }),
+        ]);
+
+        const { level, levelInfo } = await getUserCountryAndLevels(userObj, levelService);
+
+        const isOnline = userObj.lastLoginAt
+          ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+          : false;
+
+        let roleBadge = 'User';
+        if (userObj.userRole === 'admin') roleBadge = 'Admin';
+        else if (userObj.isCoinseller) roleBadge = 'CoinSeller';
+
+        const age = userObj.dob ? new Date().getFullYear() - new Date(userObj.dob).getFullYear() : 18;
+
+        return {
+          ...userObj,
+          roleBadge,
+          userType: userObj.isPremium ? 'VIP' : 'Normal',
+          status: isOnline ? 'Online' : 'Offline',
+          isOnline,
+          age,
+          wealthLevel: {
+            levelNumber: level || 1,
+            name: typeof levelInfo?.name === 'string' ? levelInfo.name : (levelInfo?.levelName || 'Bronze Explorer'),
+          },
+          followersCount,
+          followingCount,
+          friendsCount,
+          postsCount: 0,
+          videosCount: 0,
+          instantBlock: !!userObj.instantBlock,
+          deviceBan: !!userObj.deviceBan,
+        };
+      })
+    );
+
+    return {
+      users: populatedUsers,
+      summary: {
+        totalUsers,
+        totalActiveUsers,
+        males,
+        females,
+      },
+      pagination: {
+        total: filteredTotal,
+        page,
+        limit,
+        totalPages: Math.ceil(filteredTotal / limit),
+      },
+    };
+  }
+
+  public async updateUserProfile(userId: string, updateData: any) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    if (updateData.name !== undefined) user.name = updateData.name;
+    if (updateData.email !== undefined) user.email = updateData.email;
+    if (updateData.mobile !== undefined) user.mobile = updateData.mobile;
+    if (updateData.gender !== undefined) user.gender = updateData.gender;
+    if (updateData.country !== undefined) user.country = updateData.country;
+    if (updateData.dob !== undefined) user.dob = new Date(updateData.dob);
+    if (updateData.bio !== undefined) user.bio = updateData.bio;
+    if (updateData.coins !== undefined) user.coins = Number(updateData.coins);
+    if (updateData.isCoinseller !== undefined) user.isCoinseller = Boolean(updateData.isCoinseller);
+    if (updateData.isPremium !== undefined) user.isPremium = Boolean(updateData.isPremium);
+    if (updateData.profileImage !== undefined) user.profileImage = updateData.profileImage;
+
+    await user.save();
+    return user;
+  }
+
+  public async toggleInstantBlock(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    user.instantBlock = !user.instantBlock;
+    if (user.instantBlock) {
+      user.isBlocked = true;
+    }
+    await user.save();
+    return user;
+  }
+
+  public async toggleDeviceBan(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    user.deviceBan = !user.deviceBan;
+    if (user.deviceBan) {
+      user.isBlocked = true;
+    }
+    await user.save();
+    return user;
+  }
+
+  public async adjustUserCoins(userId: string, amount: number, description?: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    const currentCoins = user.coins || 0;
+    const newCoins = currentCoins + amount;
+    if (newCoins < 0) {
+      throw new Error(`Insufficient coins balance. Resulting balance cannot be less than zero.`);
+    }
+
+    user.coins = newCoins;
+    await user.save();
+
+    await CoinHistory.create({
+      userId: user._id,
+      amount: amount,
+      type: 'other',
+      description: description || (amount >= 0 ? 'Coins Added by Admin' : 'Coins Deducted by Admin'),
+    });
+
+    return user;
+  }
+
 
   public async toggleCoinseller(userId: string) {
     const user = await User.findById(userId);
