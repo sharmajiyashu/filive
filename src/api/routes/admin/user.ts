@@ -346,25 +346,75 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString();
+      const status = req.query.status?.toString() as any;
+      const startDate = req.query.startDate?.toString();
+      const endDate = req.query.endDate?.toString();
 
-      const query = { isCoinseller: true };
-      const users = await User.find(query)
-        .populate('profileImage')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
+      const result = await userService.getCoinTradersList({
+        page,
+        limit,
+        search,
+        status,
+        startDate,
+        endDate,
+      });
 
-      const total = await User.countDocuments(query);
+      return ResponseWrapper.success(res, result, 'Coin traders fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 
-      return ResponseWrapper.success(res, {
-        users,
-        pagination: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit)
+  /**
+   * @swagger
+   * /admin/users/coinsellers/{id}/detail:
+   *   get:
+   *     summary: Get detailed coin trader profile, stats, levels and transaction history
+   *     tags: [Admin - Users]
+   */
+  userRouter.get('/coinsellers/:id/detail', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '20');
+
+      const result = await userService.getCoinTraderDetails(userId, page, limit);
+      return ResponseWrapper.success(res, result, 'Coin trader details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/coinsellers/add:
+   *   post:
+   *     summary: Add user as a Coin Trader by 10-digit userId or ID
+   *     tags: [Admin - Users]
+   */
+  userRouter.post('/coinsellers/add', async (req: any, res: Response) => {
+    try {
+      const { identifier } = req.body;
+      let query: any = {};
+      if (mongoose.Types.ObjectId.isValid(identifier)) {
+        query = { _id: identifier };
+      } else {
+        const num = Number(identifier);
+        if (!isNaN(num)) {
+          query = { userId: num };
+        } else {
+          query = { $or: [{ email: identifier }, { mobile: identifier }] };
         }
-      }, 'Coin sellers fetched successfully');
+      }
+
+      const user = await User.findOne(query);
+      if (!user) {
+        throw new Error('User not found with specified ID or details');
+      }
+
+      const result = await userService.setCoinsellerAndRemoveFromAgencies(user._id.toString(), true);
+      return ResponseWrapper.success(res, result, 'User added as Coin Trader successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -444,6 +494,8 @@ export default (router: Router) => {
    *             properties:
    *               amount:
    *                 type: integer
+   *               description:
+   *                 type: string
    *     responses:
    *       200:
    *         description: Coinseller balance updated successfully
@@ -451,13 +503,14 @@ export default (router: Router) => {
   userRouter.put('/:id/coinseller-coins', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const { amount } = req.body;
-      const user = await userService.adjustCoinsellerCoins(userId, amount);
+      const { amount, description } = req.body;
+      const user = await userService.adjustCoinsellerCoins(userId, Number(amount), description);
       return ResponseWrapper.success(res, user, `Coinseller balance updated successfully`);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
   });
+
 
   /**
    * @swagger
