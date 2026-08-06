@@ -17,7 +17,7 @@ export class StoryService {
     private mediaService: MediaService
   ) { }
 
-  public async createStory(userId: string, data: { content: string; tags?: any }, files?: Express.Multer.File[]) {
+  public async createStory(userId: string, data: { content?: string; tags?: any }, files?: Express.Multer.File[]) {
     const mediaIds: mongoose.Types.ObjectId[] = [];
 
     if (files && files.length > 0) {
@@ -28,9 +28,11 @@ export class StoryService {
       }
     }
 
-    // Parse hashtags and mentions from content if not provided
-    const hashtags = data.content.match(/#[a-z0-9_]+/gi)?.map(tag => tag.slice(1)) || [];
-    const mentionNames = data.content.match(/@[a-z0-9_]+/gi)?.map(name => name.slice(1)) || [];
+    const contentText = data?.content || '';
+
+    // Parse hashtags and mentions from content if provided
+    const hashtags = contentText.match(/#[a-z0-9_]+/gi)?.map(tag => tag.slice(1)) || [];
+    const mentionNames = contentText.match(/@[a-z0-9_]+/gi)?.map(name => name.slice(1)) || [];
 
     // Find user IDs for mentions
     const mentions: mongoose.Types.ObjectId[] = [];
@@ -39,12 +41,12 @@ export class StoryService {
       mentionedUsers.forEach(user => mentions.push(user._id as mongoose.Types.ObjectId));
     }
 
-    const providedTags = typeof data.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data.tags) ? data.tags : (data.tags ? [data.tags] : []));
+    const providedTags = typeof data?.tags === 'string' ? (data.tags.startsWith('[') ? JSON.parse(data.tags) : [data.tags]) : (Array.isArray(data?.tags) ? data.tags : (data?.tags ? [data.tags] : []));
     const allTags = [...new Set([...hashtags, ...providedTags])];
 
     const story = await Story.create({
       userId,
-      content: data.content,
+      content: contentText,
       images: mediaIds,
       tags: allTags,
       mentions: mentions,

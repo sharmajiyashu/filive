@@ -41,10 +41,11 @@ export default (router: Router) => {
    *       201:
    *         description: Story created successfully
    */
-  appRouter.post('/', upload.array('images', 10), async (req: any, res: Response) => {
+  appRouter.post('/', upload.any(), async (req: any, res: Response) => {
     try {
       const userId = req.user.id; // Corrected from _id to id to match auth middleware
-      const story = await storyService.createStory(userId, req.body, req.files as Express.Multer.File[]);
+      const files = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+      const story = await storyService.createStory(userId, req.body, files);
       return ResponseWrapper.success(res, story, 'Story created successfully', 201);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

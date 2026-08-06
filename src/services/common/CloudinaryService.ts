@@ -5,6 +5,8 @@ import { MediaType } from '../../constants/enum';
 import { randomUUID } from 'crypto';
 import streamifier from 'streamifier';
 
+import { resolveMediaType } from '../../utils/mediaType';
+
 export interface IMediaResult {
   type: MediaType;
   key: string;
@@ -27,12 +29,16 @@ export class CloudinaryService {
     const results: IMediaResult[] = [];
 
     for (const file of files) {
-      const result = await this.uploadToCloudinary(file.buffer, folderPath, type);
+      const detectedType = resolveMediaType(file);
+      const mediaType = (detectedType === MediaType.video || detectedType === MediaType.svga || !type || type === MediaType.image)
+        ? detectedType
+        : type;
+      const result = await this.uploadToCloudinary(file.buffer, folderPath, mediaType);
       
       results.push({
-        type: type,
+        type: mediaType,
         key: result.public_id,
-        mimetype: type === MediaType.svga ? 'application/svga' : file.mimetype,
+        mimetype: mediaType === MediaType.svga ? 'application/svga' : file.mimetype,
         url: result.secure_url,
         size: result.bytes,
         width: result.width,

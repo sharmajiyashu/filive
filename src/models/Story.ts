@@ -16,7 +16,7 @@ export interface IStory extends Document {
 const StorySchema: Schema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    content: { type: String, required: true },
+    content: { type: String, default: '' },
     images: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     tags: [{ type: String }],
     mentions: [{ type: Schema.Types.ObjectId, ref: 'User' }],

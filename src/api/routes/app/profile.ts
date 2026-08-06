@@ -322,15 +322,17 @@ export default (router: Router) => {
    *         description: Video verification uploaded successfully
    */
   router.post('/profile/video-verification',
-    upload.single('video'),
+    upload.any(),
     async (req: any, res: Response) => {
       try {
         const userId = req.user.id;
-        if (!req.file) throw new Error('Please upload a video');
-        const result = await profileService.uploadVideoVerification(userId, req.file);
+        const file = req.file || (req.files && (req.files as any)[0]);
+        if (!file) throw new Error('Please upload a video');
+        const result = await profileService.uploadVideoVerification(userId, file);
         return ResponseWrapper.success(res, result, 'Video uploaded successfully');
       } catch (error: any) {
         return ResponseWrapper.error(res, error);
       }
-    });
+    }
+  );
 };
