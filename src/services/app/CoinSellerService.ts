@@ -4,11 +4,16 @@ import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import { AppSettingService } from '../common/AppSettingService';
 import { LevelService } from './LevelService';
+import { ChatService } from './ChatService';
 import { getUserCountryAndLevels, toPlainObject } from '../../utils/userLookup';
 
 @Service()
 export class CoinSellerService {
-  constructor(@Inject() private levelService: LevelService) { }
+  constructor(
+    @Inject() private levelService: LevelService,
+    @Inject() private chatService: ChatService
+  ) { }
+
 
   async transferCoins(senderId: string, targetUserId: number, amount: number) {
     if (!amount || amount <= 0) {
@@ -390,6 +395,7 @@ export class CoinSellerService {
    * Get public paginated coin sellers list for app users (Recharge Service)
    */
   async getPublicCoinSellersList(params: {
+    currentUserId?: string;
     page?: number;
     limit?: number;
     country?: string;
@@ -464,6 +470,17 @@ export class CoinSellerService {
           dealsFormatted = (dealsLast30Days / 1_000).toFixed(1) + 'K';
         }
 
+        // Get or Auto-Create Chat between current user and seller
+        let chatId: string | null = null;
+        if (params.currentUserId) {
+          try {
+            const chat = await this.chatService.getOrCreateSingleChat(params.currentUserId, seller._id.toString());
+            chatId = chat ? chat._id.toString() : null;
+          } catch (err) {
+            chatId = null;
+          }
+        }
+
         return {
           _id: seller._id,
           userId: seller.userId,
@@ -471,6 +488,7 @@ export class CoinSellerService {
           profileImage: seller.profileImage || null,
           mobile: seller.mobile || '',
           whatsapp: seller.whatsapp || seller.mobile || '',
+          chatId,
           country: seller.country || 'IND',
           badge: 'Senior Seller',
           buyersCount,
@@ -490,5 +508,6 @@ export class CoinSellerService {
       }
     };
   }
+
 }
 

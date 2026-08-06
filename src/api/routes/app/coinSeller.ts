@@ -239,12 +239,14 @@ export default (router: Router) => {
    */
   sellerRouter.get('/list', async (req: any, res: Response) => {
     try {
+      const currentUserId = req.user?.id || req.user?._id;
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '20');
       const country = req.query.country?.toString();
       const search = req.query.search?.toString();
 
       const result = await coinSellerService.getPublicCoinSellersList({
+        currentUserId,
         page,
         limit,
         country,
@@ -255,5 +257,6 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
 };
 
