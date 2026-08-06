@@ -313,8 +313,8 @@ export class UserService {
         withdrawnCoins,
       },
       level: {
-        name: levelInfo?.levelName || 'Sapphire Visionary',
-        levelNumber: level || 7,
+        name: typeof levelInfo?.name === 'string' ? levelInfo.name : (typeof levelInfo?.name === 'object' ? (levelInfo.name.en || 'Sapphire Visionary') : (levelInfo?.levelName || 'Sapphire Visionary')),
+        levelNumber: typeof level === 'number' ? level : 7,
         currentCoins: user.wealthCoins || user.coins || 0,
         nextThreshold: 5599,
         progressText: `${user.wealthCoins || user.coins || 0} / 5599`,
