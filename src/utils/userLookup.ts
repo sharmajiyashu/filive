@@ -11,7 +11,7 @@ export function formatLevelInfo(levelInfo: any) {
   if (!levelInfo) return null;
   return {
     ...levelInfo,
-    level: levelInfo.currentLevel ?? null,
+    level: typeof levelInfo.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1,
   };
 }
 

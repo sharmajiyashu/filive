@@ -166,6 +166,10 @@ export class UserService {
 
         const age = userObj.dob ? new Date().getFullYear() - new Date(userObj.dob).getFullYear() : 18;
 
+        const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1);
+        const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
+        const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
+
         return {
           ...userObj,
           roleBadge,
@@ -174,8 +178,8 @@ export class UserService {
           isOnline,
           age,
           wealthLevel: {
-            levelNumber: level || 1,
-            name: typeof levelInfo?.name === 'string' ? levelInfo.name : (levelInfo?.levelName || 'Bronze Explorer'),
+            levelNumber: levelNum,
+            name: levelNameStr,
           },
           followersCount,
           followingCount,
