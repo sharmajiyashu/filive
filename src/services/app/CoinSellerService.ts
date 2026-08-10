@@ -5,7 +5,8 @@ import CoinHistory from '../../models/CoinHistory';
 import { AppSettingService } from '../common/AppSettingService';
 import { LevelService } from './LevelService';
 import { ChatService } from './ChatService';
-import { getUserCountryAndLevels, toPlainObject } from '../../utils/userLookup';
+import { getUserCountryAndLevels, resolveCountryObject, toPlainObject } from '../../utils/userLookup';
+import Country from '../../models/Country';
 
 @Service()
 export class CoinSellerService {
@@ -406,29 +407,69 @@ export class CoinSellerService {
     const skip = (page - 1) * limit;
 
     const query: any = { isCoinseller: true, isBlocked: false };
+    const andConditions: any[] = [];
 
-    if (params.country) {
-      query.$or = [
-        { country: new RegExp(`^${params.country}$`, 'i') },
-        { nationality: new RegExp(`^${params.country}$`, 'i') }
+    if (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all') {
+      const targetCountry = params.country.trim();
+      const countryConditions: any[] = [];
+
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
+
+      const matchingCountries = await Country.find({ $or: countryConditions });
+      const countryObjIds = matchingCountries.map(c => c._id);
+      const countryNames = matchingCountries.map(c => c.name);
+      const countryCodes = matchingCountries.map(c => c.code);
+
+      const userCountryConditions: any[] = [
+        { country: { $regex: new RegExp(targetCountry, 'i') } },
+        { nationality: { $regex: new RegExp(targetCountry, 'i') } }
       ];
+
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      if (countryObjIds.length > 0) {
+        userCountryConditions.push({ countryId: { $in: countryObjIds } });
+      }
+      if (countryNames.length > 0) {
+        userCountryConditions.push({ country: { $in: countryNames } });
+        userCountryConditions.push({ nationality: { $in: countryNames } });
+      }
+      if (countryCodes.length > 0) {
+        userCountryConditions.push({ country: { $in: countryCodes } });
+      }
+
+      andConditions.push({ $or: userCountryConditions });
     }
 
-    if (params.search) {
-      const searchRegex = new RegExp(params.search, 'i');
-      const numericSearch = Number(params.search);
-      query.$or = [
-        { name: searchRegex },
-        { mobile: searchRegex },
-        { whatsapp: searchRegex },
-        ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : [])
-      ];
+    if (params.search && params.search.trim() !== '') {
+      const searchStr = params.search.trim();
+      const searchRegex = new RegExp(searchStr, 'i');
+      const numericSearch = Number(searchStr);
+      andConditions.push({
+        $or: [
+          { name: searchRegex },
+          { mobile: searchRegex },
+          { whatsapp: searchRegex },
+          ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : [])
+        ]
+      });
+    }
+
+    if (andConditions.length > 0) {
+      query.$and = andConditions;
     }
 
     const total = await User.countDocuments(query);
     const sellers = await User.find(query)
       .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins createdAt')
       .populate('profileImage')
+      .populate('countryId')
       .skip(skip)
       .limit(limit)
       .lean();
@@ -439,6 +480,7 @@ export class CoinSellerService {
     const list = await Promise.all(
       sellers.map(async (seller) => {
         const sellerObjectId = seller._id;
+        const countryObj = await resolveCountryObject(seller as any);
 
         // 30 days deals calculation
         const deals30DaysAgg = await CoinHistory.aggregate([
@@ -489,7 +531,8 @@ export class CoinSellerService {
           mobile: seller.mobile || '',
           whatsapp: seller.whatsapp || seller.mobile || '',
           chatId,
-          country: seller.country || 'IND',
+          country: seller.country || countryObj?.name || countryObj?.code || 'IND',
+          countryObject: countryObj || null,
           badge: 'Senior Seller',
           buyersCount,
           dealsLast30Days,
