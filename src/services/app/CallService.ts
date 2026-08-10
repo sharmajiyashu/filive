@@ -2,6 +2,7 @@ import { Service, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import Call from '../../models/Call';
 import User from '../../models/User';
+import Country from '../../models/Country';
 import CoinHistory from '../../models/CoinHistory';
 import config from '../../config';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
@@ -367,9 +368,9 @@ export class CallService {
   }
 
   /**
-   * Fetches hosts who have enabled voice call or video call, excluding blocked users.
+   * Fetches hosts who have enabled voice call or video call, excluding blocked users and with optional country filter.
    */
-  public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video') {
+  public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video', country?: string) {
     let query: any = {
       userRole: 'user'
     };
@@ -383,6 +384,40 @@ export class CallService {
         { enableVoiceCall: true },
         { enableVideoCall: true }
       ];
+    }
+
+    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
+      const targetCountry = country.trim();
+      const countryConditions: any[] = [];
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
+
+      const matchingCountries = await Country.find({ $or: countryConditions });
+      const countryObjIds = matchingCountries.map((c: any) => c._id);
+      const countryNames = matchingCountries.map((c: any) => c.name);
+      const countryCodes = matchingCountries.map((c: any) => c.code);
+
+      const userQueryConditions: any[] = [];
+      if (countryObjIds.length > 0) {
+        userQueryConditions.push({ countryId: { $in: countryObjIds } });
+      }
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
+      if (countryNames.length > 0) {
+        userQueryConditions.push({ country: { $in: countryNames } });
+      }
+      if (countryCodes.length > 0) {
+        userQueryConditions.push({ country: { $in: countryCodes } });
+      }
+
+      query.$and = query.$and || [];
+      query.$and.push({ $or: userQueryConditions });
     }
 
     // Exclude blocked users
@@ -403,16 +438,26 @@ export class CallService {
 
     const skip = (page - 1) * limit;
     const hosts = await User.find(query)
-      .select('name profileImage email bio isPremium gender country enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+      .select('name profileImage email bio isPremium gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
       .populate('profileImage')
+      .populate('countryId')
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
 
     const total = await User.countDocuments(query);
 
+    const formattedHosts = hosts.map((h: any) => {
+      const hObj = h.toObject ? h.toObject() : h;
+      const isOnline = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      return {
+        ...hObj,
+        isOnline
+      };
+    });
+
     return {
-      data: hosts,
+      data: formattedHosts,
       total,
       page,
       limit,

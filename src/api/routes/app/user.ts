@@ -16,7 +16,7 @@ export default (router: Router) => {
    * @swagger
    * /app/users:
    *   get:
-   *     summary: Get all users
+   *     summary: Get all users with optional country, search, and type (online/new/all) filters
    *     tags: [Users]
    *     security:
    *       - bearerAuth: []
@@ -39,6 +39,37 @@ export default (router: Router) => {
    *         schema:
    *           type: string
    *         description: Alias parameter for search by userId
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter users by country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *         description: Filter users by countryId
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *         description: Filter users by ISO country code
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [online, new, all]
+   *         description: Filter by user type (online = online users, new = new users, all = all users)
+   *       - in: query
+   *         name: isOnline
+   *         schema:
+   *           type: boolean
+   *         description: Shortcut filter for online users
+   *       - in: query
+   *         name: isNew
+   *         schema:
+   *           type: boolean
+   *         description: Shortcut filter for new users
    *     responses:
    *       200:
    *         description: List of users
@@ -48,9 +79,124 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const search = req.query.search?.toString() || req.query.userId?.toString();
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      
+      let type = req.query.type?.toString();
+      if (!type) {
+        if (req.query.isOnline === 'true' || req.query.isOnline === true) {
+          type = 'online';
+        } else if (req.query.isNew === 'true' || req.query.isNew === true) {
+          type = 'new';
+        }
+      }
+
       const currentUserId = req.user.id;
-      const result = await userService.getAllUsers(page, limit, currentUserId, search);
+      const result = await userService.getAllUsers(page, limit, currentUserId, search, country, type);
       return ResponseWrapper.success(res, result, 'Users fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/online:
+   *   get:
+   *     summary: Get online users list with optional country filter
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter online users by country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: List of online users
+   */
+  appRouter.get('/online', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString() || req.query.userId?.toString();
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      const currentUserId = req.user.id;
+      const result = await userService.getAllUsers(page, limit, currentUserId, search, country, 'online');
+      return ResponseWrapper.success(res, result, 'Online users fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/users/new:
+   *   get:
+   *     summary: Get new registered users list with optional country filter
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter new users by country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: List of new users
+   */
+  appRouter.get('/new', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString() || req.query.userId?.toString();
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      const currentUserId = req.user.id;
+      const result = await userService.getAllUsers(page, limit, currentUserId, search, country, 'new');
+      return ResponseWrapper.success(res, result, 'New users fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

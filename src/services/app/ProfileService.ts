@@ -276,10 +276,20 @@ export class ProfileService {
     }
 
     const profileData = applyProfileDefaults(updatedUser);
+    const { referralCode } = await ensureUserReferralCode(updatedUser);
+    const deepLink = await getReferralDeepLink(referralCode);
+
+    const AppSetting = mongoose.model('AppSetting');
+    const rewardSetting = await AppSetting.findOne({ key: 'invite_reward_coins' });
+    const inviteRewardCoins = rewardSetting ? Number(rewardSetting.value) : 2000;
 
     return {
       profile: {
         ...profileData,
+        referralCode,
+        referCode: referralCode,
+        deepLink,
+        inviteRewardCoins,
         career: updatedUser.careerId,
         followersCount,
         followingCount,

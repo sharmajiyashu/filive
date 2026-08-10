@@ -9,7 +9,9 @@ import Block from '../../models/Block';
 import Chat from '../../models/Chat';
 import Room from '../../models/Room';
 import FamilyMember from '../../models/FamilyMember';
+import Country from '../../models/Country';
 import mongoose from 'mongoose';
+import { ensureUserReferralCode } from '../../utils/referral';
 
 import { LevelService } from './LevelService';
 
@@ -17,7 +19,14 @@ import { LevelService } from './LevelService';
 export class UserService {
   constructor(private levelService: LevelService) { }
 
-  public async getAllUsers(page: number = 1, limit: number = 10, currentUserId?: string, search?: string) {
+  public async getAllUsers(
+    page: number = 1,
+    limit: number = 10,
+    currentUserId?: string,
+    search?: string,
+    country?: string,
+    type?: string
+  ) {
     let query: any = { userRole: 'user' };
 
     if (currentUserId) {
@@ -35,6 +44,50 @@ export class UserService {
       if (excludedUserIds.length > 0) {
         query._id = { $nin: excludedUserIds };
       }
+    }
+
+    // Type filter: online or new
+    if (type === 'online') {
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      query.lastLoginAt = { $gte: fifteenMinsAgo };
+    } else if (type === 'new') {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      query.createdAt = { $gte: thirtyDaysAgo };
+    }
+
+    // Country filter
+    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
+      const targetCountry = country.trim();
+      const countryConditions: any[] = [];
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
+
+      const matchingCountries = await Country.find({ $or: countryConditions });
+      const countryObjIds = matchingCountries.map(c => c._id);
+      const countryNames = matchingCountries.map(c => c.name);
+      const countryCodes = matchingCountries.map(c => c.code);
+
+      const userQueryConditions: any[] = [];
+      if (countryObjIds.length > 0) {
+        userQueryConditions.push({ countryId: { $in: countryObjIds } });
+      }
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
+      if (countryNames.length > 0) {
+        userQueryConditions.push({ country: { $in: countryNames } });
+      }
+      if (countryCodes.length > 0) {
+        userQueryConditions.push({ country: { $in: countryCodes } });
+      }
+
+      query.$and = query.$and || [];
+      query.$and.push({ $or: userQueryConditions });
     }
 
     if (search && search.trim() !== '') {
@@ -57,35 +110,35 @@ export class UserService {
         searchConditions.push({ userId: searchNum });
       }
 
-      query.$or = searchConditions;
+      query.$and = query.$and || [];
+      query.$and.push({ $or: searchConditions });
     }
+
+    const sortOptions: any = type === 'online' ? { lastLoginAt: -1 } : { createdAt: -1 };
 
     const total = await User.countDocuments(query);
     const userDocs = await User.find(query)
+      .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country countryId maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt createdAt referralCode referCode')
+      .populate('profileImage')
+      .populate('countryId')
+      .sort(sortOptions)
       .skip((page - 1) * limit)
       .limit(limit);
 
-    let users: any[];
-    if (search && search.trim() !== '') {
-      users = await Promise.all(
-        userDocs.map(async (u) => {
-          try {
-            return await this.getUserDetail(u._id.toString(), currentUserId);
-          } catch (err) {
-            return u;
-          }
-        })
-      );
-    } else {
-      users = await User.find(query)
-        .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
-        .populate('profileImage')
-        .skip((page - 1) * limit)
-        .limit(limit);
-    }
+    const formattedUsers = userDocs.map((u: any) => {
+      const uObj = u.toObject ? u.toObject() : u;
+      const isOnline = uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
+      return {
+        ...uObj,
+        isOnline,
+        referralCode: refCode,
+        referCode: refCode
+      };
+    });
 
     return {
-      users,
+      users: formattedUsers,
       pagination: {
         total,
         page,
@@ -279,11 +332,15 @@ export class UserService {
       'participants.userId': user._id
     })
       .select('name mediaId type participants createdAt')
-      .populate('mediaId');
+    const { referralCode } = await ensureUserReferralCode(user);
+    const isOnline = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
 
     return {
       user: {
         ...user.toObject(),
+        referralCode,
+        referCode: referralCode,
+        isOnline,
         career: user.careerId,
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,

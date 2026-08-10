@@ -65,6 +65,21 @@ export default (router: Router) => {
    *           type: string
    *           enum: [voice, video]
    *         description: Filter hosts by enabled call type
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter hosts by country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *         description: Filter hosts by countryId
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *         description: Filter hosts by ISO country code
    *     responses:
    *       200:
    *         description: Calling hosts fetched successfully
@@ -74,13 +89,14 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1', 10);
       const limit = parseInt(req.query.limit?.toString() || '10', 10);
       const callType = req.query.callType as 'voice' | 'video' | undefined;
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
       
       if (callType && !['voice', 'video'].includes(callType)) {
         throw new Error('Invalid callType filter. Use "voice" or "video".');
       }
 
       const userId = req.user.id;
-      const result = await callService.getCallingHosts(page, limit, userId, callType);
+      const result = await callService.getCallingHosts(page, limit, userId, callType, country);
       return ResponseWrapper.success(res, result, 'Calling hosts fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
