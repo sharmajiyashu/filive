@@ -18,7 +18,8 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await liveStreamService.getActiveLiveStreams(page, limit);
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      const result = await liveStreamService.getActiveLiveStreams(page, limit, undefined, country);
       return ResponseWrapper.success(res, result, 'Active live streams/rooms fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

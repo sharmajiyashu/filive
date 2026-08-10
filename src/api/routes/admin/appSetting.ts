@@ -102,4 +102,72 @@ export default (router: Router) => {
       }
     }
   );
+
+  /**
+   * @swagger
+   * /admin/app-settings/invite-reward:
+   *   get:
+   *     summary: Get Invite Reward setting and DeepLink base URL (Admin)
+   *     tags: [Admin - Settings]
+   *     responses:
+   *       200:
+   *         description: Invite reward settings fetched successfully
+   */
+  settingsRouter.get('/invite-reward', async (req: any, res: Response) => {
+    try {
+      const inviteRewardCoins = await appSettingService.getSettingValue('invite_reward_coins');
+      const deepLinkBaseUrl = await appSettingService.getSettingValue('deep_link_base_url');
+      return ResponseWrapper.success(res, {
+        invite_reward_coins: Number(inviteRewardCoins || 2000),
+        deep_link_base_url: deepLinkBaseUrl || 'https://filive.app/invite'
+      }, 'Invite reward settings fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/app-settings/invite-reward:
+   *   put:
+   *     summary: Set Invite Rewards (e.g., 2,000 Coins per invite) and DeepLink base URL (Admin)
+   *     tags: [Admin - Settings]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               invite_reward_coins:
+   *                 type: number
+   *                 example: 2000
+   *               deep_link_base_url:
+   *                 type: string
+   *                 example: https://filive.app/invite
+   *     responses:
+   *       200:
+   *         description: Invite reward settings updated successfully
+   */
+  settingsRouter.put('/invite-reward', async (req: any, res: Response) => {
+    try {
+      const { invite_reward_coins, deep_link_base_url } = req.body;
+      const updatePayload: any = {};
+      if (invite_reward_coins !== undefined) {
+        updatePayload.invite_reward_coins = Number(invite_reward_coins);
+      }
+      if (deep_link_base_url !== undefined) {
+        updatePayload.deep_link_base_url = String(deep_link_base_url);
+      }
+      await appSettingService.updateSettings(updatePayload);
+      const updatedCoins = await appSettingService.getSettingValue('invite_reward_coins');
+      const updatedBaseUrl = await appSettingService.getSettingValue('deep_link_base_url');
+      return ResponseWrapper.success(res, {
+        invite_reward_coins: Number(updatedCoins),
+        deep_link_base_url: updatedBaseUrl
+      }, 'Invite reward settings updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

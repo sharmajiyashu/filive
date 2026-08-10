@@ -11,7 +11,9 @@ import { LevelService } from './LevelService';
 import UserVisitor from '../../models/UserVisitor';
 import AgencyHost from '../../models/AgencyHost';
 import Agency from '../../models/Agency';
+import CoinHistory from '../../models/CoinHistory';
 import { applyProfileDefaults } from './profileDefaults';
+import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 
 @Service()
 export class ProfileService {
@@ -75,9 +77,19 @@ export class ProfileService {
     }
 
     const profileData = applyProfileDefaults(profile);
+    const { referralCode } = await ensureUserReferralCode(profile);
+    const deepLink = await getReferralDeepLink(referralCode);
+
+    const AppSetting = mongoose.model('AppSetting');
+    const rewardSetting = await AppSetting.findOne({ key: 'invite_reward_coins' });
+    const inviteRewardCoins = rewardSetting ? Number(rewardSetting.value) : 2000;
 
     return {
       ...profileData,
+      referralCode,
+      referCode: referralCode,
+      deepLink,
+      inviteRewardCoins,
       career: profile.careerId,
       followersCount,
       followingCount,
@@ -398,6 +410,44 @@ export class ProfileService {
     return {
       message: 'Video verification uploaded successfully',
       status: updatedUser.videoVerificationStatus
+    };
+  }
+
+  public async getReferralInfo(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    const { referralCode } = await ensureUserReferralCode(user);
+    const deepLink = await getReferralDeepLink(referralCode);
+
+    const AppSetting = mongoose.model('AppSetting');
+    const rewardSetting = await AppSetting.findOne({ key: 'invite_reward_coins' });
+    const inviteRewardCoins = rewardSetting ? Number(rewardSetting.value) : 2000;
+
+    const referralHistories = await CoinHistory.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      type: 'referral_reward'
+    }).populate({
+      path: 'relatedUserId',
+      select: 'name profileImage userId createdAt',
+      populate: { path: 'profileImage' }
+    }).sort({ createdAt: -1 });
+
+    const totalInvites = referralHistories.length;
+    const totalEarnedCoins = referralHistories.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+    return {
+      referralCode,
+      referCode: referralCode,
+      deepLink,
+      inviteRewardCoins,
+      totalInvites,
+      totalEarnedCoins,
+      invitedUsers: referralHistories.map(h => ({
+        user: h.relatedUserId,
+        earnedCoins: h.amount,
+        createdAt: h.createdAt
+      }))
     };
   }
 }

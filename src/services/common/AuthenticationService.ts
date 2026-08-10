@@ -9,6 +9,7 @@ import { EmailService } from "./emailService";
 import { CONSTANTS } from "../../config/constants";
 import { addMinutes } from "date-fns";
 import AppLogger from '../../api/loaders/logger';
+import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 
 
 @Service()
@@ -196,6 +197,29 @@ export class AuthenticationService {
         const otpExpires = addMinutes(new Date(), CONSTANTS.OTP_EXPIRY_MINUTES);
 
         if (!user) {
+            let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
+            if (referredBy && referredBy.trim() !== '') {
+                const refStr = referredBy.trim();
+                let referrerUser = null;
+                if (mongoose.Types.ObjectId.isValid(refStr)) {
+                    referrerUser = await User.findById(refStr);
+                }
+                if (!referrerUser) {
+                    const searchNum = Number(refStr);
+                    const searchConds: any[] = [
+                        { referralCode: refStr },
+                        { referCode: refStr }
+                    ];
+                    if (!isNaN(searchNum)) {
+                        searchConds.push({ userId: searchNum });
+                    }
+                    referrerUser = await User.findOne({ $or: searchConds });
+                }
+                if (referrerUser) {
+                    referrerObjId = referrerUser._id;
+                }
+            }
+
             // Register new user with this mobile
             user = await User.create({
                 name: 'User',
@@ -204,8 +228,10 @@ export class AuthenticationService {
                 otpExpires,
                 userRole: 'user',
                 countryId: countryId ? new mongoose.Types.ObjectId(countryId) : undefined,
-                referredBy: referredBy ? new mongoose.Types.ObjectId(referredBy) : undefined
+                referredBy: referrerObjId
             });
+
+            await ensureUserReferralCode(user);
         } else {
             // Update existing user with new OTP
             user.otp = otp;
@@ -254,11 +280,16 @@ export class AuthenticationService {
 
         const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
         const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+        const { referralCode } = await ensureUserReferralCode(user);
+        const deepLink = await getReferralDeepLink(referralCode);
 
         return {
             token,
             user: {
                 ...user.toObject(),
+                referralCode,
+                referCode: referralCode,
+                deepLink,
                 followersCount,
                 followingCount
             } as any

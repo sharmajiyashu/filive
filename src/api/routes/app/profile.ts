@@ -37,6 +37,29 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/profile/referral-info:
+   *   get:
+   *     summary: Get user referral code, deep link, invite reward coins, and referral history
+   *     tags: [Profile]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Referral info fetched successfully
+   */
+  router.get('/profile/referral-info',
+    async (req: any, res: Response) => {
+      try {
+        const userId = req.user.id;
+        const referralInfo = await profileService.getReferralInfo(userId);
+        return ResponseWrapper.success(res, referralInfo, 'Referral info fetched successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
+      }
+    });
+
+  /**
+   * @swagger
    * /app/profile/settings:
    *   get:
    *     summary: Get profile-related settings (careers, marital statuses)

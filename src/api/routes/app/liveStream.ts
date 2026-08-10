@@ -379,6 +379,21 @@ export default (router: Router) => {
    *         name: limit
    *         schema:
    *           type: integer
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter active livestreams by host country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *         description: Filter active livestreams by host countryId
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *         description: Filter active livestreams by host country ISO code
    *     responses:
    *       200:
    *         description: Active live streams fetched successfully
@@ -389,7 +404,8 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
-      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId);
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country);
       AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {

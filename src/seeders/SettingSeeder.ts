@@ -46,6 +46,16 @@ export async function seedSettings() {
         value: ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200'],
         description: 'List of recharge offer banners'
       },
+      {
+        key: 'invite_reward_coins',
+        value: 2000,
+        description: 'Reward in coins for each user invited/referred'
+      },
+      {
+        key: 'deep_link_base_url',
+        value: 'https://filive.app/invite',
+        description: 'Base URL for invitation deep links'
+      },
     ];
 
     for (const setting of settings) {

@@ -13,6 +13,7 @@ export class AppSettingService {
     agency_settlement_day: 1,
     call_platform_fee_percent: 10,
     invite_reward_coins: 2000,
+    deep_link_base_url: 'https://filive.app/invite',
     home_banner_image_url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200',
     party_room_banner_image_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200',
     recharge_offer_banner_image_url: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200',

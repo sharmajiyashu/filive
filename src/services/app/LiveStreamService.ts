@@ -7,6 +7,7 @@ import RoomSetting from '../../models/RoomSetting';
 import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
 import RoomFollow from '../../models/RoomFollow';
+import Country from '../../models/Country';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 
@@ -976,23 +977,51 @@ export class LiveStreamService {
   }
 
   /**
-   * Gets list of all active live streams
+   * Gets list of all active live streams with optional country filter
    */
-  public async getActiveLiveStreams(page: number = 1, limit: number = 10, userId?: string) {
-    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}`);
+  public async getActiveLiveStreams(page: number = 1, limit: number = 10, userId?: string, country?: string) {
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}`);
 
     let query: any = { status: 'live' };
+
+    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
+      const targetCountry = country.trim();
+      const countryConditions: any[] = [];
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
+
+      const matchingCountries = await Country.find({ $or: countryConditions });
+      const countryObjIds = matchingCountries.map(c => c._id);
+      const countryNames = matchingCountries.map(c => c.name);
+      const countryCodes = matchingCountries.map(c => c.code);
+
+      const userQueryConditions: any[] = [];
+      if (countryObjIds.length > 0) {
+        userQueryConditions.push({ countryId: { $in: countryObjIds } });
+      }
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
+      if (countryNames.length > 0) {
+        userQueryConditions.push({ country: { $in: countryNames } });
+      }
+      if (countryCodes.length > 0) {
+        userQueryConditions.push({ country: { $in: countryCodes } });
+      }
+
+      const matchingUsers = await User.find({ $or: userQueryConditions }).select('_id');
+      const hostIds = matchingUsers.map(u => u._id);
+      query.hostId = { $in: hostIds };
+    }
 
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
       const followedRoomDocs = await RoomFollow.find({ userId: new mongoose.Types.ObjectId(userId) });
       const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
-
-      query = {
-        status: 'live'
-      };
-
-      // If we need to prioritize followed rooms, that should be done in sorting, 
-      // but for now we just ensure only 'live' status rooms are returned.
     }
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
@@ -1000,9 +1029,10 @@ export class LiveStreamService {
       .populate({
         path: 'hostId',
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
+        populate: [
+          { path: 'profileImage' },
+          { path: 'countryId' }
+        ]
       })
 
       .sort({ viewerCount: -1, createdAt: -1 })
