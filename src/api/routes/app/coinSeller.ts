@@ -258,5 +258,26 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * @swagger
+   * /app/coin-seller/packages:
+   *   get:
+   *     summary: Get active coin seller recharge plans/packages
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: List of active coin seller packages fetched successfully
+   */
+  sellerRouter.get('/packages', async (req: any, res: Response) => {
+    try {
+      const result = await coinSellerService.getCoinSellerPackages();
+      return ResponseWrapper.success(res, result, 'Coin seller packages fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
 };
 

@@ -6,6 +6,7 @@ export interface ICoinPackage extends Document {
   price: number;
   description?: string;
   image?: string;
+  targetAudience: 'all' | 'user' | 'seller';
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -18,6 +19,7 @@ const CoinPackageSchema: Schema = new Schema(
     price: { type: Number, required: true },
     description: { type: String },
     image: { type: String },
+    targetAudience: { type: String, enum: ['all', 'user', 'seller'], default: 'all' },
     isActive: { type: Boolean, default: true },
   },
   {

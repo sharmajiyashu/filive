@@ -2,6 +2,7 @@ import { Service, Container, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
+import CoinPackage from '../../models/CoinPackage';
 import { AppSettingService } from '../common/AppSettingService';
 import { LevelService } from './LevelService';
 import { ChatService } from './ChatService';
@@ -550,6 +551,13 @@ export class CoinSellerService {
         totalPages: Math.ceil(total / limit)
       }
     };
+  }
+
+  async getCoinSellerPackages() {
+    return CoinPackage.find({
+      isActive: true,
+      targetAudience: { $in: ['seller', 'all'] },
+    }).sort({ coins: 1 });
   }
 
 }
