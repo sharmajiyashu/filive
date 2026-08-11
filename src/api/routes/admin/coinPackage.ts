@@ -132,7 +132,7 @@ export default (router: Router) => {
       if (search) {
         const searchRegex = new RegExp(search, 'i');
         const numSearch = Number(search);
-        
+
         // Find matching users first
         const User = (await import('../../../models/User')).default;
         const matchingUsers = await User.find({
@@ -176,16 +176,20 @@ export default (router: Router) => {
       // Enhance history items with detected gateway name
       const historyWithGateway = history.map((item: any) => {
         const itemObj = item.toObject();
-        let gatewayName = 'PandaPay';
+        let gatewayName = item.paymentGateway || '';
         const desc = (item.description || '').toLowerCase();
         const txId = item.transactionId || '';
-        
-        if (desc.includes('razorpay') || txId.startsWith('pay_')) {
-          gatewayName = 'Razorpay';
-        } else if (desc.includes('pandapay') || txId.startsWith('PANDA_')) {
-          gatewayName = 'PandaPay';
-        } else if (txId) {
-          gatewayName = 'Online Gateway';
+
+        if (!gatewayName) {
+          if (desc.includes('razorpay') || txId.startsWith('pay_')) {
+            gatewayName = 'Razorpay';
+          } else if (desc.includes('pandapay') || txId.startsWith('PANDA_')) {
+            gatewayName = 'PandaPay';
+          } else if (txId) {
+            gatewayName = 'Online Gateway';
+          } else {
+            gatewayName = 'PandaPay';
+          }
         }
 
         return {

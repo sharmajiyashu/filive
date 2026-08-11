@@ -251,6 +251,7 @@ export class CoinService {
             packageId: pkg._id,
             amount: pkg.coins,
             type: 'recharge',
+            paymentGateway: 'Razorpay',
             description: `Recharged with ${pkg.name} via Razorpay`,
             transactionId: razorpayPaymentId,
           },

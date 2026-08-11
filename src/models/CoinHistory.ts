@@ -8,6 +8,7 @@ export interface ICoinHistory extends Document {
   description?: string;
   transactionId?: string; // For payment gateways
   packageId?: mongoose.Types.ObjectId; // For tracking recharge coin package
+  paymentGateway?: string; // e.g. 'PandaPay', 'Razorpay', 'CoinSeller', 'Admin'
   channelName?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -26,6 +27,7 @@ const CoinHistorySchema: Schema = new Schema(
     },
     description: { type: String },
     transactionId: { type: String },
+    paymentGateway: { type: String },
     channelName: { type: String },
   },
   {
