@@ -7,6 +7,8 @@ export interface ICoinPackage extends Document {
   description?: string;
   image?: string;
   targetAudience: 'all' | 'user' | 'seller';
+  isFeatured: boolean;
+  isRecommended: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +22,8 @@ const CoinPackageSchema: Schema = new Schema(
     description: { type: String },
     image: { type: String },
     targetAudience: { type: String, enum: ['all', 'user', 'seller'], default: 'all' },
+    isFeatured: { type: Boolean, default: false },
+    isRecommended: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
   },
   {

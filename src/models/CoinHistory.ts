@@ -7,6 +7,7 @@ export interface ICoinHistory extends Document {
   type: 'recharge' | 'family_creation' | 'transfer' | 'charm_received' | 'beans_to_coins' | 'coins_to_beans' | 'agency_commission' | 'referral_reward' | 'gift_received' | 'call_income' | 'cash_out' | 'exchange' | 'other';
   description?: string;
   transactionId?: string; // For payment gateways
+  packageId?: mongoose.Types.ObjectId; // For tracking recharge coin package
   channelName?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -16,6 +17,7 @@ const CoinHistorySchema: Schema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     relatedUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+    packageId: { type: Schema.Types.ObjectId, ref: 'CoinPackage' },
     amount: { type: Number, required: true },
     type: {
       type: String,

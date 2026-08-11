@@ -20,6 +20,19 @@ export class AppSettingService {
     home_banners: ['https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200'],
     party_room_banners: ['https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200'],
     recharge_offer_banners: ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200'],
+    // Payment Gateway Settings (PandaPay)
+    payment_gateway_pandapay_enabled: true,
+    payment_gateway_pandapay_gateway_url: 'https://pandaxpay.sbs',
+    payment_gateway_pandapay_merchant_id: 'm_6ae9d055c1172ea450cd1507',
+    payment_gateway_pandapay_secret_key: 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913',
+    payment_gateway_pandapay_trade_type: 'upi',
+    payment_gateway_pandapay_notify_url: 'https://filiva-node.creatamax.in/v1/api/app/coins/pandapay/callback',
+
+    // Payment Gateway Settings (Razorpay)
+    payment_gateway_razorpay_enabled: true,
+    payment_gateway_razorpay_merchant_id: 'RKaMsbocngrNr4',
+    payment_gateway_razorpay_key_id: 'rzp_live_TOLcZZUrGcgCad',
+    payment_gateway_razorpay_key_secret: 'l2iC9Y61NpDsaec0FROTkqsr',
   };
 
   async getSettings() {

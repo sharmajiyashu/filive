@@ -1,6 +1,8 @@
-import { Service } from 'typedi';
+import { Service, Inject } from 'typedi';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import qs from 'querystring';
+import axios from 'axios';
 import config from '../../config';
 import CoinPackage from '../../models/CoinPackage';
 import CoinHistory from '../../models/CoinHistory';
@@ -8,9 +10,13 @@ import User from '../../models/User';
 import Country from '../../models/Country';
 import { calculateLocalPrice } from '../../utils/pricing';
 import mongoose from 'mongoose';
+import { AppSettingService } from '../common/AppSettingService';
 
 @Service()
 export class CoinService {
+  constructor(
+    @Inject() private appSettingService: AppSettingService
+  ) { }
   async getPackages(countryId?: string) {
     const packages = await CoinPackage.find({ isActive: true }).sort({ coins: 1 });
 
@@ -44,7 +50,7 @@ export class CoinService {
   async getWallet(userId: string) {
     const user = await User.findById(userId).select('coins beans');
     if (!user) throw new Error('User not found');
-    return { 
+    return {
       coins: user.coins || 0,
       beans: user.beans || 0
     };
@@ -53,10 +59,10 @@ export class CoinService {
   async getBeansWallet(userId: string) {
     const user = await User.findById(userId).select('beans');
     if (!user) throw new Error('User not found');
-    
+
     // Total Beans balance
     const totalBeans = user.beans || 0;
-    
+
     // Calculate withdrawable beans and pending/to-be-confirmed beans
     // For now, withdrawableBeans is current total beans, and beansToBeConfirmed is calculated from active pending requests or default split
     const withdrawableBeans = totalBeans;
@@ -148,11 +154,16 @@ export class CoinService {
   }
 
   async createRazorpayOrder(userId: string, packageId: string) {
+    const isEnabled = await this.appSettingService.getSettingValue('payment_gateway_razorpay_enabled');
+    if (isEnabled === false) {
+      throw new Error('Razorpay payment gateway is currently disabled by administrator');
+    }
+
     const pkg = await CoinPackage.findById(packageId);
     if (!pkg) throw new Error('Coin package not found');
 
-    const keyId = config.razorpay.keyId;
-    const keySecret = config.razorpay.keySecret;
+    const keyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) || config.razorpay.keyId || 'rzp_live_TOLcZZUrGcgCad';
+    const keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) || config.razorpay.keySecret || 'l2iC9Y61NpDsaec0FROTkqsr';
 
     if (!keyId || !keySecret) {
       throw new Error('Razorpay API keys are not configured on the server');
@@ -208,7 +219,7 @@ export class CoinService {
     razorpayPaymentId: string,
     razorpaySignature: string
   ) {
-    const keySecret = config.razorpay.keySecret;
+    const keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) || config.razorpay.keySecret || 'l2iC9Y61NpDsaec0FROTkqsr';
     if (!keySecret) throw new Error('Razorpay secret key is not configured');
 
     const generatedSignature = crypto
@@ -237,6 +248,7 @@ export class CoinService {
         [
           {
             userId,
+            packageId: pkg._id,
             amount: pkg.coins,
             type: 'recharge',
             description: `Recharged with ${pkg.name} via Razorpay`,
@@ -337,6 +349,95 @@ export class CoinService {
       session.endSession();
     }
   }
-}
 
-export default new CoinService();
+  /**
+   * PandaPay MD5 Signature Generation
+   */
+  private generatePandaPayMd5Sign(data: Record<string, any>, key: string): string {
+    const filtered = Object.fromEntries(
+      Object.entries(data).filter(([_, v]) => v !== '' && v != null && _ !== 'sign')
+    );
+    const sorted = Object.keys(filtered).sort().map(k => `${k}=${filtered[k]}`);
+    const stringA = sorted.join('&') + `&key=${key}`;
+    return crypto.createHash('md5').update(stringA).digest('hex').toUpperCase();
+  }
+
+  /**
+   * Create PandaPay Order
+   */
+  async createPandaPayOrder(userId: string, packageId: string) {
+    const isPandaPayEnabled = await this.appSettingService.getSettingValue('payment_gateway_pandapay_enabled');
+    if (isPandaPayEnabled === false) {
+      throw new Error('PandaPay payment gateway is currently disabled by administrator');
+    }
+
+    const gatewayUrl = await this.appSettingService.getSettingValue('payment_gateway_pandapay_gateway_url') || 'https://pandaxpay.sbs';
+    const appId = await this.appSettingService.getSettingValue('payment_gateway_pandapay_merchant_id') || 'm_6ae9d055c1172ea450cd1507';
+    const key = await this.appSettingService.getSettingValue('payment_gateway_pandapay_secret_key') || 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913';
+    const tradeType = await this.appSettingService.getSettingValue('payment_gateway_pandapay_trade_type') || 'upi';
+    const notifyUrl = await this.appSettingService.getSettingValue('payment_gateway_pandapay_notify_url') || 'https://filiva-node.creatamax.in/v1/api/app/coins/pandapay/callback';
+
+    const pkg = await CoinPackage.findById(packageId);
+    if (!pkg) throw new Error('Coin package not found');
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    // Amount in cents / paisa format (e.g. 5050 = 50.50 INR)
+    const moneyAmount = Math.round(pkg.price * 100);
+    const orderSn = `PANDA_${Date.now()}_${user.userId || userId.slice(-6)}`;
+
+    const params: Record<string, any> = {
+      app_id: appId,
+      trade_type: tradeType,
+      order_sn: orderSn,
+      money: moneyAmount,
+      notify_url: notifyUrl,
+    };
+
+    params.sign = this.generatePandaPayMd5Sign(params, key);
+
+    const res = await axios.post(
+      `${gatewayUrl}/api/create_order.php`,
+      qs.stringify(params),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    if (res.data && res.data.status === 1) {
+      return {
+        success: true,
+        orderSn,
+        payUrl: res.data.data.pay_url,
+        amount: pkg.price,
+        coins: pkg.coins,
+        packageId: pkg._id,
+      };
+    } else {
+      throw new Error(res.data ? res.data.msg : 'Failed to create PandaPay order');
+    }
+  }
+
+  /**
+   * Verify and process PandaPay Callback / Webhook Notification
+   */
+  async processPandaPayCallback(payload: Record<string, any>) {
+    const key = await this.appSettingService.getSettingValue('payment_gateway_pandapay_secret_key') || 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913';
+
+    const receivedSign = payload.sign;
+    const expectedSign = this.generatePandaPayMd5Sign(payload, key);
+
+    if (receivedSign !== expectedSign) {
+      throw new Error('Invalid signature from PandaPay webhook');
+    }
+
+    if (payload.status == 1 || payload.status === '1' || payload.trade_status === 'SUCCESS') {
+      const orderSn = payload.order_sn || payload.out_trade_no;
+      // Extract userId or find from existing history transaction
+      const existingHistory = await CoinHistory.findOne({ transactionId: orderSn });
+      if (existingHistory) {
+        return { success: true, message: 'Already processed' };
+      }
+    }
+    return { success: true, message: 'Callback received' };
+  }
+}

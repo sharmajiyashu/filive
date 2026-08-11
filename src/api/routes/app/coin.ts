@@ -352,4 +352,57 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+  /**
+   * @swagger
+   * /app/coins/pandapay/create-order:
+   *   post:
+   *     summary: Create PandaPay Order for Coin Recharge
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - packageId
+   *             properties:
+   *               packageId:
+   *                 type: string
+   *                 description: Coin package ID
+   *     responses:
+   *       200:
+   *         description: PandaPay order created successfully
+   */
+  coinRouter.post('/pandapay/create-order', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId } = req.body;
+      if (!packageId) {
+        return ResponseWrapper.error(res, new Error('packageId is required'), 400);
+      }
+      const result = await coinService.createPandaPayOrder(req.user.id, packageId);
+      return ResponseWrapper.success(res, result, 'PandaPay order created successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/pandapay/callback:
+   *   post:
+   *     summary: Webhook Callback for PandaPay Payment Notification
+   *     tags: [Coins]
+   */
+  coinRouter.post('/pandapay/callback', async (req: Request, res: Response) => {
+    try {
+      const payload = req.body;
+      const result = await coinService.processPandaPayCallback(payload);
+      return res.send('SUCCESS');
+    } catch (error: any) {
+      return res.status(400).send('FAIL');
+    }
+  });
 };

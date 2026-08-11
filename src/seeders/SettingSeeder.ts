@@ -56,6 +56,20 @@ export async function seedSettings() {
         value: 'https://filive.app/invite',
         description: 'Base URL for invitation deep links'
       },
+
+      // PandaPay Gateway Seed
+      { key: 'payment_gateway_pandapay_enabled', value: true, description: 'PandaPay gateway toggle status' },
+      { key: 'payment_gateway_pandapay_gateway_url', value: 'https://pandaxpay.sbs', description: 'PandaPay gateway base URL' },
+      { key: 'payment_gateway_pandapay_merchant_id', value: 'm_6ae9d055c1172ea450cd1507', description: 'PandaPay Merchant ID' },
+      { key: 'payment_gateway_pandapay_secret_key', value: 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913', description: 'PandaPay Pay-in Secret Key' },
+      { key: 'payment_gateway_pandapay_trade_type', value: 'upi', description: 'PandaPay Trade Type' },
+      { key: 'payment_gateway_pandapay_notify_url', value: 'https://filiva-node.creatamax.in/v1/api/app/coins/pandapay/callback', description: 'PandaPay Webhook Notification Callback URL' },
+
+      // Razorpay Gateway Seed
+      { key: 'payment_gateway_razorpay_enabled', value: true, description: 'Razorpay gateway toggle status' },
+      { key: 'payment_gateway_razorpay_merchant_id', value: 'RKaMsbocngrNr4', description: 'Razorpay Merchant ID' },
+      { key: 'payment_gateway_razorpay_key_id', value: 'rzp_live_TOLcZZUrGcgCad', description: 'Razorpay Live Key ID' },
+      { key: 'payment_gateway_razorpay_key_secret', value: 'l2iC9Y61NpDsaec0FROTkqsr', description: 'Razorpay Live Secret Key' },
     ];
 
     for (const setting of settings) {
