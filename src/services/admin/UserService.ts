@@ -346,10 +346,10 @@ export class UserService {
   public async adjustCoinsellerCoins(userId: string, amount: number, description?: string) {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
-    
+
     const currentVal = user.coinSellerCoins || 0;
     const newVal = currentVal + amount;
-    
+
     if (newVal < 0) {
       throw new Error(`Insufficient coinseller coins. Resulting balance cannot be less than zero.`);
     }
@@ -371,7 +371,7 @@ export class UserService {
   public async updateVideoVerificationStatus(userId: string, status: 'approved' | 'rejected') {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
-    
+
     user.videoVerificationStatus = status;
     await user.save();
     return user;
@@ -443,15 +443,22 @@ export class UserService {
 
     const tradersWithStats = await Promise.all(
       traders.map(async (trader) => {
-        const spentAgg = await CoinHistory.aggregate([
-          { $match: { userId: trader._id, type: 'transfer', amount: { $lt: 0 } } },
-          { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+        const [spentAgg, dealsCount, uniqueBuyers] = await Promise.all([
+          CoinHistory.aggregate([
+            { $match: { userId: trader._id, type: 'transfer', amount: { $lt: 0 } } },
+            { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+          ]),
+          CoinHistory.countDocuments({ userId: trader._id, type: 'transfer', amount: { $lt: 0 } }),
+          CoinHistory.distinct('relatedUserId', { userId: trader._id, type: 'transfer', amount: { $lt: 0 } }),
         ]);
+
         const spentCoins = spentAgg[0]?.total || 0;
 
         return {
           ...trader,
           spentCoins,
+          totalDeals: dealsCount || 0,
+          totalBuyers: uniqueBuyers.length || 0,
           coinBalance: trader.coinSellerCoins || trader.coins || 0,
         };
       })

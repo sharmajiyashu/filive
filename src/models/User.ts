@@ -173,16 +173,33 @@ const UserSchema: Schema = new Schema(
 UserSchema.pre('save', async function (next) {
   const user = this as any;
   if (!user.userId) {
+    // 8-digit fixed public User ID starting at 10000001
+    const highestUser: any = await mongoose.models.User.findOne({ userId: { $gte: 10000001, $lte: 99999999 } })
+      .sort({ userId: -1 })
+      .lean();
+
+    let nextUserId = 10000001;
+    if (highestUser && highestUser.userId && highestUser.userId >= 10000001) {
+      nextUserId = Number(highestUser.userId) + 1;
+    }
+
+    // Ensure uniqueness even if accounts were deleted or gaps exist
     let unique = false;
     let attempts = 0;
     while (!unique && attempts < 100) {
-      const randomId = Math.floor(1000000000 + Math.random() * 9000000000);
-      const exists = await mongoose.models.User.findOne({ userId: randomId });
+      const exists = await mongoose.models.User.findOne({ userId: nextUserId });
       if (!exists) {
-        user.userId = randomId;
+        user.userId = nextUserId;
         unique = true;
+      } else {
+        nextUserId++;
       }
       attempts++;
+    }
+
+    if (!unique) {
+      // Fallback 8-digit random generator (10000000 to 99999999)
+      user.userId = Math.floor(10000000 + Math.random() * 90000000);
     }
   }
 
