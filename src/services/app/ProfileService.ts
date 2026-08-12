@@ -14,6 +14,7 @@ import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
 import { applyProfileDefaults } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
+import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
 
 @Service()
 export class ProfileService {
@@ -34,7 +35,8 @@ export class ProfileService {
       .populate({
         path: 'careerId',
         populate: { path: 'image' }
-      });
+      })
+      .populate([...ACTIVE_STORE_POPULATE] as any);
     if (!profile) {
       throw new Error('USER_NOT_FOUND');
     }
@@ -232,7 +234,8 @@ export class ProfileService {
       .populate({
         path: 'careerId',
         populate: { path: 'image' }
-      });
+      })
+      .populate([...ACTIVE_STORE_POPULATE] as any);
 
     if (!updatedUser) {
       throw new Error('USER_NOT_FOUND');

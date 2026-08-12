@@ -168,7 +168,10 @@ export class StoreService {
       _id: userStoreItemId,
       userId,
       expiresAt: { $gt: new Date() }
-    }).populate('storeItemId');
+    }).populate({
+      path: 'storeItemId',
+      populate: { path: 'media' }
+    });
 
     if (!userStoreItem) {
       throw new Error('Purchased item not found or expired');
@@ -203,7 +206,7 @@ export class StoreService {
       
       const field = activeFieldMap[itemType];
       if (field) {
-        (user as any)[field] = useStatus ? userStoreItem.storeItemId._id : undefined;
+        (user as any)[field] = useStatus ? userStoreItem.storeItemId._id : null;
         await user.save();
       }
     }

@@ -12,6 +12,7 @@ import FamilyMember from '../../models/FamilyMember';
 import Country from '../../models/Country';
 import mongoose from 'mongoose';
 import { ensureUserReferralCode } from '../../utils/referral';
+import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
 
 import { LevelService } from './LevelService';
 
@@ -165,7 +166,8 @@ export class UserService {
         .populate({
           path: 'careerId',
           populate: { path: 'image' }
-        });
+        })
+        .populate([...ACTIVE_STORE_POPULATE] as any);
     } else {
       user = await User.findOne({ userId: parseInt(userId) })
         .select('-password -otp -otpExpires -fcmTokens')
@@ -174,7 +176,8 @@ export class UserService {
         .populate({
           path: 'careerId',
           populate: { path: 'image' }
-        });
+        })
+        .populate([...ACTIVE_STORE_POPULATE] as any);
     }
 
     if (!user) {
