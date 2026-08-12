@@ -50,7 +50,12 @@ export class LiveStreamService {
     announcement?: string,
     gameId?: string
   ) {
-    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${roomType}, option=${partyRoomOption}, roomTheme=${roomThemeId}, announcement="${announcement}", gameId=${gameId}`);
+    const normalizedRoomType: 'livestream' | 'party_room' =
+      roomType === 'party_room' ? 'party_room' : 'livestream';
+    const normalizedPartyOption: 'live' | 'chat' =
+      partyRoomOption === 'chat' ? 'chat' : 'live';
+
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${normalizedRoomType}, option=${normalizedPartyOption}, roomTheme=${roomThemeId}, announcement="${announcement}", gameId=${gameId}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
@@ -59,7 +64,7 @@ export class LiveStreamService {
     const hostUser = await User.findById(hostId);
     if (!hostUser) throw new Error('Host user not found');
     // Live stream: Female only. Party room: both Male and Female can host.
-    if (roomType === 'livestream' && hostUser.gender !== 'Female') {
+    if (normalizedRoomType === 'livestream' && hostUser.gender !== 'Female') {
       throw new Error('Go Live streaming feature is restricted to Female hosts only.');
     }
 
@@ -69,24 +74,34 @@ export class LiveStreamService {
       roomSetting = await RoomSetting.create({ hostId });
     }
 
-    // Check if the user already has an active room
-    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has an active room`);
-    let activeStream = await Room.findOne({ hostId, status: 'live' });
+    // End any live room of the other type so livestream and party room never both stay live
+    const otherRoomType = normalizedRoomType === 'livestream' ? 'party_room' : 'livestream';
+    const otherLiveRoom = await Room.findOne({ hostId, status: 'live', roomType: otherRoomType });
+    if (otherLiveRoom) {
+      AppLogger.info(`[LiveStreamService: startLiveStream] Ending other live room type=${otherRoomType}, channelName=${otherLiveRoom.channelName}`);
+      otherLiveRoom.status = 'ended';
+      otherLiveRoom.endedAt = new Date();
+      await otherLiveRoom.save();
+    }
+
+    // Reuse only a room of the same type (never convert party <-> livestream)
+    AppLogger.info(`[LiveStreamService: startLiveStream] Checking if hostId=${hostId} already has a live ${normalizedRoomType}`);
+    let activeStream = await Room.findOne({ hostId, status: 'live', roomType: normalizedRoomType });
 
     // For party rooms, reuse the previous party room if it exists (even if ended) to keep channelName permanent
-    if (!activeStream && roomType === 'party_room') {
+    if (!activeStream && normalizedRoomType === 'party_room') {
       activeStream = await Room.findOne({ hostId, roomType: 'party_room' }).sort({ createdAt: -1 });
       if (activeStream) {
         AppLogger.info(`[LiveStreamService: startLiveStream] Found existing ended party room for host. Reusing to keep channelName permanent.`);
       }
     }
     if (activeStream) {
-      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has an active room: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
+      AppLogger.info(`[LiveStreamService: startLiveStream] Host already has a ${normalizedRoomType}: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
 
       activeStream.title = title;
       activeStream.status = 'live';
-      activeStream.roomType = roomType;
-      activeStream.partyRoomOption = partyRoomOption;
+      activeStream.roomType = normalizedRoomType;
+      activeStream.partyRoomOption = normalizedPartyOption;
       activeStream.viewers = [];
       activeStream.viewerCount = 0;
       activeStream.startedAt = new Date();
@@ -109,7 +124,7 @@ export class LiveStreamService {
         await roomSetting.save();
       }
 
-      if (roomType === 'party_room') {
+      if (normalizedRoomType === 'party_room') {
         const maxSeats = roomSetting.maxSeats || 4;
         let existingSeats = activeStream.seats || [];
         let newSeats: any[] = [];
@@ -126,6 +141,9 @@ export class LiveStreamService {
           }
         }
         activeStream.seats = newSeats;
+      } else {
+        // Livestream must not carry party seats
+        activeStream.seats = [];
       }
 
       // Regenerate token as it might have expired
@@ -185,7 +203,7 @@ export class LiveStreamService {
     }
 
     let initialSeats: any[] = [];
-    if (roomType === 'party_room') {
+    if (normalizedRoomType === 'party_room') {
       const maxSeats = roomSetting.maxSeats || 4;
       for (let i = 0; i < maxSeats; i++) {
         initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
@@ -197,8 +215,8 @@ export class LiveStreamService {
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
       title,
-      roomType,
-      partyRoomOption,
+      roomType: normalizedRoomType,
+      partyRoomOption: normalizedPartyOption,
       blockedUsers: [],
       seats: initialSeats,
       startedAt: new Date(),
@@ -980,10 +998,19 @@ export class LiveStreamService {
   /**
    * Gets list of all active live streams with optional country filter
    */
-  public async getActiveLiveStreams(page: number = 1, limit: number = 10, userId?: string, country?: string) {
-    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}`);
+  public async getActiveLiveStreams(
+    page: number = 1,
+    limit: number = 10,
+    userId?: string,
+    country?: string,
+    roomType?: 'livestream' | 'party_room'
+  ) {
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}, roomType=${roomType}`);
 
     let query: any = { status: 'live' };
+    if (roomType === 'livestream' || roomType === 'party_room') {
+      query.roomType = roomType;
+    }
 
     if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
       const targetCountry = country.trim();

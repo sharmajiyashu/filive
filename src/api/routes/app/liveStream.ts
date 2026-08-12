@@ -394,6 +394,12 @@ export default (router: Router) => {
    *         schema:
    *           type: string
    *         description: Filter active livestreams by host country ISO code
+   *       - in: query
+   *         name: roomType
+   *         schema:
+   *           type: string
+   *           enum: [livestream, party_room]
+   *         description: Optional filter by room type
    *     responses:
    *       200:
    *         description: Active live streams fetched successfully
@@ -405,7 +411,12 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country);
+      const roomTypeParam = req.query.roomType?.toString();
+      const roomType =
+        roomTypeParam === 'livestream' || roomTypeParam === 'party_room'
+          ? roomTypeParam
+          : undefined;
+      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType);
       AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
