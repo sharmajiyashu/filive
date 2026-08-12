@@ -1,9 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
-import { UnauthorizedError } from './errors';
+import { ForbiddenError, UnauthorizedError } from './errors';
 import _ from 'lodash';
 import { AuthenticationService } from '../../services/common/AuthenticationService';
 import Container from 'typedi';
 import { appWhitelistRoutes } from '../../constants/appWhitelistRoutes';
+
+function isAccountBlockedError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return message.startsWith('ACCOUNT_BLOCKED:');
+}
 
 export const appAuthMiddleware = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -45,9 +50,12 @@ export const appAuthMiddleware = async (req: Request, res: Response, next: NextF
             next();
         } catch (error) {
             if (skipAuth) return next();
-            return next(new UnauthorizedError(error));
+            if (isAccountBlockedError(error)) {
+                return next(new ForbiddenError(error instanceof Error ? error : new Error(String(error))));
+            }
+            return next(new UnauthorizedError(error instanceof Error ? error : new Error(String(error))));
         }
     } catch (error) {
-        next(new UnauthorizedError(error));
+        next(new UnauthorizedError(error instanceof Error ? error : new Error(String(error))));
     }
 };

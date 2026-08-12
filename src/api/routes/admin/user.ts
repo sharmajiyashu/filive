@@ -80,8 +80,12 @@ export default (router: Router) => {
     try {
       const userId = req.params.id;
       const { blockType, durationHours, reason } = req.body;
-      const user = await userService.blockUserWithDuration(userId, { blockType, durationHours: Number(durationHours), reason });
-      return ResponseWrapper.success(res, user, 'User block status updated with duration');
+      const result = await userService.blockUserWithDuration(userId, {
+        blockType,
+        durationHours: Number(durationHours),
+        reason,
+      });
+      return ResponseWrapper.success(res, result, 'User blocked and notified successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -90,8 +94,8 @@ export default (router: Router) => {
   userRouter.put('/:id/unblock', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const user = await userService.unblockUser(userId);
-      return ResponseWrapper.success(res, user, 'User unblocked successfully');
+      const result = await userService.unblockUser(userId);
+      return ResponseWrapper.success(res, result, 'User unblocked and notified successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -100,8 +104,14 @@ export default (router: Router) => {
   userRouter.put('/:id/instant-block', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const user = await userService.toggleInstantBlock(userId);
-      return ResponseWrapper.success(res, user, 'Instant block toggled successfully');
+      const result = await userService.toggleInstantBlock(userId);
+      return ResponseWrapper.success(
+        res,
+        result,
+        result.restriction.isBlocked
+          ? 'User instant-blocked and notified successfully'
+          : 'Instant block removed successfully'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -110,8 +120,14 @@ export default (router: Router) => {
   userRouter.put('/:id/device-ban', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const user = await userService.toggleDeviceBan(userId);
-      return ResponseWrapper.success(res, user, 'Device ban toggled successfully');
+      const result = await userService.toggleDeviceBan(userId);
+      return ResponseWrapper.success(
+        res,
+        result,
+        result.restriction.isBlocked
+          ? 'User device-banned and notified successfully'
+          : 'Device ban removed successfully'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -371,15 +387,14 @@ export default (router: Router) => {
   userRouter.put('/:id/block', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const user = await User.findById(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      user.isBlocked = !user.isBlocked;
-      await user.save();
-
-      return ResponseWrapper.success(res, user, `User ${user.isBlocked ? 'blocked' : 'unblocked'} successfully`);
+      const result = await userService.toggleUserBlock(userId);
+      return ResponseWrapper.success(
+        res,
+        result,
+        result.restriction.isBlocked
+          ? 'User blocked and notified successfully'
+          : 'User unblocked and notified successfully'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

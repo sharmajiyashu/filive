@@ -28,6 +28,33 @@ export class AuthenticationService {
         return jwt.sign(payload, secret, options) as string;
     }
 
+    /** Auto-clears expired temporary blocks; throws ACCOUNT_BLOCKED for active restrictions (app users only). */
+    private async assertUserNotBlocked(user: IUser): Promise<IUser> {
+        if (!user || user.userRole !== 'user') {
+            return user;
+        }
+
+        if (!user.isBlocked) {
+            return user;
+        }
+
+        if (user.blockedUntil && new Date(user.blockedUntil).getTime() <= Date.now()) {
+            user.isBlocked = false;
+            user.blockedUntil = undefined;
+            user.blockReason = undefined;
+            user.instantBlock = false;
+            user.deviceBan = false;
+            await user.save();
+            return user;
+        }
+
+        const reason = user.blockReason || 'Your account has been restricted by Admin';
+        const until = user.blockedUntil
+            ? ` Until: ${new Date(user.blockedUntil).toISOString()}`
+            : ' This restriction is permanent.';
+        throw new Error(`ACCOUNT_BLOCKED: ${reason}.${until}`);
+    }
+
 
     private generateOTP(digits: number = 4): string {
         // Default OTP is 1234 as per user request
@@ -140,6 +167,8 @@ export class AuthenticationService {
             throw new Error('Invalid email or password');
         }
 
+        await this.assertUserNotBlocked(user);
+
         const token = this.generateToken(user._id.toString(), user.userRole);
 
         // Update last login
@@ -169,6 +198,8 @@ export class AuthenticationService {
         if (!user) {
             throw new Error('Invalid or expired OTP');
         }
+
+        await this.assertUserNotBlocked(user);
 
         user.otp = undefined;
         user.otpExpires = undefined;
@@ -255,6 +286,8 @@ export class AuthenticationService {
         if (!user) {
             throw new Error('Invalid or expired OTP');
         }
+
+        await this.assertUserNotBlocked(user);
 
         // Clear OTP after successful verification
         const isNewUserVerification = !!user.referredBy;
@@ -353,8 +386,11 @@ export class AuthenticationService {
                 throw new Error('User not found');
             }
 
-            return user;
-        } catch (error) {
+            return await this.assertUserNotBlocked(user);
+        } catch (error: any) {
+            if (typeof error?.message === 'string' && error.message.startsWith('ACCOUNT_BLOCKED:')) {
+                throw error;
+            }
             throw new Error('Invalid or expired token');
         }
     }

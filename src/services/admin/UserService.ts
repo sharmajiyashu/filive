@@ -1,4 +1,4 @@
-import { Service, Container } from 'typedi';
+import { Service, Container, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import AgencyHost from '../../models/AgencyHost';
@@ -7,9 +7,162 @@ import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
 import { LevelService } from '../app/LevelService';
 import { getUserCountryAndLevels } from '../../utils/userLookup';
+import { FirebasePushService } from '../common/FirebasePushService';
+import AppLogger from '../../api/loaders/logger';
+
+type RestrictionBlockType = 'permanent' | 'temporary' | 'instant' | 'device_ban';
+
+export interface RestrictionNotifyResult {
+  user: any;
+  restriction: {
+    reason: string;
+    blockedUntil: Date | null;
+    blockType: RestrictionBlockType | 'none';
+    isBlocked: boolean;
+    instantBlock: boolean;
+    deviceBan: boolean;
+  };
+  notified: { socket: boolean; push: boolean };
+}
 
 @Service()
 export class UserService {
+  constructor(@Inject() private firebasePushService: FirebasePushService) {}
+
+  /**
+   * Mobile clients should listen for socket event `account_blocked` and clear session/logout.
+   * Payload: { type, reason, blockedUntil, blockType, isBlocked, instantBlock, deviceBan }
+   * FCM data uses the same keys (all string values).
+   */
+  private async notifyAccountBlocked(
+    user: any,
+    blockType: RestrictionBlockType
+  ): Promise<{ socket: boolean; push: boolean }> {
+    const userId = user._id.toString();
+    const reason = user.blockReason || 'Your account has been restricted by Admin';
+    const blockedUntilIso = user.blockedUntil ? new Date(user.blockedUntil).toISOString() : '';
+    const payload = {
+      type: 'account_blocked',
+      reason,
+      blockedUntil: blockedUntilIso,
+      blockType,
+      isBlocked: 'true',
+      instantBlock: user.instantBlock ? 'true' : 'false',
+      deviceBan: user.deviceBan ? 'true' : 'false',
+    };
+
+    let socketNotified = false;
+    let pushNotified = false;
+
+    try {
+      const io = Container.get('socket') as any;
+      if (io) {
+        const room = `user_${userId}`;
+        const sockets = typeof io.in === 'function' && io.in(room).fetchSockets
+          ? await io.in(room).fetchSockets()
+          : [];
+
+        if (sockets.length > 0) {
+          for (const s of sockets) {
+            s.emit('account_blocked', {
+              ...payload,
+              isBlocked: true,
+              instantBlock: !!user.instantBlock,
+              deviceBan: !!user.deviceBan,
+            });
+            s.disconnect(true);
+          }
+        } else {
+          io.to(room).emit('account_blocked', {
+            ...payload,
+            isBlocked: true,
+            instantBlock: !!user.instantBlock,
+            deviceBan: !!user.deviceBan,
+          });
+        }
+        socketNotified = true;
+      }
+    } catch (err) {
+      AppLogger.warn(`account_blocked socket notify failed for ${userId}: ${err}`);
+    }
+
+    try {
+      const untilText = blockedUntilIso
+        ? ` Until: ${new Date(blockedUntilIso).toLocaleString()}`
+        : ' This restriction is permanent.';
+      await this.firebasePushService.notifyUser(userId, {
+        title: 'Account Restricted',
+        body: `${reason}.${untilText}`,
+        data: payload,
+      });
+      pushNotified = true;
+    } catch (err) {
+      AppLogger.warn(`account_blocked push notify failed for ${userId}: ${err}`);
+    }
+
+    return { socket: socketNotified, push: pushNotified };
+  }
+
+  private async notifyAccountUnblocked(user: any): Promise<{ socket: boolean; push: boolean }> {
+    const userId = user._id.toString();
+    const payload = {
+      type: 'account_unblocked',
+      reason: '',
+      blockedUntil: '',
+      blockType: 'none',
+      isBlocked: 'false',
+      instantBlock: 'false',
+      deviceBan: 'false',
+    };
+
+    let socketNotified = false;
+    let pushNotified = false;
+
+    try {
+      const io = Container.get('socket') as any;
+      if (io) {
+        io.to(`user_${userId}`).emit('account_unblocked', {
+          type: 'account_unblocked',
+          isBlocked: false,
+        });
+        socketNotified = true;
+      }
+    } catch (err) {
+      AppLogger.warn(`account_unblocked socket notify failed for ${userId}: ${err}`);
+    }
+
+    try {
+      await this.firebasePushService.notifyUser(userId, {
+        title: 'Account Restored',
+        body: 'Your account restriction has been removed. You can use the app again.',
+        data: payload,
+      });
+      pushNotified = true;
+    } catch (err) {
+      AppLogger.warn(`account_unblocked push notify failed for ${userId}: ${err}`);
+    }
+
+    return { socket: socketNotified, push: pushNotified };
+  }
+
+  private buildRestrictionResult(
+    user: any,
+    blockType: RestrictionBlockType | 'none',
+    notified: { socket: boolean; push: boolean }
+  ): RestrictionNotifyResult {
+    return {
+      user,
+      restriction: {
+        reason: user.blockReason || '',
+        blockedUntil: user.blockedUntil || null,
+        blockType,
+        isBlocked: !!user.isBlocked,
+        instantBlock: !!user.instantBlock,
+        deviceBan: !!user.deviceBan,
+      },
+      notified,
+    };
+  }
   public async getUsers(pagination: { page: number; limit: number }, filters: any) {
     const { page, limit } = pagination;
     const { search, city, state, role } = filters;
@@ -235,12 +388,19 @@ export class UserService {
     return user;
   }
 
-  public async blockUserWithDuration(userId: string, params: { blockType: 'permanent' | 'temporary'; durationHours?: number; reason?: string }) {
+  public async blockUserWithDuration(
+    userId: string,
+    params: { blockType: 'permanent' | 'temporary'; durationHours?: number; reason?: string }
+  ): Promise<RestrictionNotifyResult> {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
     user.isBlocked = true;
-    user.blockReason = params.reason || (params.blockType === 'permanent' ? 'Permanently blocked by Admin' : 'Temporarily blocked by Admin');
+    user.blockReason =
+      params.reason ||
+      (params.blockType === 'permanent'
+        ? 'Permanently blocked by Admin'
+        : 'Temporarily blocked by Admin');
 
     if (params.blockType === 'temporary' && params.durationHours && params.durationHours > 0) {
       user.blockedUntil = new Date(Date.now() + params.durationHours * 3600 * 1000);
@@ -249,10 +409,11 @@ export class UserService {
     }
 
     await user.save();
-    return user;
+    const notified = await this.notifyAccountBlocked(user, params.blockType);
+    return this.buildRestrictionResult(user, params.blockType, notified);
   }
 
-  public async unblockUser(userId: string) {
+  public async unblockUser(userId: string): Promise<RestrictionNotifyResult> {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
@@ -263,37 +424,73 @@ export class UserService {
     user.deviceBan = false;
 
     await user.save();
-    return user;
+    const notified = await this.notifyAccountUnblocked(user);
+    return this.buildRestrictionResult(user, 'none', notified);
   }
 
-  public async toggleInstantBlock(userId: string) {
+  public async toggleInstantBlock(userId: string): Promise<RestrictionNotifyResult> {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
     user.instantBlock = !user.instantBlock;
     if (user.instantBlock) {
       user.isBlocked = true;
       user.blockReason = 'Instant Blocked by Admin';
-    } else {
-      user.isBlocked = false;
       user.blockedUntil = undefined;
+      await user.save();
+      const notified = await this.notifyAccountBlocked(user, 'instant');
+      return this.buildRestrictionResult(user, 'instant', notified);
     }
+
+    user.isBlocked = false;
+    user.blockedUntil = undefined;
+    user.blockReason = undefined;
     await user.save();
-    return user;
+    const notified = await this.notifyAccountUnblocked(user);
+    return this.buildRestrictionResult(user, 'none', notified);
   }
 
-  public async toggleDeviceBan(userId: string) {
+  public async toggleDeviceBan(userId: string): Promise<RestrictionNotifyResult> {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
     user.deviceBan = !user.deviceBan;
     if (user.deviceBan) {
       user.isBlocked = true;
       user.blockReason = 'Device Banned by Admin';
-    } else {
-      user.isBlocked = false;
       user.blockedUntil = undefined;
+      await user.save();
+      const notified = await this.notifyAccountBlocked(user, 'device_ban');
+      return this.buildRestrictionResult(user, 'device_ban', notified);
     }
+
+    user.isBlocked = false;
+    user.blockedUntil = undefined;
+    user.blockReason = undefined;
     await user.save();
-    return user;
+    const notified = await this.notifyAccountUnblocked(user);
+    return this.buildRestrictionResult(user, 'none', notified);
+  }
+
+  public async toggleUserBlock(userId: string): Promise<RestrictionNotifyResult> {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    if (!user.isBlocked) {
+      user.isBlocked = true;
+      user.blockReason = user.blockReason || 'Blocked by Admin';
+      user.blockedUntil = undefined;
+      await user.save();
+      const notified = await this.notifyAccountBlocked(user, 'permanent');
+      return this.buildRestrictionResult(user, 'permanent', notified);
+    }
+
+    user.isBlocked = false;
+    user.blockedUntil = undefined;
+    user.blockReason = undefined;
+    user.instantBlock = false;
+    user.deviceBan = false;
+    await user.save();
+    const notified = await this.notifyAccountUnblocked(user);
+    return this.buildRestrictionResult(user, 'none', notified);
   }
 
   public async adjustUserCoins(userId: string, amount: number, description?: string) {

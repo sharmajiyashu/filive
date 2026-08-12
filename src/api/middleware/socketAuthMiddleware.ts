@@ -36,8 +36,11 @@ export default async (socket: AuthenticatedSocket, next: (err?: Error) => void) 
         };
         AppLogger.info(`Socket authenticated for user: ${user._id}`);
         next();
-    } catch (error) {
+    } catch (error: any) {
         AppLogger.error('Socket authentication failed:', error);
+        if (typeof error?.message === 'string' && error.message.startsWith('ACCOUNT_BLOCKED:')) {
+            return next(new Error(error.message));
+        }
         next(new Error('Authentication failed'));
     }
 };
