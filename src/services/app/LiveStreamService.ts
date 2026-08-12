@@ -58,7 +58,8 @@ export class LiveStreamService {
 
     const hostUser = await User.findById(hostId);
     if (!hostUser) throw new Error('Host user not found');
-    if (hostUser.gender !== 'Female') {
+    // Live stream: Female only. Party room: both Male and Female can host.
+    if (roomType === 'livestream' && hostUser.gender !== 'Female') {
       throw new Error('Go Live streaming feature is restricted to Female hosts only.');
     }
 
