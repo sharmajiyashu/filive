@@ -63,6 +63,13 @@ export class LiveStreamService {
 
     const hostUser = await User.findById(hostId);
     if (!hostUser) throw new Error('Host user not found');
+
+    const { AdminLiveService } = await import('../admin/AdminLiveService');
+    const adminLiveService = Container.get(AdminLiveService);
+    if (await adminLiveService.isUserLiveBanned(hostId)) {
+      throw new Error('You are banned from live streaming');
+    }
+
     // Live stream: Female only. Party room: both Male and Female can host.
     if (normalizedRoomType === 'livestream' && hostUser.gender !== 'Female') {
       throw new Error('Go Live streaming feature is restricted to Female hosts only.');
@@ -717,6 +724,12 @@ export class LiveStreamService {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       AppLogger.warn(`[LiveStreamService: joinLiveStream] Invalid user ID format: ${userId}`);
       throw new Error('Invalid user ID');
+    }
+
+    const { AdminLiveService } = await import('../admin/AdminLiveService');
+    const adminLiveService = Container.get(AdminLiveService);
+    if (await adminLiveService.isUserLiveBanned(userId)) {
+      throw new Error('You are banned from live streaming');
     }
 
     AppLogger.info(`[LiveStreamService: joinLiveStream] Querying active stream for channelName=${channelName}`);

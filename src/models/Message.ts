@@ -53,14 +53,22 @@ export function formatAgencyHostInviteMessage<T extends { type?: string; metadat
   };
 }
 
+export interface IAnnouncementMessageMetadata {
+  type: 'announcement';
+  announcementId: string;
+  title: string;
+  redirectUrl?: string;
+  mediaType?: 'image' | 'video' | 'none';
+}
+
 export interface IMessage extends Document {
   chatId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId;
-  type: 'text' | 'image' | 'video' | 'file' | 'system' | 'agency_host_invite';
+  type: 'text' | 'image' | 'video' | 'file' | 'system' | 'agency_host_invite' | 'announcement';
   text?: string;
   replyToId?: mongoose.Types.ObjectId;
   medias?: mongoose.Types.ObjectId[];
-  metadata?: IAgencyHostInviteMetadata | Record<string, unknown>;
+  metadata?: IAgencyHostInviteMetadata | IAnnouncementMessageMetadata | Record<string, unknown>;
   reactions: IMessageReaction[];
   seenBy: IMessageSeen[];
   createdAt: Date;
@@ -82,7 +90,7 @@ const MessageSchema: Schema = new Schema(
   {
     chatId: { type: Schema.Types.ObjectId, ref: 'Chat', required: true },
     senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['text', 'image', 'video', 'file', 'system', 'agency_host_invite'], default: 'text', required: true },
+    type: { type: String, enum: ['text', 'image', 'video', 'file', 'system', 'agency_host_invite', 'announcement'], default: 'text', required: true },
     text: { type: String },
     replyToId: { type: Schema.Types.ObjectId, ref: 'Message' },
     medias: [{ type: Schema.Types.ObjectId, ref: 'Media' }],

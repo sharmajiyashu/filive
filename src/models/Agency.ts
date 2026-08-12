@@ -7,6 +7,9 @@ export interface IAgency extends Document {
   email: string;
   description: string;
   creatorId: mongoose.Types.ObjectId;
+  bdId?: mongoose.Types.ObjectId;
+  logo?: mongoose.Types.ObjectId;
+  agencyCode: string;
   isVerified: boolean;
   status: 'pending' | 'approved' | 'rejected';
   commissionRate: number;
@@ -34,6 +37,9 @@ const AgencySchema: Schema = new Schema(
     email: { type: String },
     description: { type: String },
     creatorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    bdId: { type: Schema.Types.ObjectId, ref: 'User' },
+    logo: { type: Schema.Types.ObjectId, ref: 'Media' },
+    agencyCode: { type: String, unique: true, sparse: true },
     isVerified: { type: Boolean, default: false },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     commissionRate: { type: Number, default: 10 },

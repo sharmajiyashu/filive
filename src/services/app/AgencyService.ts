@@ -262,6 +262,13 @@ export class AgencyService {
       await existing.save();
       agency = existing;
     } else {
+      let agencyCode = `AG${Math.floor(100000 + Math.random() * 900000)}`;
+      for (let i = 0; i < 5; i++) {
+        const exists = await Agency.findOne({ agencyCode }).select('_id').lean();
+        if (!exists) break;
+        agencyCode = `AG${Math.floor(100000 + Math.random() * 900000)}`;
+      }
+
       agency = await Agency.create({
         name: data.name,
         countryId: new mongoose.Types.ObjectId(data.countryId),
@@ -269,6 +276,7 @@ export class AgencyService {
         email: data.email || '',
         description: data.description || '',
         creatorId: new mongoose.Types.ObjectId(userId),
+        agencyCode,
         otp,
         otpExpires,
         isVerified: false,

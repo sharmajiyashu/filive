@@ -24,6 +24,8 @@ import payoutRequest from './payoutRequest';
 import country from './country';
 import reaction from './reaction';
 import paymentMethod from './paymentMethod';
+import notification from './notification';
+import announcement from './announcement';
 
 export default (router: Router): Router => {
   auth(router);
@@ -51,6 +53,8 @@ export default (router: Router): Router => {
   country(router);
   reaction(router);
   paymentMethod(router);
+  notification(router);
+  announcement(router);
   return router;
 };
 
