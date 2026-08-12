@@ -25,6 +25,7 @@ import payoutMethod from './payoutMethod';
 import payoutRequest from './payoutRequest';
 import liveData from './liveData';
 import reaction from './reaction';
+import paymentMethod from './paymentMethod';
 
 export default (router: Router): Router => {
   profile(router);
@@ -53,6 +54,7 @@ export default (router: Router): Router => {
   payoutRequest(router);
   liveData(router);
   reaction(router);
+  paymentMethod(router);
   return router;
 };
 

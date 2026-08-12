@@ -32,6 +32,9 @@ export default (router: Router) => {
   coinRouter.get('/packages', async (req: any, res: Response) => {
     try {
       let countryId = req.query.countryId;
+      const audience = (req.query.audience || 'user').toString().toLowerCase() === 'seller'
+        ? 'seller'
+        : 'user';
 
       // If no countryId in query but user is logged in, try user's country
       if (!countryId && req.user) {
@@ -41,7 +44,7 @@ export default (router: Router) => {
         }
       }
 
-      const result = await coinService.getPackages(countryId);
+      const result = await coinService.getPackages(countryId, audience);
       return ResponseWrapper.success(res, result, 'Packages fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -187,8 +190,8 @@ export default (router: Router) => {
    */
   coinRouter.post('/recharge', async (req: any, res: Response) => {
     try {
-      const { packageId, transactionId } = req.body;
-      const result = await coinService.recharge(req.user.id, packageId, transactionId);
+      const { packageId, transactionId, audience } = req.body;
+      const result = await coinService.recharge(req.user.id, packageId, transactionId, audience);
       return ResponseWrapper.success(res, result, 'Recharge successful');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -221,11 +224,11 @@ export default (router: Router) => {
    */
   coinRouter.post('/razorpay/create-order', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { packageId } = req.body;
+      const { packageId, audience } = req.body;
       if (!packageId) {
         return ResponseWrapper.error(res, new Error('packageId is required'), 400);
       }
-      const result = await coinService.createRazorpayOrder(req.user.id, packageId);
+      const result = await coinService.createRazorpayOrder(req.user.id, packageId, audience);
       return ResponseWrapper.success(res, result, 'Razorpay order created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -266,7 +269,7 @@ export default (router: Router) => {
    */
   coinRouter.post('/razorpay/verify-payment', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { packageId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+      const { packageId, razorpayOrderId, razorpayPaymentId, razorpaySignature, audience } = req.body;
       if (!packageId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
         return ResponseWrapper.error(
           res,
@@ -279,7 +282,8 @@ export default (router: Router) => {
         packageId,
         razorpayOrderId,
         razorpayPaymentId,
-        razorpaySignature
+        razorpaySignature,
+        audience
       );
       return ResponseWrapper.success(res, result, 'Payment verified successfully');
     } catch (error: any) {
@@ -378,11 +382,11 @@ export default (router: Router) => {
    */
   coinRouter.post('/pandapay/create-order', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { packageId } = req.body;
+      const { packageId, audience } = req.body;
       if (!packageId) {
         return ResponseWrapper.error(res, new Error('packageId is required'), 400);
       }
-      const result = await coinService.createPandaPayOrder(req.user.id, packageId);
+      const result = await coinService.createPandaPayOrder(req.user.id, packageId, audience);
       return ResponseWrapper.success(res, result, 'PandaPay order created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

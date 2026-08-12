@@ -23,6 +23,7 @@ import payoutMethod from './payoutMethod';
 import payoutRequest from './payoutRequest';
 import country from './country';
 import reaction from './reaction';
+import paymentMethod from './paymentMethod';
 
 export default (router: Router): Router => {
   auth(router);
@@ -49,6 +50,7 @@ export default (router: Router): Router => {
   payoutRequest(router);
   country(router);
   reaction(router);
+  paymentMethod(router);
   return router;
 };
 
