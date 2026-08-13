@@ -5,6 +5,7 @@ export interface ICall extends Document {
   receiverId: mongoose.Types.ObjectId;
   callType: 'voice' | 'video';
   status: 'initiated' | 'accepted' | 'rejected' | 'ended' | 'missed' | 'busy' | 'cancelled';
+  matchType: 'direct' | 'random';
   roomId: string;
   agoraToken?: string;
   callerAgoraToken?: string;
@@ -30,6 +31,11 @@ const CallSchema: Schema = new Schema(
       type: String,
       enum: ['initiated', 'accepted', 'rejected', 'ended', 'missed', 'busy', 'cancelled'],
       default: 'initiated',
+    },
+    matchType: {
+      type: String,
+      enum: ['direct', 'random'],
+      default: 'direct',
     },
     roomId: { type: String, required: true },
     agoraToken: { type: String },

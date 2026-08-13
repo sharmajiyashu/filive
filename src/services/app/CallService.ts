@@ -49,15 +49,11 @@ export class CallService {
       throw new Error(`Insufficient coins to start call. You need at least ${rate} coins.`);
     }
 
-    // 3. Check if receiver is already in a call (busy status)
-    const activeReceiverCall = await Call.findOne({
-      $or: [
-        { callerId: receiverId, status: { $in: ['initiated', 'accepted'] } },
-        { receiverId: receiverId, status: { $in: ['initiated', 'accepted'] } },
-      ],
-    });
-
-    if (activeReceiverCall) {
+    // 3. Check if caller or receiver is already in a call (busy status)
+    if (await this.isUserBusy(callerId)) {
+      throw new Error('You are already in another call');
+    }
+    if (await this.isUserBusy(receiverId)) {
       throw new Error('User is busy on another call');
     }
 
@@ -70,6 +66,7 @@ export class CallService {
       receiverId: new mongoose.Types.ObjectId(receiverId),
       callType,
       status: 'initiated',
+      matchType: 'direct',
       roomId,
       coinsDeducted: 0,
       duration: 0,
@@ -89,6 +86,119 @@ export class CallService {
       });
 
     return populatedCall || call;
+  }
+
+  /**
+   * Returns true if the user is in an initiated or accepted call.
+   */
+  public async isUserBusy(userId: string): Promise<boolean> {
+    const activeCall = await Call.findOne({
+      $or: [
+        { callerId: userId, status: { $in: ['initiated', 'accepted'] } },
+        { receiverId: userId, status: { $in: ['initiated', 'accepted'] } },
+      ],
+    }).select('_id');
+    return !!activeCall;
+  }
+
+  /**
+   * Creates an already-accepted random match call with Agora tokens (no ring / accept step).
+   */
+  public async createInstantMatchedCall(callerId: string, receiverId: string, callType: 'voice' | 'video') {
+    AppLogger.info(`[CallService: createInstantMatchedCall] callerId=${callerId}, receiverId=${receiverId}, callType=${callType}`);
+
+    if (!mongoose.Types.ObjectId.isValid(callerId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
+      throw new Error('Invalid caller or receiver ID');
+    }
+
+    if (callerId === receiverId) {
+      throw new Error('You cannot call yourself');
+    }
+
+    const caller = await User.findById(callerId);
+    if (!caller) throw new Error('Caller profile not found');
+
+    const receiver = await User.findById(receiverId);
+    if (!receiver) throw new Error('Receiver profile not found');
+
+    const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
+    const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
+
+    if (!isCallEnabled) {
+      throw new Error(`Receiver does not have ${callType} calling enabled`);
+    }
+
+    if (caller.coins < rate) {
+      throw new Error(`Insufficient coins to start call. You need at least ${rate} coins.`);
+    }
+
+    if (await this.isUserBusy(callerId)) {
+      throw new Error('You are already in another call');
+    }
+    if (await this.isUserBusy(receiverId)) {
+      throw new Error('User is busy on another call');
+    }
+
+    const callId = new mongoose.Types.ObjectId();
+    const roomId = `call_${callId.toString()}`;
+
+    const appId = config.agora.appId;
+    const appCertificate = config.agora.appCertificate;
+    const expirationTimeInSeconds = 7200;
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
+    const uid = 0;
+
+    const callerToken = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      roomId,
+      uid,
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
+
+    const receiverToken = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      roomId,
+      uid,
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs,
+      privilegeExpiredTs
+    );
+
+    const startedAt = new Date();
+    await Call.create({
+      _id: callId,
+      callerId: new mongoose.Types.ObjectId(callerId),
+      receiverId: new mongoose.Types.ObjectId(receiverId),
+      callType,
+      status: 'accepted',
+      matchType: 'random',
+      roomId,
+      agoraToken: receiverToken,
+      callerAgoraToken: callerToken,
+      receiverAgoraToken: receiverToken,
+      coinsDeducted: 0,
+      duration: 0,
+      startedAt,
+    });
+
+    const populatedCall = await Call.findById(callId)
+      .populate({
+        path: 'callerId',
+        select: 'name profileImage coins voiceCallPrice videoCallPrice',
+        populate: { path: 'profileImage' }
+      })
+      .populate({
+        path: 'receiverId',
+        select: 'name profileImage dob voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute',
+        populate: { path: 'profileImage' }
+      });
+
+    return populatedCall;
   }
 
   /**

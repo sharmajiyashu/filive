@@ -4,6 +4,7 @@ import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import chat from './chat';
 import live from './live';
 import call from './call';
+import randomMatch from './randomMatch';
 
 export default (io: Server): void => {
     io.on('connection', (socket: AuthenticatedSocket) => {
@@ -13,6 +14,7 @@ export default (io: Server): void => {
         chat(socket, io);
         live(socket, io);
         call(socket, io);
+        randomMatch(socket, io);
     });
     AppLogger.info('✌️ Socket Events Loaded');
 };
