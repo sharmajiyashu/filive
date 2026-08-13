@@ -56,7 +56,7 @@ export default (router: Router) => {
    * @swagger
    * /app/stories/explore:
    *   get:
-   *     summary: Explore stories
+   *     summary: Explore stories with filter (explore, following, popular)
    *     tags: [Stories]
    *     parameters:
    *       - in: query
@@ -67,17 +67,93 @@ export default (router: Router) => {
    *         name: limit
    *         schema:
    *           type: integer
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [explore, following, popular]
+   *       - in: query
+   *         name: filter
+   *         schema:
+   *           type: string
+   *           enum: [explore, following, popular]
    *     responses:
    *       200:
    *         description: List of stories
    */
-  appRouter.get('/explore', async (req: any, res: Response) => {
+  const getStoriesHandler = async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
+      const filter = (req.query.filter || req.query.type)?.toString();
       const userId = req.user?.id;
-      const result = await storyService.getExploreStories(userId, page, limit);
+      const result = await storyService.getExploreStories(userId, page, limit, filter);
       return ResponseWrapper.success(res, result, 'Stories fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  };
+
+  appRouter.get('/explore', getStoriesHandler);
+  appRouter.get('/', getStoriesHandler);
+
+  /**
+   * @swagger
+   * /app/stories/{id}:
+   *   delete:
+   *     summary: Delete a story
+   *     tags: [Stories]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Story deleted successfully
+   */
+  appRouter.delete('/:id', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await storyService.deleteStory(userId, req.params.id);
+      return ResponseWrapper.success(res, result, 'Story deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/stories/comments/{id}:
+   *   delete:
+   *     summary: Delete a comment from a story
+   *     tags: [Comments]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Comment deleted successfully
+   */
+  appRouter.delete('/comments/:id', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await storyService.deleteComment(userId, req.params.id);
+      return ResponseWrapper.success(res, result, 'Comment deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  router.delete('/comments/:id', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await storyService.deleteComment(userId, req.params.id);
+      return ResponseWrapper.success(res, result, 'Comment deleted successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

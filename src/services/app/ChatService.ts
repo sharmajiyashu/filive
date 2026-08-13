@@ -24,7 +24,7 @@ export class ChatService {
     })
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole coins gender dob location country bio userId mobile',
+        select: 'name email profileImage userRole coins gender dob location country bio userId mobile lastLoginAt isVerified',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -46,20 +46,20 @@ export class ChatService {
           .sort({ createdAt: -1 })
           .populate({
             path: 'senderId',
-            select: 'name email profileImage userRole userId dob',
+            select: 'name email profileImage userRole userId dob lastLoginAt isVerified',
             populate: { path: 'profileImage' }
           })
           .populate('medias')
           .populate({
             path: 'replyToId',
             populate: [
-              { path: 'senderId', select: 'name email profileImage userRole userId dob' },
+              { path: 'senderId', select: 'name email profileImage userRole userId dob lastLoginAt isVerified' },
               { path: 'medias' }
             ]
           });
 
         const participantInfo = chat.participants.find(
-          (p) => p.userId && p.userId._id.toString() === userId
+          (p) => p.userId && (p.userId._id ? p.userId._id.toString() : p.userId.toString()) === userId
         );
 
         const unreadCount = await Message.countDocuments({
@@ -75,22 +75,39 @@ export class ChatService {
         let mediaUrl = chat.mediaId ? (chat.mediaId as any).url : '';
 
         let otherParticipant = chat.participants.find(
-          (p) => p.userId && p.userId._id.toString() !== userId
+          (p) => p.userId && (p.userId._id ? p.userId._id.toString() : p.userId.toString()) !== userId
         );
         if (!otherParticipant && chat.participants.length > 0) {
           otherParticipant = chat.participants[0];
         }
 
+        let isOnline = false;
+        let userStatus: 'online' | 'offline' = 'offline';
         let otherParticipantDetails = null;
         let otherParticipantIdStr = '';
+
         if (otherParticipant && otherParticipant.userId) {
           const otherUser = (otherParticipant.userId as any).toObject
             ? (otherParticipant.userId as any).toObject()
             : otherParticipant.userId;
           otherParticipantIdStr = otherUser._id ? otherUser._id.toString() : '';
+
+          const socketOnline = (io && otherParticipantIdStr)
+            ? (io.sockets?.adapter?.rooms?.get(`user_${otherParticipantIdStr}`)?.size || 0) > 0
+            : false;
+          const recentLogin = otherUser.lastLoginAt
+            ? new Date(otherUser.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+            : false;
+
+          isOnline = socketOnline || recentLogin;
+          userStatus = isOnline ? 'online' : 'offline';
+
           otherParticipantDetails = {
             id: otherParticipantIdStr,
-            ...otherUser
+            ...otherUser,
+            isOnline,
+            status: userStatus,
+            userStatus
           };
         }
 
@@ -100,14 +117,7 @@ export class ChatService {
           mediaUrl = otherUser.profileImage ? otherUser.profileImage.url : '';
         }
 
-        let isOnline = false;
-        if (io && otherParticipant && otherParticipant.userId) {
-          const otherId = otherParticipant.userId._id.toString();
-          const room = io.sockets.adapter.rooms.get(`user_${otherId}`);
-          isOnline = room && room.size > 0;
-        }
-
-        const isFollowed = otherParticipant && otherParticipant.userId && followedUserIds.has(otherParticipant.userId._id.toString());
+        const isFollowed = otherParticipant && otherParticipant.userId && followedUserIds.has(otherParticipantIdStr);
 
         const pendingHostInviteMessage = await Message.findOne({
           chatId: chat._id,
@@ -137,6 +147,23 @@ export class ChatService {
           };
         }
 
+        const formattedParticipants = chat.participants.map((p: any) => {
+          const pObj = p.toObject ? p.toObject() : p;
+          if (pObj.userId && typeof pObj.userId === 'object') {
+            const pId = pObj.userId._id ? pObj.userId._id.toString() : '';
+            const pSocketOnline = (io && pId) ? (io.sockets?.adapter?.rooms?.get(`user_${pId}`)?.size || 0) > 0 : false;
+            const pRecentLogin = pObj.userId.lastLoginAt ? new Date(pObj.userId.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+            const pOnline = pSocketOnline || pRecentLogin;
+            pObj.userId = {
+              ...pObj.userId,
+              isOnline: pOnline,
+              status: pOnline ? 'online' : 'offline',
+              userStatus: pOnline ? 'online' : 'offline'
+            };
+          }
+          return pObj;
+        });
+
         return {
           id: chat._id,
           type: chat.type,
@@ -150,13 +177,15 @@ export class ChatService {
           unreadCount,
           messageCount,
           isOnline,
+          status: userStatus,
+          userStatus,
           isFollowed,
           lastMessage,
           lastMessageType: lastMessage?.type || null,
           agencyHostRequest,
           userId: otherParticipantIdStr || null,
           otherParticipant: otherParticipantDetails,
-          participants: chat.participants,
+          participants: formattedParticipants,
           updatedAt: chat.updatedAt
         };
       })
@@ -202,7 +231,7 @@ export class ChatService {
         _id: { $ne: userObjectId },
         $or: userSearchConditions
       })
-        .select('name email profileImage userRole coins gender dob location country bio userId mobile')
+        .select('name email profileImage userRole coins gender dob location country bio userId mobile lastLoginAt isVerified')
         .populate('profileImage')
         .limit(20);
 
@@ -218,11 +247,11 @@ export class ChatService {
             'participants.userId': { $all: [userObjectId, globalUser._id] }
           });
 
-          let isOnline = false;
-          if (io) {
-            const room = io.sockets.adapter.rooms.get(`user_${globalUserIdStr}`);
-            isOnline = room && room.size > 0;
-          }
+          const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${globalUserIdStr}`)?.size || 0) > 0 : false;
+          const recentLogin = globalUser.lastLoginAt ? new Date(globalUser.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+          const isOnline = socketOnline || recentLogin;
+          const userStatus = isOnline ? 'online' : 'offline';
+
           const isFollowed = followedUserIds.has(globalUserIdStr);
           const globalUserObj = globalUser.toObject ? globalUser.toObject() : globalUser;
 
@@ -239,6 +268,8 @@ export class ChatService {
             unreadCount: 0,
             messageCount: 0,
             isOnline,
+            status: userStatus,
+            userStatus,
             isFollowed,
             lastMessage: null,
             lastMessageType: null,
@@ -246,11 +277,14 @@ export class ChatService {
             userId: globalUserIdStr,
             otherParticipant: {
               id: globalUserIdStr,
-              ...globalUserObj
+              ...globalUserObj,
+              isOnline,
+              status: userStatus,
+              userStatus
             },
             participants: [
               { userId: userObjectId as any, role: 'admin', isMuted: false, isPinned: false, joinedAt: new Date() },
-              { userId: globalUser._id as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
+              { userId: { ...globalUserObj, isOnline, status: userStatus, userStatus } as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
             ],
             updatedAt: (globalUser as any).updatedAt || new Date()
           });
@@ -298,7 +332,7 @@ export class ChatService {
     })
       .populate({
         path: 'participants.userId',
-        select: 'name email profileImage userRole coins gender dob location country bio userId',
+        select: 'name email profileImage userRole coins gender dob location country bio userId mobile lastLoginAt isVerified',
         populate: { path: 'profileImage' }
       })
       .populate('mediaId');
@@ -307,23 +341,28 @@ export class ChatService {
       throw new Error('Chat not found or access denied');
     }
 
+    let io: any;
+    try {
+      io = Container.get('socket');
+    } catch (e) { }
+
     let isBlocked = false;
     let blockedByMe = false;
     let blockedByOther = false;
     let otherParticipantIdStr = '';
 
     const otherParticipant = chat.participants.find(
-      (p) => p.userId && p.userId._id.toString() !== userId
+      (p) => p.userId && (p.userId._id ? p.userId._id.toString() : p.userId.toString()) !== userId
     );
 
     if (chat.type === 'private' && otherParticipant && otherParticipant.userId) {
       const BlockModel = mongoose.model('Block');
-      otherParticipantIdStr = otherParticipant.userId._id.toString();
+      otherParticipantIdStr = otherParticipant.userId._id ? otherParticipant.userId._id.toString() : otherParticipant.userId.toString();
 
       const blockRelation = await BlockModel.findOne({
         $or: [
-          { blockerId: userObjectId, blockedId: otherParticipant.userId._id },
-          { blockerId: otherParticipant.userId._id, blockedId: userObjectId }
+          { blockerId: userObjectId, blockedId: otherParticipant.userId._id || otherParticipant.userId },
+          { blockerId: otherParticipant.userId._id || otherParticipant.userId, blockedId: userObjectId }
         ]
       });
 
@@ -338,15 +377,32 @@ export class ChatService {
     }
 
     const participantInfo = chat.participants.find(
-      (p) => p.userId && p.userId._id.toString() === userId
+      (p) => p.userId && (p.userId._id ? p.userId._id.toString() : p.userId.toString()) === userId
     );
+
+    const formattedParticipants = chat.participants.map((p: any) => {
+      const pObj = p.toObject ? p.toObject() : p;
+      if (pObj.userId && typeof pObj.userId === 'object') {
+        const pId = pObj.userId._id ? pObj.userId._id.toString() : '';
+        const pSocketOnline = (io && pId) ? (io.sockets?.adapter?.rooms?.get(`user_${pId}`)?.size || 0) > 0 : false;
+        const pRecentLogin = pObj.userId.lastLoginAt ? new Date(pObj.userId.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+        const pOnline = pSocketOnline || pRecentLogin;
+        pObj.userId = {
+          ...pObj.userId,
+          isOnline: pOnline,
+          status: pOnline ? 'online' : 'offline',
+          userStatus: pOnline ? 'online' : 'offline'
+        };
+      }
+      return pObj;
+    });
 
     return {
       id: chat._id,
       type: chat.type,
       name: chat.name,
       mediaId: chat.mediaId,
-      participants: chat.participants,
+      participants: formattedParticipants,
       isMuted: participantInfo ? participantInfo.isMuted : false,
       isPinned: participantInfo ? participantInfo.isPinned : false,
       isBlocked,

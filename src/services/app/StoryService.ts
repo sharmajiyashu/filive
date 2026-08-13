@@ -54,7 +54,7 @@ export class StoryService {
     return story;
   }
 
-  public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10) {
+  public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10, filter?: string) {
     let query: any = { isBlocked: { $ne: true } };
 
     if (currentUserId) {
@@ -74,14 +74,43 @@ export class StoryService {
       }
     }
 
+    const filterType = (filter || '').toLowerCase();
+
+    if (filterType === 'following' || filterType === 'follow') {
+      if (!currentUserId) {
+        return {
+          stories: [],
+          pagination: { total: 0, page, limit, totalPages: 0 }
+        };
+      }
+      const userFollows = await Follow.find({
+        followerId: currentUserId,
+        status: 'accepted'
+      }).select('followingId');
+
+      const followedUserIds = userFollows.map(f => f.followingId);
+      if (followedUserIds.length === 0) {
+        return {
+          stories: [],
+          pagination: { total: 0, page, limit, totalPages: 0 }
+        };
+      }
+      query.userId = query.userId ? { $in: followedUserIds, $nin: query.userId.$nin } : { $in: followedUserIds };
+    }
+
+    let sortOption: any = { createdAt: -1 };
+    if (filterType === 'popular' || filterType === 'hot') {
+      sortOption = { likesCount: -1, commentsCount: -1, createdAt: -1 };
+    }
+
     const stories = await Story.find(query)
       .populate({
         path: 'userId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
         populate: { path: 'profileImage' }
       })
       .populate('images')
-      .sort({ createdAt: -1 })
+      .sort(sortOption)
       .skip((page - 1) * limit)
       .limit(limit);
 
@@ -119,11 +148,26 @@ export class StoryService {
     const storiesWithStatus = stories.map(story => {
       const storyObj = story.toObject();
       const authorId = story.userId ? ((story.userId as any)._id || story.userId) : null;
+      const isFollowing = (currentUserId && authorId) ? followingUserIds.has(authorId.toString()) : false;
+
+      let userObj = storyObj.userId as any;
+      if (userObj && typeof userObj === 'object') {
+        const isOnline = userObj.lastLoginAt ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+        userObj = {
+          ...userObj,
+          isOnline,
+          status: isOnline ? 'online' : 'offline',
+          isFollowing
+        };
+      }
+
       return {
         ...storyObj,
+        userId: userObj,
+        user: userObj,
         isLiked: currentUserId ? likedStoryIds.has(story._id.toString()) : false,
         isCommented: currentUserId ? commentedStoryIds.has(story._id.toString()) : false,
-        isFollowing: (currentUserId && authorId) ? followingUserIds.has(authorId.toString()) : false
+        isFollowing
       };
     });
 
@@ -166,7 +210,7 @@ export class StoryService {
     const comments = await Comment.find({ storyId })
       .populate({
         path: 'userId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
         populate: { path: 'profileImage' }
       })
       .sort({ createdAt: -1 })
@@ -187,7 +231,7 @@ export class StoryService {
         Like.findOne({ userId: currentUserId, targetId: storyId, targetType: 'Story' }),
         Follow.find({
           followerId: currentUserId,
-          followingId: { $in: comments.map(c => c.userId._id.toString()) },
+          followingId: { $in: comments.map(c => c.userId?._id?.toString()).filter(Boolean) },
           status: 'accepted'
         }),
         Like.find({
@@ -204,13 +248,28 @@ export class StoryService {
 
     const commentsWithFullStatus = comments.map(comment => {
       const commentObj = comment.toObject();
-      const authorId = comment.userId._id.toString();
+      const authorId = comment.userId?._id?.toString();
+      const isFollowing = (currentUserId && authorId) ? followingUserIds.has(authorId) : false;
+
+      let userObj = commentObj.userId as any;
+      if (userObj && typeof userObj === 'object') {
+        const isOnline = userObj.lastLoginAt ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+        userObj = {
+          ...userObj,
+          isOnline,
+          status: isOnline ? 'online' : 'offline',
+          isFollowing
+        };
+      }
+
       return {
         ...commentObj,
+        userId: userObj,
+        user: userObj,
         isLiked: currentUserId ? likedCommentIds.has(comment._id.toString()) : false,
         isCommented: isCommented,
         isStoryLiked: isStoryLiked,
-        isFollowing: currentUserId ? followingUserIds.has(authorId) : false
+        isFollowing
       };
     });
 
@@ -248,5 +307,60 @@ export class StoryService {
     await Like.create({ userId, targetId: commentId, targetType: 'Comment' });
     await Comment.findByIdAndUpdate(commentId, { $inc: { likesCount: 1 } });
     return { liked: true };
+  }
+
+  public async deleteStory(userId: string, storyId: string) {
+    if (!mongoose.Types.ObjectId.isValid(storyId)) {
+      throw new Error('Invalid story ID');
+    }
+
+    const story = await Story.findById(storyId);
+    if (!story) {
+      throw new Error('Story not found');
+    }
+
+    const user = await User.findById(userId).select('userRole');
+    const isOwner = story.userId.toString() === userId.toString();
+    const isAdmin = user && user.userRole === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      throw new Error('Unauthorized to delete this story');
+    }
+
+    await Story.findByIdAndDelete(storyId);
+    await Comment.deleteMany({ storyId });
+    await Like.deleteMany({ targetId: storyId, targetType: 'Story' });
+
+    return { success: true };
+  }
+
+  public async deleteComment(userId: string, commentId: string) {
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      throw new Error('Invalid comment ID');
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      throw new Error('Comment not found');
+    }
+
+    const story = await Story.findById(comment.storyId);
+    const user = await User.findById(userId).select('userRole');
+
+    const isCommentOwner = comment.userId.toString() === userId.toString();
+    const isStoryOwner = story && story.userId.toString() === userId.toString();
+    const isAdmin = user && user.userRole === 'admin';
+
+    if (!isCommentOwner && !isStoryOwner && !isAdmin) {
+      throw new Error('Unauthorized to delete this comment');
+    }
+
+    await Comment.findByIdAndDelete(commentId);
+    if (story) {
+      await Story.findByIdAndUpdate(story._id, { $inc: { commentsCount: -1 } });
+    }
+    await Like.deleteMany({ targetId: commentId, targetType: 'Comment' });
+
+    return { success: true };
   }
 }
