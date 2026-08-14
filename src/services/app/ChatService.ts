@@ -290,6 +290,14 @@ export class ChatService {
 
           const isFollowed = followedUserIds.has(globalUserIdStr);
           const globalUserObj = globalUser.toObject ? globalUser.toObject() : globalUser;
+          const blockedByMe = blockedByMeIds.has(globalUserIdStr);
+          const blockedByOther = blockedByOtherIds.has(globalUserIdStr);
+          const isBlocked = blockedByMe || blockedByOther;
+          const blockMessage = blockedByOther
+            ? 'You are blocked by this user'
+            : blockedByMe
+              ? 'You have blocked this user'
+              : null;
 
           data.push({
             id: existingSingleChat ? existingSingleChat._id : (null as any),
@@ -322,6 +330,11 @@ export class ChatService {
               { userId: userObjectId as any, role: 'admin', isMuted: false, isPinned: false, joinedAt: new Date() },
               { userId: { ...globalUserObj, isOnline, status: userStatus, userStatus } as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
             ],
+            isBlocked,
+            blockedByMe,
+            blockedByOther,
+            blockMessage,
+            canSendMessage: !isBlocked,
             updatedAt: (globalUser as any).updatedAt || new Date()
           });
         }
