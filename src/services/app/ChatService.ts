@@ -4,6 +4,7 @@ import Chat from '../../models/Chat';
 import Message, { IAgencyHostInviteMetadata, toInviteFlag } from '../../models/Message';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
+import Block from '../../models/Block';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 
 @Service()
@@ -39,6 +40,20 @@ export class ChatService {
     if (filter === 'follow' || search) {
       const follows = await Follow.find({ followerId: userObjectId, status: 'accepted' }).select('followingId');
       follows.forEach(f => followedUserIds.add(f.followingId.toString()));
+    }
+
+    const blockRows = await Block.find({
+      $or: [{ blockerId: userObjectId }, { blockedId: userObjectId }]
+    }).select('blockerId blockedId');
+
+    const blockedByMeIds = new Set<string>();
+    const blockedByOtherIds = new Set<string>();
+    for (const row of blockRows) {
+      if (row.blockerId.toString() === userId) {
+        blockedByMeIds.add(row.blockedId.toString());
+      } else {
+        blockedByOtherIds.add(row.blockerId.toString());
+      }
     }
 
     let data = await Promise.all(
@@ -148,6 +163,21 @@ export class ChatService {
           };
         }
 
+        let isBlocked = false;
+        let blockedByMe = false;
+        let blockedByOther = false;
+        let blockMessage: string | null = null;
+        if (chat.type === 'private' && otherParticipantIdStr) {
+          blockedByMe = blockedByMeIds.has(otherParticipantIdStr);
+          blockedByOther = blockedByOtherIds.has(otherParticipantIdStr);
+          isBlocked = blockedByMe || blockedByOther;
+          blockMessage = blockedByOther
+            ? 'You are blocked by this user'
+            : blockedByMe
+              ? 'You have blocked this user'
+              : null;
+        }
+
         const formattedParticipants = chat.participants.map((p: any) => {
           const pObj = p.toObject ? p.toObject() : p;
           if (pObj.userId && typeof pObj.userId === 'object') {
@@ -187,6 +217,11 @@ export class ChatService {
           userId: otherParticipantIdStr || null,
           otherParticipant: otherParticipantDetails,
           participants: formattedParticipants,
+          isBlocked,
+          blockedByMe,
+          blockedByOther,
+          blockMessage,
+          canSendMessage: !isBlocked,
           updatedAt: chat.updatedAt
         };
       })
