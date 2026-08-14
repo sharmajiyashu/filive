@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import { CallService } from '../../../services/app/CallService';
+import { RandomMatchService } from '../../../services/app/RandomMatchService';
 import { ResponseWrapper } from '../../responseWrapper';
 
 export default (router: Router) => {
@@ -98,6 +99,67 @@ export default (router: Router) => {
       const userId = req.user.id;
       const result = await callService.getCallingHosts(page, limit, userId, callType, country);
       return ResponseWrapper.success(res, result, 'Calling hosts fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/calls/available-hosts:
+   *   get:
+   *     summary: Get female hosts currently opted into random video/voice match
+   *     tags: [Calls]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: callType
+   *         schema:
+   *           type: string
+   *           enum: [voice, video]
+   *     responses:
+   *       200:
+   *         description: Available random-match hosts
+   */
+  callRouter.get('/available-hosts', async (req: any, res: Response) => {
+    try {
+      const callType = req.query.callType as 'voice' | 'video' | undefined;
+      if (callType && !['voice', 'video'].includes(callType)) {
+        throw new Error('Invalid callType filter. Use "voice" or "video".');
+      }
+      const randomMatchService = Container.get(RandomMatchService);
+      const result = await randomMatchService.getAvailableHostProfiles(callType, req.user.id);
+      return ResponseWrapper.success(res, result, 'Available hosts fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/random-match/available-hosts:
+   *   get:
+   *     summary: Get female hosts currently opted into random video/voice match
+   *     tags: [Calls]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: callType
+   *         schema:
+   *           type: string
+   *           enum: [voice, video]
+   */
+  router.get('/random-match/available-hosts', async (req: any, res: Response) => {
+    try {
+      const callType = req.query.callType as 'voice' | 'video' | undefined;
+      if (callType && !['voice', 'video'].includes(callType)) {
+        throw new Error('Invalid callType filter. Use "voice" or "video".');
+      }
+      const randomMatchService = Container.get(RandomMatchService);
+      const result = await randomMatchService.getAvailableHostProfiles(callType, req.user.id);
+      return ResponseWrapper.success(res, result, 'Available hosts fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

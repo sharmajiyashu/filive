@@ -196,28 +196,138 @@ export class StoryService {
     return { liked: true };
   }
 
-  public async commentOnStory(userId: string, storyId: string, content: string) {
+  private commentUserPopulate() {
+    return {
+      path: 'userId',
+      select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
+      populate: { path: 'profileImage' }
+    };
+  }
+
+  private replyToUserPopulate() {
+    return {
+      path: 'replyToUserId',
+      select: 'userId name profileImage',
+      populate: { path: 'profileImage' }
+    };
+  }
+
+  private formatCommentUser(userObj: any, isFollowing: boolean) {
+    if (!userObj || typeof userObj !== 'object') return userObj;
+    const isOnline = userObj.lastLoginAt
+      ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+      : false;
+    return {
+      ...userObj,
+      isOnline,
+      status: isOnline ? 'online' : 'offline',
+      isFollowing
+    };
+  }
+
+  private formatComment(
+    comment: any,
+    currentUserId?: string,
+    followingUserIds?: Set<string>,
+    likedCommentIds?: Set<string>,
+    isCommented?: boolean,
+    isStoryLiked?: boolean
+  ) {
+    const commentObj = comment.toObject ? comment.toObject() : { ...comment };
+    const authorId = comment.userId?._id?.toString() || commentObj.userId?._id?.toString();
+    const isFollowing = !!(currentUserId && authorId && followingUserIds?.has(authorId));
+    const userObj = this.formatCommentUser(commentObj.userId, isFollowing);
+    const replyToUser = commentObj.replyToUserId && typeof commentObj.replyToUserId === 'object'
+      ? commentObj.replyToUserId
+      : null;
+
+    return {
+      ...commentObj,
+      userId: userObj,
+      user: userObj,
+      parentCommentId: commentObj.parentCommentId || null,
+      replyToUserId: replyToUser?._id || commentObj.replyToUserId || null,
+      replyToUser,
+      repliesCount: commentObj.repliesCount || 0,
+      replies: commentObj.replies || [],
+      isLiked: currentUserId && likedCommentIds ? likedCommentIds.has(comment._id.toString()) : false,
+      isCommented: !!isCommented,
+      isStoryLiked: !!isStoryLiked,
+      isFollowing
+    };
+  }
+
+  public async commentOnStory(
+    userId: string,
+    storyId: string,
+    content: string,
+    parentCommentId?: string
+  ) {
+    if (!content || !content.trim()) {
+      throw new Error('Comment content is required');
+    }
+
+    const story = await Story.findById(storyId);
+    if (!story) {
+      throw new Error('Story not found');
+    }
+
+    let resolvedParentId: mongoose.Types.ObjectId | undefined;
+    let replyToUserId: mongoose.Types.ObjectId | undefined;
+
+    if (parentCommentId) {
+      if (!mongoose.Types.ObjectId.isValid(parentCommentId)) {
+        throw new Error('Invalid parent comment ID');
+      }
+      const parent = await Comment.findById(parentCommentId);
+      if (!parent || parent.storyId.toString() !== storyId.toString()) {
+        throw new Error('Parent comment not found');
+      }
+      resolvedParentId = (parent.parentCommentId || parent._id) as mongoose.Types.ObjectId;
+      replyToUserId = parent.userId;
+      await Comment.findByIdAndUpdate(resolvedParentId, { $inc: { repliesCount: 1 } });
+    }
+
     const comment = await Comment.create({
       userId,
       storyId,
-      content,
+      content: content.trim(),
+      parentCommentId: resolvedParentId || null,
+      replyToUserId: replyToUserId || null,
     });
     await Story.findByIdAndUpdate(storyId, { $inc: { commentsCount: 1 } });
-    return comment;
+
+    const populated = await Comment.findById(comment._id)
+      .populate(this.commentUserPopulate())
+      .populate(this.replyToUserPopulate());
+
+    return this.formatComment(populated || comment, userId);
   }
 
   public async getStoryComments(storyId: string, currentUserId?: string, page: number = 1, limit: number = 10) {
-    const comments = await Comment.find({ storyId })
-      .populate({
-        path: 'userId',
-        select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
-        populate: { path: 'profileImage' }
-      })
+    const topLevelQuery = {
+      storyId,
+      $or: [{ parentCommentId: null }, { parentCommentId: { $exists: false } }]
+    };
+
+    const comments = await Comment.find(topLevelQuery)
+      .populate(this.commentUserPopulate())
+      .populate(this.replyToUserPopulate())
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const total = await Comment.countDocuments({ storyId });
+    const total = await Comment.countDocuments(topLevelQuery);
+    const parentIds = comments.map(c => c._id);
+
+    const replies = parentIds.length > 0
+      ? await Comment.find({ storyId, parentCommentId: { $in: parentIds } })
+          .populate(this.commentUserPopulate())
+          .populate(this.replyToUserPopulate())
+          .sort({ createdAt: 1 })
+      : [];
+
+    const allComments = [...comments, ...replies];
 
     let isCommented = false;
     let isStoryLiked = false;
@@ -225,13 +335,16 @@ export class StoryService {
     let likedCommentIds = new Set<string>();
 
     if (currentUserId) {
-      const commentIds = comments.map(c => c._id);
+      const commentIds = allComments.map(c => c._id);
+      const authorIds = allComments
+        .map(c => c.userId?._id?.toString())
+        .filter(Boolean) as string[];
       const [userComment, storyLike, following, commentLikes] = await Promise.all([
         Comment.findOne({ userId: currentUserId, storyId }),
         Like.findOne({ userId: currentUserId, targetId: storyId, targetType: 'Story' }),
         Follow.find({
           followerId: currentUserId,
-          followingId: { $in: comments.map(c => c.userId?._id?.toString()).filter(Boolean) },
+          followingId: { $in: authorIds },
           status: 'accepted'
         }),
         Like.find({
@@ -246,31 +359,21 @@ export class StoryService {
       likedCommentIds = new Set(commentLikes.map(l => l.targetId.toString()));
     }
 
+    const repliesByParent = new Map<string, any[]>();
+    for (const reply of replies) {
+      const parentId = reply.parentCommentId?.toString();
+      if (!parentId) continue;
+      const formatted = this.formatComment(reply, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
+      const list = repliesByParent.get(parentId) || [];
+      list.push(formatted);
+      repliesByParent.set(parentId, list);
+    }
+
     const commentsWithFullStatus = comments.map(comment => {
-      const commentObj = comment.toObject();
-      const authorId = comment.userId?._id?.toString();
-      const isFollowing = (currentUserId && authorId) ? followingUserIds.has(authorId) : false;
-
-      let userObj = commentObj.userId as any;
-      if (userObj && typeof userObj === 'object') {
-        const isOnline = userObj.lastLoginAt ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-        userObj = {
-          ...userObj,
-          isOnline,
-          status: isOnline ? 'online' : 'offline',
-          isFollowing
-        };
-      }
-
-      return {
-        ...commentObj,
-        userId: userObj,
-        user: userObj,
-        isLiked: currentUserId ? likedCommentIds.has(comment._id.toString()) : false,
-        isCommented: isCommented,
-        isStoryLiked: isStoryLiked,
-        isFollowing
-      };
+      const formatted = this.formatComment(comment, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
+      formatted.replies = repliesByParent.get(comment._id.toString()) || [];
+      formatted.repliesCount = formatted.replies.length;
+      return formatted;
     });
 
     return {
@@ -355,11 +458,18 @@ export class StoryService {
       throw new Error('Unauthorized to delete this comment');
     }
 
-    await Comment.findByIdAndDelete(commentId);
-    if (story) {
-      await Story.findByIdAndUpdate(story._id, { $inc: { commentsCount: -1 } });
+    const childReplies = await Comment.find({ parentCommentId: commentId }).select('_id');
+    const childIds = childReplies.map(r => r._id);
+    const deleteCount = 1 + childIds.length;
+
+    await Comment.deleteMany({ _id: { $in: [comment._id, ...childIds] } });
+    if (comment.parentCommentId) {
+      await Comment.findByIdAndUpdate(comment.parentCommentId, { $inc: { repliesCount: -1 } });
     }
-    await Like.deleteMany({ targetId: commentId, targetType: 'Comment' });
+    if (story) {
+      await Story.findByIdAndUpdate(story._id, { $inc: { commentsCount: -deleteCount } });
+    }
+    await Like.deleteMany({ targetId: { $in: [commentId, ...childIds] }, targetType: 'Comment' });
 
     return { success: true };
   }

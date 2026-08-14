@@ -224,7 +224,7 @@ export class GiftService {
       userId: new mongoose.Types.ObjectId(senderId),
       relatedUserId: new mongoose.Types.ObjectId(receiverId),
       amount: -totalPrice,
-      type: 'transfer',
+      type: 'gift_sent',
       description: `Sent gift '${gift.name}' x${quantity} during ${resolvedContext || 'live stream'}`,
       channelName: channelName || undefined
     });

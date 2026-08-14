@@ -208,6 +208,12 @@ export default (router: Router) => {
    *             properties:
    *               content:
    *                 type: string
+   *               parentCommentId:
+   *                 type: string
+   *                 description: Parent comment ID when replying
+   *               replyToCommentId:
+   *                 type: string
+   *                 description: Alias for parentCommentId
    *     responses:
    *       201:
    *         description: Comment added successfully
@@ -215,7 +221,13 @@ export default (router: Router) => {
   appRouter.post('/:id/comment', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
-      const comment = await storyService.commentOnStory(userId, req.params.id, req.body.content);
+      const parentCommentId = req.body.parentCommentId || req.body.replyToCommentId;
+      const comment = await storyService.commentOnStory(
+        userId,
+        req.params.id,
+        req.body.content,
+        parentCommentId
+      );
       return ResponseWrapper.success(res, comment, 'Comment added successfully', 201);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

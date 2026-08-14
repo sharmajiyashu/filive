@@ -40,6 +40,9 @@ export class RandomMatchService {
   /** userId → availability */
   private availableHosts = new Map<string, AvailableHost>();
 
+  /** Persist host opt-in so they can re-enter the pool after a match ends */
+  private hostPreferences = new Map<string, AvailableHost>();
+
   public isCallerQueued(userId: string): boolean {
     return this.callerIndex.has(userId);
   }
@@ -135,6 +138,7 @@ export class RandomMatchService {
 
     if (!available) {
       this.availableHosts.delete(hostId);
+      this.hostPreferences.delete(hostId);
       io.to(`user_${hostId}`).emit('random_call_availability_updated', {
         available: false,
         callTypes: [],
@@ -176,11 +180,13 @@ export class RandomMatchService {
       throw new Error('You are already in another call');
     }
 
-    this.availableHosts.set(hostId, {
+    const hostEntry: AvailableHost = {
       userId: hostId,
       callTypes: enabledTypes,
       socketId,
-    });
+    };
+    this.availableHosts.set(hostId, hostEntry);
+    this.hostPreferences.set(hostId, hostEntry);
 
     io.to(`user_${hostId}`).emit('random_call_availability_updated', {
       available: true,
@@ -200,6 +206,61 @@ export class RandomMatchService {
   public handleDisconnect(userId: string): void {
     this.leaveRandomMatch(userId);
     this.availableHosts.delete(userId);
+    this.hostPreferences.delete(userId);
+  }
+
+  public async getAvailableHostProfiles(callType?: RandomCallType, currentUserId?: string) {
+    const hostIds = this.getAvailableHostIds(callType).filter((id) => id !== currentUserId);
+    if (hostIds.length === 0) {
+      return { data: [], total: 0 };
+    }
+
+    const hosts = await User.find({ _id: { $in: hostIds }, gender: 'Female' })
+      .select('userId name profileImage gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
+      .populate('profileImage')
+      .populate('countryId');
+
+    const shuffled = hosts
+      .map((h: any) => {
+        const obj = h.toObject ? h.toObject() : h;
+        return { ...obj, isOnline: true, status: 'online' };
+      })
+      .sort(() => Math.random() - 0.5);
+
+    return { data: shuffled, total: shuffled.length };
+  }
+
+  public getAvailableHostIds(callType?: RandomCallType): string[] {
+    const ids: string[] = [];
+    for (const [hostId, entry] of this.availableHosts.entries()) {
+      if (!callType || entry.callTypes.includes(callType)) {
+        ids.push(hostId);
+      }
+    }
+    return ids;
+  }
+
+  public async restoreHostIfNeeded(hostId: string, io?: Server): Promise<boolean> {
+    const pref = this.hostPreferences.get(hostId);
+    if (!pref) return false;
+    if (this.availableHosts.has(hostId)) return true;
+    if (this.callerIndex.has(hostId)) return false;
+    if (await this.callService.isUserBusy(hostId)) return false;
+
+    this.availableHosts.set(hostId, pref);
+
+    if (io) {
+      io.to(`user_${hostId}`).emit('random_call_availability_updated', {
+        available: true,
+        callTypes: pref.callTypes,
+      });
+      for (const callType of pref.callTypes) {
+        const matched = await this.tryMatchWaitingCallerForHost(hostId, callType, io);
+        if (matched) break;
+      }
+    }
+
+    return true;
   }
 
   private handleSearchTimeout(callerId: string, callType: RandomCallType, io: Server): void {
@@ -355,6 +416,7 @@ export class RandomMatchService {
 
     this.removeCallerFromQueue(callerId, callType);
     this.availableHosts.delete(hostId);
+    // hostPreferences kept so the host re-enters the pool after the call ends
 
     const callerObj = call.callerId as any;
     const receiverObj = call.receiverId as any;

@@ -105,31 +105,97 @@ export class StoreService {
     user.coins -= totalCoins;
     await user.save();
 
-    let expiresAt = new Date();
-    if (priceOption.validityType === 'days') {
-      expiresAt = addDays(expiresAt, priceOption.validity);
-    } else if (priceOption.validityType === 'month') {
-      expiresAt = addMonths(expiresAt, priceOption.validity);
-    } else if (priceOption.validityType === 'year') {
-      expiresAt = addYears(expiresAt, priceOption.validity);
-    }
+    const now = new Date();
+    const stackedItem = await this.extendOrCreatePurchase(
+      userId,
+      storeItemId,
+      priceOption,
+      purchaseQuantity,
+      now
+    );
 
-    const purchasedItems = [];
-    for (let i = 0; i < purchaseQuantity; i++) {
-      const userStoreItem = await UserStoreItem.create({
-        userId: new mongoose.Types.ObjectId(userId),
-        storeItemId: new mongoose.Types.ObjectId(storeItemId),
-        expiresAt,
-      });
-      purchasedItems.push(userStoreItem);
-    }
+    const populated = await UserStoreItem.findById(stackedItem._id).populate({
+      path: 'storeItemId',
+      populate: { path: 'media' }
+    });
+    const purchasedItem = populated || stackedItem;
+    const remainingMs = Math.max(0, purchasedItem.expiresAt.getTime() - now.getTime());
+    const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
 
     return {
       quantity: purchaseQuantity,
       totalCoinsSpent: totalCoins,
-      items: purchasedItems,
-      item: purchasedItems[0],
+      items: [purchasedItem],
+      item: purchasedItem,
+      expiresAt: purchasedItem.expiresAt,
+      remainingMs,
+      remainingDays,
     };
+  }
+
+  private addValidity(base: Date, priceOption: IStoreItemPrice, quantity: number): Date {
+    const amount = priceOption.validity * quantity;
+    if (priceOption.validityType === 'month') {
+      return addMonths(base, amount);
+    }
+    if (priceOption.validityType === 'year') {
+      return addYears(base, amount);
+    }
+    return addDays(base, amount);
+  }
+
+  private async mergeDuplicateActiveItems(userId: string, storeItemId: string) {
+    const now = new Date();
+    const activeItems = await UserStoreItem.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      storeItemId: new mongoose.Types.ObjectId(storeItemId),
+      expiresAt: { $gt: now },
+    }).sort({ inUse: -1, expiresAt: -1, purchasedAt: -1 });
+
+    if (activeItems.length <= 1) {
+      return activeItems[0] || null;
+    }
+
+    const totalRemainingMs = activeItems.reduce((sum, item) => {
+      return sum + Math.max(0, item.expiresAt.getTime() - now.getTime());
+    }, 0);
+
+    const keep = activeItems[0];
+    keep.expiresAt = new Date(now.getTime() + totalRemainingMs);
+    await keep.save();
+
+    const duplicateIds = activeItems.slice(1).map((item) => item._id);
+    await UserStoreItem.deleteMany({ _id: { $in: duplicateIds } });
+    return keep;
+  }
+
+  private async extendOrCreatePurchase(
+    userId: string,
+    storeItemId: string,
+    priceOption: IStoreItemPrice,
+    quantity: number,
+    now: Date
+  ) {
+    await this.mergeDuplicateActiveItems(userId, storeItemId);
+
+    const existing = await UserStoreItem.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      storeItemId: new mongoose.Types.ObjectId(storeItemId),
+      expiresAt: { $gt: now },
+    }).sort({ expiresAt: -1 });
+
+    if (existing) {
+      const base = existing.expiresAt.getTime() > now.getTime() ? existing.expiresAt : now;
+      existing.expiresAt = this.addValidity(base, priceOption, quantity);
+      await existing.save();
+      return existing;
+    }
+
+    return UserStoreItem.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      storeItemId: new mongoose.Types.ObjectId(storeItemId),
+      expiresAt: this.addValidity(now, priceOption, quantity),
+    });
   }
 
   public async getUserPurchasedItems(userId: string, type?: string, page: number = 1, limit: number = 20) {
@@ -139,8 +205,13 @@ export class StoreService {
     };
 
     const skip = (page - 1) * limit;
-    
-    // We need to populate storeItemId to filter by type if requested
+
+    const activeItems = await UserStoreItem.find(query).select('storeItemId');
+    const uniqueStoreItemIds = [...new Set(activeItems.map((item) => item.storeItemId.toString()))];
+    for (const storeItemId of uniqueStoreItemIds) {
+      await this.mergeDuplicateActiveItems(userId, storeItemId);
+    }
+
     let items = await UserStoreItem.find(query).populate({
       path: 'storeItemId',
       populate: { path: 'media' }
@@ -150,9 +221,16 @@ export class StoreService {
       items = items.filter((item: any) => item.storeItemId && item.storeItemId.type === type);
     }
 
-    // Paginate in memory if filtered, otherwise normal pagination could be tricky with population filtering.
-    // For simplicity, we paginate the populated/filtered array.
-    const paginatedItems = items.slice(skip, skip + limit);
+    const now = new Date();
+    const paginatedItems = items.slice(skip, skip + limit).map((item: any) => {
+      const obj = item.toObject ? item.toObject() : item;
+      const remainingMs = Math.max(0, new Date(obj.expiresAt).getTime() - now.getTime());
+      return {
+        ...obj,
+        remainingMs,
+        remainingDays: Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
+      };
+    });
 
     return {
       data: paginatedItems,

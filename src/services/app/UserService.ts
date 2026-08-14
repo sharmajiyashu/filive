@@ -432,19 +432,27 @@ export class UserService {
     const blocks = await Block.find({ blockerId })
       .populate({
         path: 'blockedId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio isPremium gender location country lastLoginAt',
         populate: { path: 'profileImage' }
       })
       .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(limit)
+      .sort({ createdAt: -1 });
 
     const total = await Block.countDocuments({ blockerId });
     const users = blocks
       .filter(b => b.blockedId !== null)
       .map(b => {
         const userObj = (b.blockedId as any).toObject ? (b.blockedId as any).toObject() : b.blockedId;
+        const isOnline = userObj.lastLoginAt
+          ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+          : false;
         return {
           ...userObj,
+          userId: userObj.userId,
+          status: isOnline ? 'online' : 'offline',
+          isOnline,
+          canUnblock: true,
           blockedAt: b.createdAt,
           createdAt: b.createdAt,
         };
@@ -459,6 +467,23 @@ export class UserService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  public async unblockUser(blockerId: string, blockedId: string) {
+    if (blockerId === blockedId) {
+      throw new Error('Invalid user ID');
+    }
+    if (!mongoose.Types.ObjectId.isValid(blockedId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    const existingBlock = await Block.findOne({ blockerId, blockedId });
+    if (!existingBlock) {
+      return { blocked: false, message: 'User is not blocked' };
+    }
+
+    await Block.deleteOne({ _id: existingBlock._id });
+    return { blocked: false, message: 'User unblocked successfully' };
   }
 
   public async getVisitorsList(userId: string, currentUserId?: string, page: number = 1, limit: number = 10) {

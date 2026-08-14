@@ -4,6 +4,7 @@ import { AuthenticationService } from "../../../services/common/AuthenticationSe
 import { ResponseWrapper } from '../../responseWrapper';
 import { validate } from '../../validators';
 import { sendOtpSchema, verifyOtpSchema } from '../../validators/auth';
+import { countryCodeFromIpHeaders } from '../../../utils/phoneCountry';
 
 export default (router: Router) => {
     const authService = Container.get(AuthenticationService);
@@ -28,6 +29,11 @@ export default (router: Router) => {
      *                 type: string
      *               mobile:
      *                 type: string
+     *               countryId:
+     *                 type: string
+     *               countryCode:
+     *                 type: string
+     *                 description: ISO country code from SIM/network
      *     responses:
      *       200:
      *         description: OTP sent successfully
@@ -36,9 +42,13 @@ export default (router: Router) => {
         validate(sendOtpSchema, 'body'),
         async (req: Request, res: Response) => {
             try {
-                const { extension, mobile, countryId } = req.body;
+                const { extension, mobile, countryId, countryCode, referredBy } = req.body;
                 const fullMobile = `${extension}${mobile}`;
-                await authService.userSendOTP(fullMobile, countryId);
+                await authService.userSendOTP(fullMobile, countryId, referredBy, {
+                    countryCode,
+                    extension,
+                    ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+                });
                 return ResponseWrapper.success(res, null, 'OTP sent successfully');
             } catch (error: any) {
                 return ResponseWrapper.error(res, error);

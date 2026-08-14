@@ -29,6 +29,8 @@ export const updateProfileSchema = z.object({
   career: z.string().optional(),
   emotionalStatus: z.enum(['single', 'divorced', 'married', 'secret', 'inlove']).optional(),
   country: z.string().optional(),
+  countryId: z.string().optional(),
+  countryCode: z.string().optional(),
   nationality: z.string().optional(),
   hobbies: z.preprocess((val) => {
     if (typeof val === 'string') {

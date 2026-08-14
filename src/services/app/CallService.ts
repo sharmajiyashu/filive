@@ -1,13 +1,14 @@
-import { Service, Inject } from 'typedi';
+import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Call from '../../models/Call';
 import User from '../../models/User';
-import Country from '../../models/Country';
 import CoinHistory from '../../models/CoinHistory';
 import config from '../../config';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import AppLogger from '../../api/loaders/logger';
 import { AppSettingService } from '../common/AppSettingService';
+import { assertUsersNotBlocked } from '../../utils/blockCheck';
+import { resolveCountryUserFilter } from '../../utils/countryFilter';
 
 @Service()
 export class CallService {
@@ -29,6 +30,8 @@ export class CallService {
     if (callerId === receiverId) {
       throw new Error('You cannot call yourself');
     }
+
+    await assertUsersNotBlocked(callerId, receiverId);
 
     // 1. Fetch caller & receiver profiles
     const caller = await User.findById(callerId);
@@ -388,7 +391,7 @@ export class CallService {
           userId: receiver._id,
           relatedUserId: caller._id,
           amount: coinsEarned,
-          type: 'charm_received',
+          type: 'call_income',
           description: `Earned from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
           channelName: call.roomId,
         });
@@ -482,7 +485,8 @@ export class CallService {
    */
   public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video', country?: string) {
     let query: any = {
-      userRole: 'user'
+      userRole: 'user',
+      gender: 'Female',
     };
 
     if (callType === 'voice') {
@@ -496,41 +500,12 @@ export class CallService {
       ];
     }
 
-    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
-      const targetCountry = country.trim();
-      const countryConditions: any[] = [];
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
-
-      const matchingCountries = await Country.find({ $or: countryConditions });
-      const countryObjIds = matchingCountries.map((c: any) => c._id);
-      const countryNames = matchingCountries.map((c: any) => c.name);
-      const countryCodes = matchingCountries.map((c: any) => c.code);
-
-      const userQueryConditions: any[] = [];
-      if (countryObjIds.length > 0) {
-        userQueryConditions.push({ countryId: { $in: countryObjIds } });
-      }
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
-      if (countryNames.length > 0) {
-        userQueryConditions.push({ country: { $in: countryNames } });
-      }
-      if (countryCodes.length > 0) {
-        userQueryConditions.push({ country: { $in: countryCodes } });
-      }
-
+    const countryFilter = await resolveCountryUserFilter(country);
+    if (countryFilter) {
       query.$and = query.$and || [];
-      query.$and.push({ $or: userQueryConditions });
+      query.$and.push(countryFilter);
     }
 
-    // Exclude blocked users
     const Block = mongoose.model('Block');
     const blockedRelations = await Block.find({
       $or: [
@@ -546,28 +521,40 @@ export class CallService {
     const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
     query._id = { $nin: ninIds };
 
-    const skip = (page - 1) * limit;
     const hosts = await User.find(query)
-      .select('name profileImage email bio isPremium gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
+      .select('userId name profileImage email bio isPremium gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
       .populate('profileImage')
-      .populate('countryId')
-      .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 });
+      .populate('countryId');
 
-    const total = await User.countDocuments(query);
+    let io: any;
+    try {
+      io = Container.get('socket');
+    } catch (e) { }
 
     const formattedHosts = hosts.map((h: any) => {
       const hObj = h.toObject ? h.toObject() : h;
-      const isOnline = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      const hostId = hObj._id?.toString();
+      const socketOnline = (io && hostId) ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
+      const recentLogin = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      const isOnline = socketOnline || recentLogin;
       return {
         ...hObj,
-        isOnline
+        isOnline,
+        status: isOnline ? 'online' : 'offline',
       };
     });
 
+    formattedHosts.sort((a, b) => {
+      if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+      return Math.random() - 0.5;
+    });
+
+    const total = formattedHosts.length;
+    const skip = (page - 1) * limit;
+    const paged = formattedHosts.slice(skip, skip + limit);
+
     return {
-      data: formattedHosts,
+      data: paged,
       total,
       page,
       limit,

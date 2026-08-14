@@ -418,6 +418,35 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/users/unblock/{id}:
+   *   post:
+   *     summary: Unblock a user
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: User unblocked
+   */
+  appRouter.post('/unblock/:id', async (req: any, res: Response) => {
+    try {
+      const blockerId = req.user.id;
+      const blockedId = req.params.id;
+      const result = await userService.unblockUser(blockerId, blockedId);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/users/{id}:
    *   get:
    *     summary: Get user details

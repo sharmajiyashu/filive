@@ -145,15 +145,55 @@ POST /app/store/purchase
 | validityIndex | Yes | — |
 | quantity | No | 1 |
 
-**Response:**
+**Response:** Same frame purchases now **stack validity** into one inventory row.
+
 ```json
 {
   "quantity": 3,
   "totalCoinsSpent": 300,
-  "items": [ ... ],
-  "item": { ... }
+  "items": [ { "expiresAt": "...", "remainingDays": 3 } ],
+  "item": { "expiresAt": "...", "remainingDays": 3 },
+  "expiresAt": "...",
+  "remainingMs": 259200000,
+  "remainingDays": 3
 }
 ```
+
+8 x 1-day frame = **1 entry, ~8 days remaining** (not 8 separate 23-hour timers).
+
+---
+
+## 4. Ranking / Comments / Block / Video Match (UPDATED)
+
+### Rankings
+`GET /app/rankings?type=rich|charm&period=daily|weekly|monthly|alltime&country=IN|all`
+
+- Rich score = gift coins **sent**
+- Charm score = gift coins **received**
+- `country` / `countryId` / `countryCode` filter; omit = current user's country; `all` = worldwide
+- Each row: `score`, `user.name`, `user.profileImage`, `user.country`, `user.level`, `user.charmLevel`, `richLevelInfo`, `charmLevelInfo`
+
+### Comments
+`POST /app/stories/:id/comment`
+
+```json
+{ "content": "Thanks!", "parentCommentId": "optional_parent_id" }
+```
+
+Response now includes populated `user` / `userId` and `replyToUser`.
+
+`GET /app/stories/:id/comments` returns top-level comments with nested `replies[]`.
+
+### Block / Blacklist
+- `GET /app/users/blocked` — profile, `userId`, status, `canUnblock`
+- `POST /app/users/unblock/:id` — unblock
+- Message send is rejected both ways after block (`You are blocked by this user`)
+- Chat details: `isBlocked`, `blockedByMe`, `blockedByOther`, `canSendMessage`, `blockMessage`
+
+### Video Match card
+- `GET /app/calls/hosts?callType=video` — online female hosts, shuffled for card rotate
+- `GET /app/calls/available-hosts?callType=video`
+- `GET /app/random-match/available-hosts?callType=video` — hosts currently opted into random match
 
 ---
 

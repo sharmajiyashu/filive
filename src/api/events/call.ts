@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { CallService } from '../../services/app/CallService';
 import { GiftService } from '../../services/app/GiftService';
+import { RandomMatchService } from '../../services/app/RandomMatchService';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 
@@ -189,6 +190,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         io.to(`user_${(call.callerId as any)._id || call.callerId}`).emit('call_ended', call);
         io.to(`user_${(call.receiverId as any)._id || call.receiverId}`).emit('call_ended', call);
         AppLogger.info(`[Socket Event: end_call] Call ended. ID=${callId}, duration=${call.duration}s`);
+
+        const randomMatchService = Container.get(RandomMatchService);
+        const callerId = (call.callerId as any)?._id?.toString?.() || call.callerId?.toString?.();
+        const receiverId = (call.receiverId as any)?._id?.toString?.() || call.receiverId?.toString?.();
+        if (callerId) await randomMatchService.restoreHostIfNeeded(callerId, io);
+        if (receiverId) await randomMatchService.restoreHostIfNeeded(receiverId, io);
       }
     } catch (error: any) {
       AppLogger.error(`[Socket Event: end_call] Error for user ${userId}: ${error.message}`);

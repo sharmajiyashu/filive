@@ -15,6 +15,7 @@ import CoinHistory from '../../models/CoinHistory';
 import { applyProfileDefaults } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
+import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 
 @Service()
 export class ProfileService {
@@ -211,6 +212,18 @@ export class ProfileService {
         data.careerId = null;
       }
       delete data.career;
+    }
+
+    if (data.countryId || data.countryCode || data.country) {
+      const resolved = await resolveCountryFromSignals({
+        countryId: data.countryId,
+        countryCode: data.countryCode || data.country,
+      });
+      if (resolved?.countryId) {
+        data.countryId = resolved.countryId;
+        data.country = resolved.country;
+      }
+      delete data.countryCode;
     }
 
     // Validate careerId directly if provided

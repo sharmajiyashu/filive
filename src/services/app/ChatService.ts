@@ -4,6 +4,7 @@ import Chat from '../../models/Chat';
 import Message, { IAgencyHostInviteMetadata, toInviteFlag } from '../../models/Message';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
+import { assertUsersNotBlocked } from '../../utils/blockCheck';
 
 @Service()
 export class ChatService {
@@ -408,6 +409,12 @@ export class ChatService {
       isBlocked,
       blockedByMe,
       blockedByOther,
+      blockMessage: blockedByOther
+        ? 'You are blocked by this user'
+        : blockedByMe
+          ? 'You have blocked this user'
+          : null,
+      canSendMessage: !isBlocked,
       otherParticipantId: otherParticipantIdStr || null,
       createdAt: chat.createdAt,
       updatedAt: chat.updatedAt
@@ -490,6 +497,10 @@ export class ChatService {
 
     if (existingChat) {
       return existingChat;
+    }
+
+    if (userId !== targetUserId) {
+      await assertUsersNotBlocked(userId, targetUserId);
     }
 
     const chat = await Chat.create({

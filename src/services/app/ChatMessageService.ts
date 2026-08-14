@@ -13,6 +13,7 @@ import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { FirebasePushService } from '../common/FirebasePushService';
 import { MediaType } from '../../constants/enum';
+import { assertUsersNotBlocked } from '../../utils/blockCheck';
 
 @Service()
 export class ChatMessageService {
@@ -587,6 +588,15 @@ export class ChatMessageService {
 
     if (!chat) {
       throw new Error('Not a participant of this chat');
+    }
+
+    if (chat.type === 'private') {
+      const other = chat.participants.find(
+        (p: any) => p.userId && p.userId.toString() !== userId
+      );
+      if (other?.userId) {
+        await assertUsersNotBlocked(userId, other.userId.toString());
+      }
     }
 
     const mediaIds: mongoose.Types.ObjectId[] = [];

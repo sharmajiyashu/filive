@@ -10,6 +10,7 @@ import { CONSTANTS } from "../../config/constants";
 import { addMinutes } from "date-fns";
 import AppLogger from '../../api/loaders/logger';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
+import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 
 
 @Service()
@@ -221,11 +222,22 @@ export class AuthenticationService {
         };
     }
 
-    async userSendOTP(mobile: string, countryId?: string, referredBy?: string): Promise<{ otp: string }> {
+    async userSendOTP(
+        mobile: string,
+        countryId?: string,
+        referredBy?: string,
+        extras?: { countryCode?: string; extension?: string; ipCountry?: string }
+    ): Promise<{ otp: string }> {
         let user = await User.findOne({ mobile });
 
         const otp = this.generateOTP(4);
         const otpExpires = addMinutes(new Date(), CONSTANTS.OTP_EXPIRY_MINUTES);
+        const resolvedCountry = await resolveCountryFromSignals({
+            countryId,
+            countryCode: extras?.countryCode,
+            extension: extras?.extension,
+            ipCountry: extras?.ipCountry,
+        });
 
         if (!user) {
             let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
@@ -258,7 +270,8 @@ export class AuthenticationService {
                 otp,
                 otpExpires,
                 userRole: 'user',
-                countryId: countryId ? new mongoose.Types.ObjectId(countryId) : undefined,
+                countryId: resolvedCountry?.countryId,
+                country: resolvedCountry?.country,
                 referredBy: referrerObjId
             });
 
@@ -267,6 +280,10 @@ export class AuthenticationService {
             // Update existing user with new OTP
             user.otp = otp;
             user.otpExpires = otpExpires;
+            if (!user.countryId && resolvedCountry?.countryId) {
+                user.countryId = resolvedCountry.countryId;
+                user.country = resolvedCountry.country;
+            }
             await user.save();
         }
 

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import Container from 'typedi';
 import { RankingService } from '../../../services/app/RankingService';
 import { ResponseWrapper } from '../../responseWrapper';
+import User from '../../../models/User';
 
 export default (router: Router) => {
   const rankingRouter = Router();
@@ -28,6 +29,19 @@ export default (router: Router) => {
    *           type: string
    *           enum: [daily, weekly, monthly, alltime]
    *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Country name, ISO code, countryId, or "all"
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *       - in: query
    *         name: page
    *         schema:
    *           type: integer
@@ -45,6 +59,7 @@ export default (router: Router) => {
       const period = req.query.period as 'daily' | 'weekly' | 'monthly' | 'alltime';
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '20');
+      let country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
 
       if (!type || !['rich', 'charm'].includes(type)) {
         throw new Error('Invalid type parameter. Must be "rich" or "charm".');
@@ -54,8 +69,13 @@ export default (router: Router) => {
         throw new Error('Invalid period parameter. Must be "daily", "weekly", "monthly", or "alltime".');
       }
 
+      if (!country && req.user?.id) {
+        const currentUser = await User.findById(req.user.id).select('countryId country');
+        country = currentUser?.countryId?.toString() || currentUser?.country || undefined;
+      }
+
       const rankingService = Container.get(RankingService);
-      const data = await rankingService.getRanking(type, period, page, limit);
+      const data = await rankingService.getRanking(type, period, page, limit, country);
 
       return ResponseWrapper.success(res, data, 'Rankings fetched successfully');
     } catch (error: any) {
