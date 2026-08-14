@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Country from '../../../models/Country';
 import { ResponseWrapper } from '../../responseWrapper';
+import { getCountryPhoneCode } from '../../../utils/phoneCountry';
 
 export default (router: Router) => {
   const countryRouter = Router();
@@ -19,8 +20,16 @@ export default (router: Router) => {
    */
   countryRouter.get('/', async (req: Request, res: Response) => {
     try {
-      const countries = await Country.find({ isActive: true }).sort({ name: 1 });
-      return ResponseWrapper.success(res, countries, 'Countries fetched successfully');
+      const countries = await Country.find({ isActive: true }).sort({ name: 1 }).lean();
+      const formattedCountries = countries.map((country: any) => {
+        const intPhoneCode = country.phoneCode ?? country.countryCode ?? getCountryPhoneCode(country.code) ?? null;
+        return {
+          ...country,
+          phoneCode: intPhoneCode,
+          countryCode: intPhoneCode,
+        };
+      });
+      return ResponseWrapper.success(res, formattedCountries, 'Countries fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

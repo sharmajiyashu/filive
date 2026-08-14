@@ -28,6 +28,7 @@ import { seedGifts } from './GiftSeeder';
 import { seedRoomThemes } from './RoomThemeSeeder';
 import { seedMusic } from './MusicSeeder';
 import { seedPaymentMethods } from './PaymentMethodSeeder';
+import { seedRegionalRankingUsers } from './RegionalRankingSeeder';
 
 async function main() {
   try {
@@ -51,6 +52,7 @@ async function main() {
     await seedRoomThemes();
     await seedMusic();
     await seedPaymentMethods();
+    await seedRegionalRankingUsers();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);

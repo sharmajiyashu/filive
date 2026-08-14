@@ -166,3 +166,55 @@ export async function resolveCountryFromSignals(signals: {
 
   return null;
 }
+
+export const ISO_TO_DIAL: Record<string, number> = {
+  KE: 254,
+  AE: 971,
+  IT: 39,
+  TG: 228,
+  LY: 218,
+  ZA: 27,
+  GH: 233,
+  ZM: 260,
+  ET: 251,
+  SG: 65,
+  GB: 44,
+  KW: 965,
+  UG: 256,
+  CA: 1,
+  FR: 33,
+  NL: 31,
+  AU: 61,
+  EG: 20,
+  QA: 974,
+  RU: 7,
+  DE: 49,
+  GR: 30,
+  MM: 95,
+  BJ: 229,
+  ES: 34,
+  UZ: 998,
+  AD: 376,
+  AR: 54,
+  LK: 94,
+  SN: 221,
+  KR: 82,
+  AF: 93,
+  OM: 968,
+  BR: 55,
+  IN: 91,
+  PK: 92,
+  NP: 977,
+  BD: 880,
+  US: 1,
+  CN: 86,
+  JP: 81,
+  SA: 966,
+};
+
+export function getCountryPhoneCode(isoCode?: string | null): number | undefined {
+  if (!isoCode) return undefined;
+  const upper = isoCode.trim().toUpperCase();
+  return ISO_TO_DIAL[upper];
+}
+

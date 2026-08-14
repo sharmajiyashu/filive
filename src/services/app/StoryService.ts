@@ -1,4 +1,5 @@
 import { Service } from 'typedi';
+import { Express } from 'express';
 import Story from '../../models/Story';
 import Comment from '../../models/Comment';
 import Like from '../../models/Like';
@@ -17,7 +18,7 @@ export class StoryService {
     private mediaService: MediaService
   ) { }
 
-  public async createStory(userId: string, data: { content?: string; tags?: any }, files?: Express.Multer.File[]) {
+  public async createStory(userId: string, data: { content?: string; tags?: any }, files?: any[]) {
     const mediaIds: mongoose.Types.ObjectId[] = [];
 
     if (files && files.length > 0) {
@@ -106,8 +107,8 @@ export class StoryService {
     const stories = await Story.find(query)
       .populate({
         path: 'userId',
-        select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
-        populate: { path: 'profileImage' }
+        select: 'userId name email profileImage bio dob gender country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
+        populate: [{ path: 'profileImage' }, { path: 'countryId' }]
       })
       .populate('images')
       .sort(sortOption)
@@ -199,8 +200,8 @@ export class StoryService {
   private commentUserPopulate() {
     return {
       path: 'userId',
-      select: 'userId name email profileImage bio isPremium location country isVerified lastLoginAt',
-      populate: { path: 'profileImage' }
+      select: 'userId name email profileImage bio dob gender country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
+      populate: [{ path: 'profileImage' }, { path: 'countryId' }]
     };
   }
 

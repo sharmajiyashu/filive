@@ -239,11 +239,52 @@ export class UserService {
       status: 'accepted'
     });
 
+    // Fetch active live streams/rooms of users that this user follows
+    const followedLiveRoomsDocs = await Room.find({
+      hostId: { $in: myFollowingIds },
+      status: 'live'
+    })
+      .populate({
+        path: 'hostId',
+        select: 'userId name email profileImage bio dob gender location country countryId isPremium',
+        populate: { path: 'profileImage' }
+      })
+      .sort({ viewerCount: -1, startedAt: -1 });
+
+    const followedLiveStreams = followedLiveRoomsDocs.map(room => {
+      const roomObj = room.toObject();
+      return {
+        ...roomObj,
+        host: roomObj.hostId,
+        hostUser: roomObj.hostId
+      };
+    });
+
+    const followedLiveMap = new Map<string, any>();
+    followedLiveStreams.forEach(room => {
+      const hostIdStr = (room.hostId as any)?._id?.toString() || room.hostId?.toString();
+      if (hostIdStr) {
+        followedLiveMap.set(hostIdStr, room);
+      }
+    });
+
+    const formattedFollowingData = following.map((f: any) => {
+      const fObj = f.toObject ? f.toObject() : f;
+      const followingUser = fObj.followingId;
+      const followingUserIdStr = followingUser?._id?.toString();
+      const live = followingUserIdStr ? followedLiveMap.get(followingUserIdStr) : null;
+      return {
+        ...fObj,
+        isLive: !!live,
+        liveStream: live || null
+      };
+    });
+
     const stories = await Story.find({ userId: user._id })
       .populate('images')
       .populate({
         path: 'userId',
-        select: 'userId name email profileImage bio isPremium location country',
+        select: 'userId name email profileImage bio dob gender location country',
         populate: { path: 'profileImage' }
       })
       .sort({ createdAt: -1 });
@@ -355,7 +396,9 @@ export class UserService {
         chatId,
         isPinned,
         isLive: !!activeLive,
-        liveStream: activeLive ? activeLive.toObject() : null
+        liveStream: activeLive ? activeLive.toObject() : null,
+        followedLiveStreams,
+        followedLiveRooms: followedLiveStreams
       },
       family,
       familyRole,
@@ -364,6 +407,8 @@ export class UserService {
       isChatCreated,
       chatId,
       isPinned,
+      followedLiveStreams,
+      followedLiveRooms: followedLiveStreams,
       followersCount,
       followingCount,
       friendsCount,
@@ -379,7 +424,7 @@ export class UserService {
         }
       },
       following: {
-        data: following,
+        data: formattedFollowingData,
         pagination: {
           total: followingCount,
           page: followingPage,

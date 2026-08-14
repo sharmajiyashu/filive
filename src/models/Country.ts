@@ -3,6 +3,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ICountry extends Document {
   name: string;
   code: string; // ISO 3166-1 alpha-2
+  phoneCode?: number; // E.164 dial code e.g. 91
+  countryCode?: number; // Integer dial code e.g. 91
   flag: string; // URL to flag image
   currencySymbol: string;
   currencyCode: string;
@@ -16,6 +18,8 @@ const CountrySchema: Schema = new Schema(
   {
     name: { type: String, required: true, unique: true },
     code: { type: String, required: true, unique: true },
+    phoneCode: { type: Number },
+    countryCode: { type: Number },
     flag: { type: String, required: true },
     currencySymbol: { type: String, required: true },
     currencyCode: { type: String, required: true },

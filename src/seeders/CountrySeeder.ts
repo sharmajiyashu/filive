@@ -1,9 +1,10 @@
 import Country from '../models/Country';
 import AppLogger from '../api/loaders/logger';
+import { getCountryPhoneCode } from '../utils/phoneCountry';
 
 export async function seedCountries() {
   try {
-    const countries = [
+    const rawCountries = [
       { name: 'Kenya', code: 'KE', flag: 'https://flagcdn.com/w160/ke.png', currencySymbol: 'KSh', currencyCode: 'KES', exchangeRate: 130 },
       { name: 'United Arab Emirates', code: 'AE', flag: 'https://flagcdn.com/w160/ae.png', currencySymbol: 'د.إ', currencyCode: 'AED', exchangeRate: 3.67 },
       { name: 'Italy', code: 'IT', flag: 'https://flagcdn.com/w160/it.png', currencySymbol: '€', currencyCode: 'EUR', exchangeRate: 0.92 },
@@ -48,14 +49,21 @@ export async function seedCountries() {
       { name: 'Saudi Arabia', code: 'SA', flag: 'https://flagcdn.com/w160/sa.png', currencySymbol: 'SR', currencyCode: 'SAR', exchangeRate: 3.75 },
     ];
 
-    for (const country of countries) {
+    for (const item of rawCountries) {
+      const pCode = getCountryPhoneCode(item.code);
+      const countryData = {
+        ...item,
+        phoneCode: pCode,
+        countryCode: pCode,
+      };
+
       await Country.findOneAndUpdate(
-        { code: country.code },
-        country,
+        { code: item.code },
+        countryData,
         { upsert: true, new: true }
       );
     }
-    AppLogger.info('✅ Countries with currencies and exchange rates seeded successfully');
+    AppLogger.info('✅ Countries with currencies, exchange rates, and phone codes seeded successfully');
   } catch (error) {
     AppLogger.error('❌ Error seeding countries:', error);
   }
