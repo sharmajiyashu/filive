@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import mongoose from 'mongoose';
 import Story from '../../../models/Story';
 import Comment from '../../../models/Comment';
+import Like from '../../../models/Like';
 import User from '../../../models/User';
 import { ResponseWrapper } from '../../responseWrapper';
 
@@ -111,9 +112,37 @@ export default (router: Router) => {
           select: 'userId name email profileImage',
           populate: { path: 'profileImage' }
         })
+        .populate({
+          path: 'replyToUserId',
+          select: 'userId name',
+        })
         .sort({ createdAt: -1 });
 
       return ResponseWrapper.success(res, comments, 'Comments fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/stories/{id}/likes:
+   *   get:
+   *     summary: Get users who liked a story (Admin)
+   *     tags: [Admin - Stories]
+   */
+  storyRouter.get('/:id/likes', async (req: any, res: Response) => {
+    try {
+      const storyId = req.params.id;
+      const likes = await Like.find({ targetId: storyId, targetType: 'Story' })
+        .populate({
+          path: 'userId',
+          select: 'userId name email profileImage',
+          populate: { path: 'profileImage' }
+        })
+        .sort({ createdAt: -1 });
+
+      return ResponseWrapper.success(res, likes, 'Likes fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -179,8 +208,15 @@ export default (router: Router) => {
   storyRouter.delete('/:id', async (req: any, res: Response) => {
     try {
       const storyId = req.params.id;
+      const commentIds = await Comment.find({ storyId }).distinct('_id');
       await Story.findByIdAndDelete(storyId);
       await Comment.deleteMany({ storyId });
+      await Like.deleteMany({
+        $or: [
+          { targetId: storyId, targetType: 'Story' },
+          { targetId: { $in: commentIds }, targetType: 'Comment' },
+        ],
+      });
       return ResponseWrapper.success(res, null, 'Story deleted successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

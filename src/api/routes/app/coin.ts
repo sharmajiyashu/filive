@@ -150,15 +150,23 @@ export default (router: Router) => {
    *           type: integer
    *           default: 20
    *         description: Number of items per page
+   *       - in: query
+   *         name: type
+   *         schema:
+   *           type: string
+   *           enum: [all, cash_out, gift_income, call_income, bean_to_coin_exchange, user_transfer, coinseller_transfer]
+   *           default: all
+   *         description: Filter by transaction type
    *     responses:
    *       200:
-   *         description: Beans history details
+   *         description: Beans history details with gift icon/name/quantity and transactionType
    */
   coinRouter.get('/beans-history', appAuthMiddleware, async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
-      const result = await coinService.getBeansHistory(req.user.id, page, limit);
+      const type = req.query.type as string | undefined;
+      const result = await coinService.getBeansHistory(req.user.id, page, limit, type);
       return ResponseWrapper.success(res, result, 'Beans history fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

@@ -512,6 +512,37 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /admin/users/coinsellers/coin-history:
+   *   get:
+   *     summary: Get coin trader wallet history for coin management
+   *     tags: [Admin - Users]
+   */
+  userRouter.get('/coinsellers/coin-history', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const search = req.query.search?.toString();
+      const traderId = req.query.traderId?.toString();
+      const startDate = req.query.startDate?.toString();
+      const endDate = req.query.endDate?.toString();
+
+      const result = await userService.getCoinTradersCoinHistory({
+        page,
+        limit,
+        search,
+        traderId,
+        startDate,
+        endDate,
+      });
+
+      return ResponseWrapper.success(res, result, 'Coin trader history fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /admin/users/coinsellers/{id}/detail:
    *   get:
    *     summary: Get detailed coin trader profile, stats, levels and transaction history
@@ -539,7 +570,25 @@ export default (router: Router) => {
    */
   userRouter.post('/coinsellers/add', async (req: any, res: Response) => {
     try {
-      const { identifier } = req.body;
+      const { identifier, whatsapp, initialCoins, countryId, countryCode } = req.body;
+      if (!identifier || String(identifier).trim() === '') {
+        throw new Error('User identifier is required');
+      }
+
+      const trimmedWhatsapp = typeof whatsapp === 'string' ? whatsapp.trim() : '';
+      if (!trimmedWhatsapp) {
+        throw new Error('WhatsApp number is required');
+      }
+
+      if (!countryId && !countryCode) {
+        throw new Error('Country is required');
+      }
+
+      const coins = Number(initialCoins);
+      if (initialCoins !== undefined && initialCoins !== null && initialCoins !== '' && (Number.isNaN(coins) || coins < 0)) {
+        throw new Error('Initial coins must be a number greater than or equal to zero');
+      }
+
       let query: any = {};
       if (mongoose.Types.ObjectId.isValid(identifier)) {
         query = { _id: identifier };
@@ -557,7 +606,12 @@ export default (router: Router) => {
         throw new Error('User not found with specified ID or details');
       }
 
-      const result = await userService.setCoinsellerAndRemoveFromAgencies(user._id.toString(), true);
+      const result = await userService.setCoinsellerAndRemoveFromAgencies(user._id.toString(), true, {
+        whatsapp: trimmedWhatsapp,
+        initialCoins: Number.isNaN(coins) ? 0 : coins,
+        countryId,
+        countryCode,
+      });
       return ResponseWrapper.success(res, result, 'User added as Coin Trader successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -584,6 +638,37 @@ export default (router: Router) => {
       const userId = req.params.id;
       const user = await userService.toggleCoinseller(userId);
       return ResponseWrapper.success(res, user, `User coin seller status toggled successfully`);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/users/{id}/coinseller-active:
+   *   put:
+   *     summary: Toggle coin trader active/inactive without removing the role
+   *     tags: [Admin - Users]
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Coin trader active status toggled
+   */
+  userRouter.put('/:id/coinseller-active', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const user = await userService.toggleCoinsellerActive(userId);
+      return ResponseWrapper.success(
+        res,
+        user,
+        user.isCoinsellerActive
+          ? 'Coin trader activated successfully'
+          : 'Coin trader deactivated successfully'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

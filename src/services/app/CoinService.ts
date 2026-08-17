@@ -6,6 +6,7 @@ import axios from 'axios';
 import config from '../../config';
 import CoinPackage, { ICoinPackage } from '../../models/CoinPackage';
 import CoinHistory from '../../models/CoinHistory';
+import Gift from '../../models/Gift';
 import User from '../../models/User';
 import Country from '../../models/Country';
 import { calculateLocalPrice } from '../../utils/pricing';
@@ -15,6 +16,28 @@ import { PaymentMethodService } from './PaymentMethodService';
 import { PaymentGatewayKey } from '../../models/PaymentMethod';
 
 type RechargeAudience = 'user' | 'seller';
+
+const BEANS_HISTORY_TYPES = [
+  'charm_received',
+  'coins_to_beans',
+  'beans_to_coins',
+  'cash_out',
+  'call_income',
+  'agency_commission'
+] as const;
+
+const BEANS_HISTORY_FILTER_TYPES = [
+  { key: 'all', label: 'All Transactions' },
+  { key: 'cash_out', label: 'Cash Out' },
+  { key: 'gift_income', label: 'Gift Income' },
+  { key: 'call_income', label: 'Call Income' },
+  { key: 'bean_to_coin_exchange', label: 'Bean to Coin Exchange' },
+  { key: 'user_transfer', label: 'User Transfer' },
+  { key: 'coinseller_transfer', label: 'CoinSeller Transfer' }
+] as const;
+
+const VALID_BEANS_FILTERS = new Set(BEANS_HISTORY_FILTER_TYPES.map(f => f.key));
+const GIFT_DESCRIPTION_RE = /gift '([^']+)' x(\d+)/i;
 
 @Service()
 export class CoinService {
@@ -104,30 +127,180 @@ export class CoinService {
     };
   }
 
-  async getBeansHistory(userId: string, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
+  async getBeansHistory(userId: string, page: number = 1, limit: number = 20, type?: string) {
+    const filterType = (type || 'all').toLowerCase();
+    if (!VALID_BEANS_FILTERS.has(filterType as typeof BEANS_HISTORY_FILTER_TYPES[number]['key'])) {
+      throw new Error('Invalid transaction type filter');
+    }
 
-    const query = {
-      userId,
-      type: { $in: ['charm_received', 'coins_to_beans', 'beans_to_coins', 'cash_out', 'call_income', 'agency_commission'] }
-    };
+    const skip = (page - 1) * limit;
+    const query = await this.buildBeansHistoryQuery(userId, filterType);
 
     const [history, total] = await Promise.all([
       CoinHistory.find(query)
+        .populate({
+          path: 'giftId',
+          populate: { path: 'media', select: 'url' }
+        })
+        .populate({ path: 'relatedUserId', select: 'isCoinseller' })
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(),
       CoinHistory.countDocuments(query)
     ]);
 
+    const giftByName = await this.lookupGiftsByDescription(history);
+
     return {
-      history,
+      history: history.map(row => this.mapBeansHistoryRow(row, giftByName)),
+      filterTypes: BEANS_HISTORY_FILTER_TYPES,
       pagination: {
         total,
         page,
         limit,
         totalPages: Math.ceil(total / limit)
       }
+    };
+  }
+
+  private async buildBeansHistoryQuery(userId: string, filterType: string) {
+    const query: Record<string, unknown> = { userId };
+
+    if (filterType === 'all') {
+      query.type = { $in: [...BEANS_HISTORY_TYPES] };
+      return query;
+    }
+
+    if (filterType === 'cash_out') {
+      query.type = 'cash_out';
+      return query;
+    }
+
+    if (filterType === 'gift_income') {
+      query.type = 'charm_received';
+      return query;
+    }
+
+    if (filterType === 'call_income') {
+      query.type = 'call_income';
+      return query;
+    }
+
+    query.type = 'beans_to_coins';
+
+    if (filterType === 'bean_to_coin_exchange') {
+      query.$or = [
+        { transferTarget: 'self' },
+        { relatedUserId: { $exists: false } },
+        { relatedUserId: null }
+      ];
+      return query;
+    }
+
+    const coinsellerIds = await User.find({ isCoinseller: true }).distinct('_id');
+    const legacyRelatedMatch = filterType === 'coinseller_transfer'
+      ? { $in: coinsellerIds }
+      : { $exists: true, $ne: null, $nin: coinsellerIds };
+
+    query.$or = [
+      { transferTarget: filterType === 'coinseller_transfer' ? 'coinseller' : 'user' },
+      {
+        transferTarget: { $exists: false },
+        relatedUserId: legacyRelatedMatch
+      },
+      {
+        transferTarget: null,
+        relatedUserId: legacyRelatedMatch
+      }
+    ];
+
+    return query;
+  }
+
+  private async lookupGiftsByDescription(history: any[]) {
+    const names = new Set<string>();
+    for (const row of history) {
+      if (row.type !== 'charm_received') continue;
+      if (row.giftId && row.giftId._id) continue;
+      const parsed = this.parseGiftFromDescription(row.description);
+      if (parsed) names.add(parsed.name);
+    }
+
+    if (names.size === 0) return new Map<string, any>();
+
+    const gifts = await Gift.find({ name: { $in: [...names] } })
+      .populate({ path: 'media', select: 'url' })
+      .lean();
+
+    return new Map(gifts.map((gift: any) => [gift.name, gift]));
+  }
+
+  private parseGiftFromDescription(description?: string): { name: string; quantity: number } | null {
+    if (!description) return null;
+    const match = description.match(GIFT_DESCRIPTION_RE);
+    if (!match) return null;
+    return { name: match[1], quantity: parseInt(match[2], 10) };
+  }
+
+  private resolveRelatedUserId(relatedUserId: any): string | undefined {
+    if (!relatedUserId) return undefined;
+    if (relatedUserId._id) return relatedUserId._id.toString();
+    return relatedUserId.toString();
+  }
+
+  private resolveTransactionType(row: any): string {
+    if (row.type === 'charm_received') return 'gift_income';
+    if (row.type === 'cash_out') return 'cash_out';
+    if (row.type === 'call_income') return 'call_income';
+    if (row.type === 'beans_to_coins') {
+      if (row.transferTarget === 'self' || !row.relatedUserId) return 'bean_to_coin_exchange';
+      if (row.transferTarget === 'user') return 'user_transfer';
+      if (row.transferTarget === 'coinseller') return 'coinseller_transfer';
+      if (row.relatedUserId?.isCoinseller) return 'coinseller_transfer';
+      return 'user_transfer';
+    }
+    return row.type;
+  }
+
+  private resolveGiftPayload(row: any, giftByName: Map<string, any>) {
+    const populatedGift = row.giftId && row.giftId._id ? row.giftId : null;
+    const parsed = !populatedGift && row.type === 'charm_received'
+      ? this.parseGiftFromDescription(row.description)
+      : null;
+    const lookedUpGift = parsed ? giftByName.get(parsed.name) : null;
+    const giftDoc = populatedGift || lookedUpGift;
+
+    if (!giftDoc) return null;
+
+    const quantity = row.quantity ?? parsed?.quantity ?? null;
+    const media = giftDoc.media;
+
+    return {
+      id: giftDoc._id.toString(),
+      name: giftDoc.name,
+      icon: media?.url || null,
+      quantity
+    };
+  }
+
+  private mapBeansHistoryRow(row: any, giftByName: Map<string, any>) {
+    return {
+      _id: row._id,
+      userId: row.userId,
+      relatedUserId: this.resolveRelatedUserId(row.relatedUserId),
+      amount: row.amount,
+      type: row.type,
+      transactionType: this.resolveTransactionType(row),
+      description: row.description,
+      transactionId: row.transactionId,
+      packageId: row.packageId,
+      paymentGateway: row.paymentGateway,
+      channelName: row.channelName,
+      transferTarget: row.transferTarget || null,
+      gift: this.resolveGiftPayload(row, giftByName),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
     };
   }
 

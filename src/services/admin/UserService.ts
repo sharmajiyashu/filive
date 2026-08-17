@@ -4,6 +4,7 @@ import User from '../../models/User';
 import AgencyHost from '../../models/AgencyHost';
 import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
+import Country from '../../models/Country';
 import Follow from '../../models/Follow';
 import { LevelService } from '../app/LevelService';
 import { getUserCountryAndLevels } from '../../utils/userLookup';
@@ -521,18 +522,83 @@ export class UserService {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
     user.isCoinseller = !user.isCoinseller;
+    if (user.isCoinseller) {
+      user.isCoinsellerActive = true;
+    }
     await user.save();
     return user;
   }
 
-  public async setCoinsellerAndRemoveFromAgencies(userId: string, isCoinseller: boolean = true) {
+  public async toggleCoinsellerActive(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    if (!user.isCoinseller) {
+      throw new Error('User is not a coin trader');
+    }
+    user.isCoinsellerActive = user.isCoinsellerActive === false;
+    await user.save();
+    return user;
+  }
+
+  public async setCoinsellerAndRemoveFromAgencies(
+    userId: string,
+    isCoinseller: boolean = true,
+    extras?: {
+      whatsapp?: string;
+      initialCoins?: number;
+      countryId?: string;
+      countryCode?: string;
+    }
+  ) {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
     user.isCoinseller = isCoinseller;
+    if (isCoinseller) {
+      user.isCoinsellerActive = true;
+    }
+
+    const whatsapp = extras?.whatsapp?.trim();
+    if (whatsapp) {
+      user.whatsapp = whatsapp;
+    }
+
+    if (extras?.countryId || extras?.countryCode) {
+      const country = extras.countryId
+        ? await Country.findById(extras.countryId)
+        : await Country.findOne({
+            $or: [
+              { code: extras.countryCode },
+              { name: extras.countryCode },
+            ],
+          });
+      if (!country) {
+        throw new Error('Country not found');
+      }
+      user.countryId = country._id;
+      user.country = country.name;
+    }
+
+    const initialCoins = Number(extras?.initialCoins) || 0;
+    if (initialCoins < 0) {
+      throw new Error('Initial coins cannot be negative');
+    }
+    if (initialCoins > 0) {
+      user.coinSellerCoins = (user.coinSellerCoins || 0) + initialCoins;
+    }
+
     await user.save();
 
     const removedHosts = await AgencyHost.deleteMany({ userId: user._id });
+
+    if (initialCoins > 0) {
+      await CoinHistory.create({
+        userId: user._id,
+        amount: initialCoins,
+        type: 'other',
+        description: 'Initial coins added by Admin',
+      });
+    }
 
     return {
       user,
@@ -589,9 +655,9 @@ export class UserService {
     const query: any = { isCoinseller: true };
 
     if (params.status === 'active') {
-      query.isBlocked = false;
+      query.isCoinsellerActive = { $ne: false };
     } else if (params.status === 'inactive') {
-      query.isBlocked = true;
+      query.isCoinsellerActive = false;
     }
 
     if (params.search) {
@@ -614,8 +680,8 @@ export class UserService {
 
     const [totalTraders, activeTraders, inactiveTraders, totalCoinsAgg, totalSpentAgg] = await Promise.all([
       User.countDocuments({ isCoinseller: true }),
-      User.countDocuments({ isCoinseller: true, isBlocked: false }),
-      User.countDocuments({ isCoinseller: true, isBlocked: true }),
+      User.countDocuments({ isCoinseller: true, isCoinsellerActive: { $ne: false } }),
+      User.countDocuments({ isCoinseller: true, isCoinsellerActive: false }),
       User.aggregate([
         { $match: { isCoinseller: true } },
         { $group: { _id: null, total: { $sum: '$coinSellerCoins' } } }
@@ -772,6 +838,7 @@ export class UserService {
         isBlocked: user.isBlocked,
         isVerified: user.isVerified,
         isCoinseller: user.isCoinseller,
+        isCoinsellerActive: user.isCoinsellerActive !== false,
         createdAt: user.createdAt,
         country: user.country || 'India',
         countryObject: country,
@@ -808,6 +875,91 @@ export class UserService {
           limit,
           totalPages: Math.ceil(historyTotal / limit),
         },
+      },
+    };
+  }
+
+  public async getCoinTradersCoinHistory(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    traderId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, Math.min(100, params.limit || 10));
+    const skip = (page - 1) * limit;
+
+    const traderQuery: any = { isCoinseller: true };
+    if (params.traderId) {
+      if (mongoose.Types.ObjectId.isValid(params.traderId)) {
+        traderQuery._id = params.traderId;
+      } else {
+        const numericId = Number(params.traderId);
+        if (!Number.isNaN(numericId)) {
+          traderQuery.userId = numericId;
+        }
+      }
+    }
+
+    const traders = await User.find(traderQuery).select('_id');
+    const traderIds = traders.map((trader) => trader._id);
+
+    const query: any = {
+      userId: { $in: traderIds },
+      type: { $in: ['other', 'transfer', 'recharge'] },
+    };
+
+    if (params.startDate || params.endDate) {
+      query.createdAt = {};
+      if (params.startDate) query.createdAt.$gte = new Date(params.startDate);
+      if (params.endDate) {
+        const end = new Date(params.endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    if (params.search) {
+      query.description = new RegExp(params.search, 'i');
+    }
+
+    const [total, addedAgg, deductedAgg, items] = await Promise.all([
+      CoinHistory.countDocuments(query),
+      CoinHistory.aggregate([
+        { $match: { ...query, amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      CoinHistory.aggregate([
+        { $match: { ...query, amount: { $lt: 0 } } },
+        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } },
+      ]),
+      CoinHistory.find(query)
+        .populate({
+          path: 'userId',
+          select: 'userId name email mobile whatsapp coinSellerCoins profileImage',
+          populate: { path: 'profileImage' },
+        })
+        .populate({ path: 'relatedUserId', select: 'userId name' })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    return {
+      history: items,
+      summary: {
+        totalTransactions: total,
+        totalAdded: addedAgg[0]?.total || 0,
+        totalDeducted: deductedAgg[0]?.total || 0,
+      },
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
   }

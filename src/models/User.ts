@@ -67,6 +67,7 @@ export interface IUser extends Document {
   activeTheme?: mongoose.Types.ObjectId;
   activeRide?: mongoose.Types.ObjectId;
   isCoinseller: boolean;
+  isCoinsellerActive: boolean;
   coinSellerCoins: number;
   videoVerificationVideo?: mongoose.Types.ObjectId;
   videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
@@ -154,6 +155,7 @@ const UserSchema: Schema = new Schema(
     activeTheme: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeRide: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     isCoinseller: { type: Boolean, default: false },
+    isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
     videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },

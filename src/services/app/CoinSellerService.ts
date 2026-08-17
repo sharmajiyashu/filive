@@ -27,6 +27,9 @@ export class CoinSellerService {
     if (!sender.isCoinseller) {
       throw new Error('You are not authorized as a coin seller');
     }
+    if (sender.isCoinsellerActive === false) {
+      throw new Error('Your coin seller account is inactive');
+    }
     if ((sender.coinSellerCoins || 0) < amount) {
       throw new Error('Insufficient coinseller coins balance');
     }
@@ -249,6 +252,9 @@ export class CoinSellerService {
     }
 
     const isTransfer = sender._id.toString() !== recipient._id.toString();
+    const transferTarget = !isTransfer
+      ? 'self'
+      : (recipient.isCoinseller ? 'coinseller' : 'user');
     // Credit coinSellerCoins if recipient is a coin seller and converting for self, else credit coins
     const incField = (recipient.isCoinseller && !isTransfer) ? 'coinSellerCoins' : 'coins';
 
@@ -274,6 +280,7 @@ export class CoinSellerService {
           relatedUserId: recipient._id,
           amount: -coinsToCredit,
           type: 'beans_to_coins',
+          transferTarget,
           description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
         }], { session });
 
@@ -283,6 +290,7 @@ export class CoinSellerService {
           relatedUserId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
+          transferTarget,
           description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
         }], { session });
       } else {
@@ -290,6 +298,7 @@ export class CoinSellerService {
           userId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
+          transferTarget,
           description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
         }], { session });
       }
@@ -407,7 +416,7 @@ export class CoinSellerService {
     const limit = Math.max(1, Math.min(100, params.limit || 20));
     const skip = (page - 1) * limit;
 
-    const query: any = { isCoinseller: true, isBlocked: false };
+    const query: any = { isCoinseller: true, isBlocked: false, isCoinsellerActive: { $ne: false } };
     const andConditions: any[] = [];
 
     if (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all') {

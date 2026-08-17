@@ -13,4 +13,5 @@ export const appWhitelistRoutes = [
     '/settings',
     '/countries',
     '/languages',
+    '/banners',
 ]

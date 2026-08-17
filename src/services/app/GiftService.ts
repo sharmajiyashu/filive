@@ -226,7 +226,9 @@ export class GiftService {
       amount: -totalPrice,
       type: 'gift_sent',
       description: `Sent gift '${gift.name}' x${quantity} during ${resolvedContext || 'live stream'}`,
-      channelName: channelName || undefined
+      channelName: channelName || undefined,
+      giftId: gift._id,
+      quantity
     });
 
     await CoinHistory.create({
@@ -235,7 +237,9 @@ export class GiftService {
       amount: totalPrice,
       type: 'charm_received',
       description: `Received gift '${gift.name}' x${quantity} from viewer`,
-      channelName: channelName || undefined
+      channelName: channelName || undefined,
+      giftId: gift._id,
+      quantity
     });
 
     AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);

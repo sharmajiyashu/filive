@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export type TransferTarget = 'self' | 'user' | 'coinseller';
+
 export interface ICoinHistory extends Document {
   userId: mongoose.Types.ObjectId;
   relatedUserId?: mongoose.Types.ObjectId;
@@ -10,6 +12,9 @@ export interface ICoinHistory extends Document {
   packageId?: mongoose.Types.ObjectId; // For tracking recharge coin package
   paymentGateway?: string; // e.g. 'PandaPay', 'Razorpay', 'CoinSeller', 'Admin'
   channelName?: string;
+  giftId?: mongoose.Types.ObjectId;
+  quantity?: number;
+  transferTarget?: TransferTarget;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +34,9 @@ const CoinHistorySchema: Schema = new Schema(
     transactionId: { type: String },
     paymentGateway: { type: String },
     channelName: { type: String },
+    giftId: { type: Schema.Types.ObjectId, ref: 'Gift' },
+    quantity: { type: Number, min: 1 },
+    transferTarget: { type: String, enum: ['self', 'user', 'coinseller'] },
   },
   {
     timestamps: true,

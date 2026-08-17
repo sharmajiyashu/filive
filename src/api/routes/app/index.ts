@@ -26,6 +26,7 @@ import payoutRequest from './payoutRequest';
 import liveData from './liveData';
 import reaction from './reaction';
 import paymentMethod from './paymentMethod';
+import banner from './banner';
 
 export default (router: Router): Router => {
   profile(router);
@@ -55,6 +56,7 @@ export default (router: Router): Router => {
   liveData(router);
   reaction(router);
   paymentMethod(router);
+  banner(router);
   return router;
 };
 

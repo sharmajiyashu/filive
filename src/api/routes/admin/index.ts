@@ -26,6 +26,8 @@ import reaction from './reaction';
 import paymentMethod from './paymentMethod';
 import notification from './notification';
 import announcement from './announcement';
+import banner from './banner';
+import call from './call';
 
 export default (router: Router): Router => {
   auth(router);
@@ -55,6 +57,8 @@ export default (router: Router): Router => {
   paymentMethod(router);
   notification(router);
   announcement(router);
+  banner(router);
+  call(router);
   return router;
 };
 
