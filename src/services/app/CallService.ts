@@ -17,6 +17,159 @@ export class CallService {
 
   constructor() { }
 
+  public formatDisplayCallId(callId: string): string {
+    const hex = (callId || '').toString().replace(/[^a-fA-F0-9]/g, '').slice(-7).toUpperCase();
+    return hex ? `Call #${hex}` : 'Call #------';
+  }
+
+  private formatDuration(seconds: number): string {
+    const secs = Math.max(0, Math.floor(seconds || 0));
+    const hours = Math.floor(secs / 3600);
+    const minutes = Math.floor((secs % 3600) / 60);
+    const remaining = secs % 60;
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(remaining)}`;
+  }
+
+  private participantId(value: any): string {
+    return (value?._id || value)?.toString();
+  }
+
+  public profileImageUrl(image: any): string | null {
+    if (!image) return null;
+    if (typeof image === 'string') {
+      return image.startsWith('http') ? image : null;
+    }
+    return image.url || image.secure_url || null;
+  }
+
+  public toPublicCallUser(user: any) {
+    if (!user) return null;
+    const id = user._id || user.id || null;
+    const profileImage = user.profileImage && typeof user.profileImage === 'object' && user.profileImage.url
+      ? user.profileImage
+      : (user.profileImage ?? null);
+    return {
+      id,
+      userId: user.userId ?? null,
+      name: user.name ?? null,
+      profileImage,
+      profileImageUrl: this.profileImageUrl(user.profileImage)
+    };
+  }
+
+  public async getHostCallEarnRates(hostUserId: string) {
+    const host = await User.findById(hostUserId)
+      .select('voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute');
+    const feePercent = Number(await this.appSettingService.getSettingValue('call_platform_fee_percent') ?? 10);
+    const voicePrice = Number(host?.voiceCallPrice || host?.audioCallChargePerMinute || 0);
+    const videoPrice = Number(host?.videoCallPrice || host?.videoCallChargePerMinute || 0);
+    const hostEarnPerMin = (price: number) => Math.max(0, price - Math.round((price * feePercent) / 100));
+
+    return {
+      voiceCallPrice: voicePrice,
+      videoCallPrice: videoPrice,
+      voiceEarnPerMin: hostEarnPerMin(voicePrice),
+      videoEarnPerMin: hostEarnPerMin(videoPrice),
+      platformFeePercent: feePercent,
+      unit: 'beans'
+    };
+  }
+
+  public async buildCallScreenPayload(call: any, viewerUserId: string) {
+    const callerId = this.participantId(call.callerId);
+    const receiverId = this.participantId(call.receiverId);
+    const isCaller = callerId === viewerUserId.toString();
+    const role = isCaller ? 'caller' : 'host';
+    const callType = call.callType;
+
+    const [caller, receiver, rates] = await Promise.all([
+      User.findById(callerId).select('name userId profileImage').populate('profileImage'),
+      User.findById(receiverId).select('name userId profileImage voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute').populate('profileImage'),
+      this.getHostCallEarnRates(receiverId)
+    ]);
+
+    const currentCallPrice = callType === 'voice' ? rates.voiceCallPrice : rates.videoCallPrice;
+    const currentEarnPerMin = callType === 'voice' ? rates.voiceEarnPerMin : rates.videoEarnPerMin;
+    const callerUser = this.toPublicCallUser(caller);
+    const receiverUser = this.toPublicCallUser(receiver);
+
+    return {
+      callId: call._id,
+      displayCallId: this.formatDisplayCallId(call._id.toString()),
+      roomId: call.roomId || null,
+      callType,
+      status: call.status,
+      role,
+      payRatePerMin: currentCallPrice,
+      payRateLabel: `Pay ${currentCallPrice} Coins/min`,
+      voiceCallPrice: rates.voiceCallPrice,
+      videoCallPrice: rates.videoCallPrice,
+      currentCallPrice,
+      currency: 'Coins',
+      caller: callerUser,
+      receiver: receiverUser,
+      otherUser: isCaller ? receiverUser : callerUser,
+      voiceEarnPerMin: rates.voiceEarnPerMin,
+      videoEarnPerMin: rates.videoEarnPerMin,
+      currentEarnPerMin,
+      hostEarning: {
+        voicePerMin: rates.voiceEarnPerMin,
+        videoPerMin: rates.videoEarnPerMin,
+        currentPerMin: currentEarnPerMin,
+        voiceCallPrice: rates.voiceCallPrice,
+        videoCallPrice: rates.videoCallPrice,
+        platformFeePercent: rates.platformFeePercent,
+        unit: 'beans'
+      },
+      agoraToken: isCaller ? (call.callerAgoraToken || call.agoraToken || null) : (call.receiverAgoraToken || call.agoraToken || null),
+      callerAgoraToken: call.callerAgoraToken || null,
+      receiverAgoraToken: call.receiverAgoraToken || null
+    };
+  }
+
+  public async buildAfterCallSummary(call: any, viewerUserId: string) {
+    const callerId = this.participantId(call.callerId);
+    const receiverId = this.participantId(call.receiverId);
+    const isCaller = callerId === viewerUserId.toString();
+    const role = isCaller ? 'caller' : 'host';
+
+    const [caller, host] = await Promise.all([
+      User.findById(callerId).select('name profileImage coins').populate('profileImage'),
+      User.findById(receiverId).select('name profileImage beans').populate('profileImage')
+    ]);
+
+    const other = isCaller ? host : caller;
+    const summary: any = {
+      role,
+      callId: call._id,
+      displayCallId: this.formatDisplayCallId(call._id.toString()),
+      roomId: call.roomId || null,
+      callType: call.callType,
+      status: call.status,
+      duration: call.duration || 0,
+      durationFormatted: this.formatDuration(call.duration || 0),
+      endedAt: call.endedAt || null,
+      otherUser: other
+        ? {
+            id: other._id,
+            name: other.name ?? null,
+            profileImage: other.profileImage ?? null
+          }
+        : null
+    };
+
+    if (isCaller) {
+      summary.coinsSpent = call.coinsDeducted || 0;
+      summary.remainingCoins = caller?.coins || 0;
+    } else {
+      summary.beansIncome = call.coinsEarned || 0;
+      summary.beansBalance = host?.beans || 0;
+    }
+
+    return summary;
+  }
+
   /**
    * Initiates a new call request between caller and receiver
    */
@@ -84,7 +237,7 @@ export class CallService {
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
+        select: 'name profileImage dob voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -269,12 +422,12 @@ export class CallService {
     const populatedCall = await Call.findById(call._id)
       .populate({
         path: 'callerId',
-        select: 'name profileImage coins',
+        select: 'name userId profileImage coins',
         populate: { path: 'profileImage' }
       })
       .populate({
         path: 'receiverId',
-        select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
+        select: 'name userId profileImage dob voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
 
@@ -369,7 +522,7 @@ export class CallService {
         caller.wealthCoins = (caller.wealthCoins || 0) + actualCost;
         await caller.save();
 
-        receiver.coins = (receiver.coins || 0) + coinsEarned;
+        receiver.beans = (receiver.beans || 0) + coinsEarned;
         receiver.charmCoins = (receiver.charmCoins || 0) + coinsEarned;
         await receiver.save();
 
@@ -377,7 +530,6 @@ export class CallService {
         call.coinsEarned = coinsEarned;
         call.platformFee = platformFee;
 
-        // Record coin transaction logs
         await CoinHistory.create({
           userId: caller._id,
           relatedUserId: receiver._id,
@@ -392,7 +544,7 @@ export class CallService {
           relatedUserId: caller._id,
           amount: coinsEarned,
           type: 'call_income',
-          description: `Earned from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
+          description: `Earned ${coinsEarned} beans from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
           channelName: call.roomId,
         });
 
@@ -445,9 +597,10 @@ export class CallService {
       .sort({ createdAt: -1 });
 
     const total = await Call.countDocuments(query);
+    const data = await Promise.all(calls.map(call => this.buildAfterCallSummary(call, userId)));
 
     return {
-      data: calls,
+      data,
       total,
       page,
       limit,
@@ -478,6 +631,11 @@ export class CallService {
     }
 
     return call;
+  }
+
+  public async getAfterCallView(userId: string, callId: string) {
+    const call = await this.getCallDetails(userId, callId);
+    return this.buildAfterCallSummary(call, userId);
   }
 
   /**

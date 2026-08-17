@@ -364,6 +364,93 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/room/join:
+   *   post:
+   *     summary: Join a live room and return full room + host session payload
+   *     description: >
+   *       Returns numeric roomId (not 00), host profile/level/country/online/follow,
+   *       viewerToken, and currentUser. Flutter should map roomId/room_id for copy.
+   *       Minimize must NOT call this leave endpoint.
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Joined live room successfully
+   */
+  liveRouter.post('/join', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/room/join] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
+    try {
+      const { channelName } = req.body;
+      if (!channelName) {
+        throw new Error('channelName is required to join a room');
+      }
+      const result = await liveStreamService.joinLiveStream(userId, channelName);
+      AppLogger.info(`[HTTP POST /app/room/join] Success. userId=${userId}, roomId=${result?.roomId}`);
+      return ResponseWrapper.success(res, result, 'Joined live room successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/join] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/room/leave:
+   *   post:
+   *     summary: Leave a live room (full exit, not minimize)
+   *     description: >
+   *       Removes the user from viewers. Flutter Minimize should keep the socket
+   *       connected and must not call this endpoint.
+   *     tags: [LiveStream]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - channelName
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Left live room successfully
+   */
+  liveRouter.post('/leave', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    AppLogger.info(`[HTTP POST /app/room/leave] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
+    try {
+      const { channelName } = req.body;
+      if (!channelName) {
+        throw new Error('channelName is required to leave a room');
+      }
+      const result = await liveStreamService.leaveLiveStream(userId, channelName);
+      AppLogger.info(`[HTTP POST /app/room/leave] Success. userId=${userId}`);
+      return ResponseWrapper.success(res, result, 'Left live room successfully');
+    } catch (error: any) {
+      AppLogger.error(`[HTTP POST /app/room/leave] Failed for userId=${userId}: ${error.message}`, error);
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/room/list:
    *   get:
    *     summary: Get all active live streams
@@ -455,6 +542,11 @@ export default (router: Router) => {
    * /app/room/details/{channelName}:
    *   get:
    *     summary: Get details of any room by channelName
+   *     description: >
+   *       Same payload as POST /app/room/join. Use roomId/room_id (number) for display/copy.
+   *       Host fields: hostId.userId, hostId.name, hostId.profileImage, hostId.richLevelInfo,
+   *       hostId.countryId, hostId.isOnline, hostId.isFollowing. Viewer Agora token is viewerToken.
+   *       Never display 00 when roomId is null — wait for this response or live_joined.
    *     tags: [LiveStream]
    *     security:
    *       - bearerAuth: []

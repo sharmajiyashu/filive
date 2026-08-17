@@ -22,6 +22,7 @@ export async function seedCommissionSlabs() {
       { key: 'agency_use_commission_slabs', value: true, description: 'Use tiered commission slabs based on host earnings' },
       { key: 'agency_auto_settlement_enabled', value: true, description: 'Enable automatic weekly commission settlement' },
       { key: 'agency_settlement_day', value: 1, description: 'Settlement day (0=Sunday, 1=Monday, ...)' },
+      { key: 'e_day_min_hours', value: 1, description: 'Minimum party room owner hours required to count as 1 E-Day' },
     ];
 
     for (const setting of commissionSettings) {

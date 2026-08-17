@@ -48,7 +48,11 @@ export default (router: Router) => {
         const io = Container.get('socket') as any;
         if (io) {
           if (channelName) {
+            const liveRoom = await Room.findOne({ channelName }).select('roomId');
             io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', {
+              channelName,
+              roomId: liveRoom?.roomId ?? null,
+              room_id: liveRoom?.roomId ?? null,
               sender: result.sender,
               host: result.host,
               receiver: result.receiver,

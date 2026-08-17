@@ -1,4 +1,4 @@
-import { Service, Container } from 'typedi';
+import { Service, Container, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import Room from '../../models/Room';
@@ -10,9 +10,42 @@ import RoomFollow from '../../models/RoomFollow';
 import Country from '../../models/Country';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
+import { LevelService } from './LevelService';
+
+const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins';
 
 @Service()
 export class LiveStreamService {
+  constructor(@Inject() private levelService: LevelService) {}
+
+  private hostPopulate() {
+    return {
+      path: 'hostId',
+      select: HOST_SAFE_SELECT,
+      populate: [{ path: 'profileImage' }, { path: 'countryId' }]
+    };
+  }
+
+  private agoraUidFromUserId(userId: string): number {
+    const hex = userId.replace(/[^a-fA-F0-9]/g, '').slice(-8);
+    const parsed = parseInt(hex || '1', 16);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed % 2147483647 : 1;
+  }
+
+  public async ensureRoomId(room: any): Promise<number | null> {
+    if (!room) return null;
+    if (room.roomId) return room.roomId;
+    if (!room._id) return null;
+    const doc = typeof room.save === 'function' ? room : await Room.findById(room._id);
+    if (!doc) return null;
+    if (!doc.roomId) {
+      await doc.save();
+    }
+    if (room !== doc) {
+      room.roomId = doc.roomId;
+    }
+    return doc.roomId ?? null;
+  }
   /**
    * Generates an Agora RTC Token for a channel
    */
@@ -106,11 +139,38 @@ export class LiveStreamService {
       AppLogger.info(`[LiveStreamService: startLiveStream] Host already has a ${normalizedRoomType}: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
 
       activeStream.title = title;
+      const wasLive = activeStream.status === 'live';
       activeStream.status = 'live';
       activeStream.roomType = normalizedRoomType;
       activeStream.partyRoomOption = normalizedPartyOption;
+      if (wasLive && activeStream.startedAt) {
+        const previousDuration = Math.max(0, Math.round((Date.now() - activeStream.startedAt.getTime()) / 1000));
+        const previousMicSessions = (activeStream.seats || [])
+          .filter(seat => seat.userId)
+          .map(seat => ({
+            userId: seat.userId!.toString(),
+            seconds: seat.occupiedAt
+              ? Math.max(0, Math.round((Date.now() - new Date(seat.occupiedAt).getTime()) / 1000))
+              : 0
+          }));
+        try {
+          const { LiveDataService } = await import('./LiveDataService');
+          const liveDataService = Container.get(LiveDataService);
+          await liveDataService.recordEndedSession({
+            hostUserId: hostId,
+            roomType: normalizedRoomType,
+            durationSeconds: previousDuration,
+            joinedUserIds: (activeStream.joinedUsers || []).map(id => id.toString()),
+            micSessions: previousMicSessions
+          });
+        } catch (err: any) {
+          AppLogger.error(`[LiveStreamService: startLiveStream] Failed to persist previous session: ${err?.message || err}`);
+        }
+      }
+
       activeStream.viewers = [];
       activeStream.viewerCount = 0;
+      activeStream.joinedUsers = [];
       activeStream.startedAt = new Date();
       activeStream.endedAt = undefined;
       activeStream.totalGiftRevenue = 0;
@@ -141,6 +201,7 @@ export class LiveStreamService {
             if (oldSeat.status === 'occupied') {
               oldSeat.status = 'open';
               oldSeat.userId = undefined;
+              oldSeat.occupiedAt = undefined;
             }
             newSeats.push(oldSeat);
           } else {
@@ -160,17 +221,11 @@ export class LiveStreamService {
       await activeStream.save();
 
       const populatedStream = await Room.findById(activeStream._id)
-        .populate({
-          path: 'hostId',
-          populate: {
-            path: 'profileImage'
-          }
-        })
+        .populate(this.hostPopulate())
         .populate({
           path: 'seats.userId',
-          populate: {
-            path: 'profileImage'
-          }
+          select: HOST_SAFE_SELECT,
+          populate: { path: 'profileImage' }
         });
       return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
     }
@@ -233,19 +288,11 @@ export class LiveStreamService {
 
     AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
-      .populate({
-        path: 'hostId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
-      })
+      .populate(this.hostPopulate())
       .populate({
         path: 'seats.userId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
+        select: HOST_SAFE_SELECT,
+        populate: { path: 'profileImage' }
       });
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
@@ -529,6 +576,23 @@ export class LiveStreamService {
     });
   }
 
+  private async flushSeatMicTime(hostId: string, seat: { userId?: mongoose.Types.ObjectId; occupiedAt?: Date }) {
+    if (!seat.userId || !seat.occupiedAt) {
+      return;
+    }
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(seat.occupiedAt).getTime()) / 1000));
+    if (seconds <= 0) {
+      return;
+    }
+    try {
+      const { LiveDataService } = await import('./LiveDataService');
+      const liveDataService = Container.get(LiveDataService);
+      await liveDataService.recordMicTime(hostId, seat.userId.toString(), seconds);
+    } catch (err: any) {
+      AppLogger.error(`[LiveStreamService] Failed to record mic time: ${err?.message || err}`);
+    }
+  }
+
   private getSocketIo() {
     try {
       const io = Container.get('socket') as any;
@@ -667,12 +731,38 @@ export class LiveStreamService {
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Statistics calculated: ${JSON.stringify(summary)}. Updating status to 'ended'.`);
 
+    const micSessions: { userId: string; seconds: number }[] = [];
+    (liveStream.seats || []).forEach(seat => {
+      if (!seat.userId) return;
+      let seconds = 0;
+      if (seat.occupiedAt) {
+        seconds = Math.max(0, Math.round((endedAt.getTime() - new Date(seat.occupiedAt).getTime()) / 1000));
+      }
+      micSessions.push({ userId: seat.userId.toString(), seconds });
+      seat.occupiedAt = undefined;
+    });
+
     liveStream.status = 'ended';
     liveStream.endedAt = endedAt;
     liveStream.viewers = [];
     liveStream.viewerCount = 0;
     await liveStream.save();
     AppLogger.info(`[LiveStreamService: endLiveStream] Saved end status in database.`);
+
+    try {
+      const { LiveDataService } = await import('./LiveDataService');
+      const liveDataService = Container.get(LiveDataService);
+      await liveDataService.recordEndedSession({
+        hostUserId: hostId,
+        roomType: liveStream.roomType === 'party_room' ? 'party_room' : 'livestream',
+        durationSeconds: duration,
+        joinedUserIds: (liveStream.joinedUsers || []).map(id => id.toString()),
+        micSessions,
+        endedAt
+      });
+    } catch (err: any) {
+      AppLogger.error(`[LiveStreamService: endLiveStream] Failed to persist LiveDataLog: ${err?.message || err}`);
+    }
 
     // Emit live_ended event to notifying all socket clients in the room
     AppLogger.info(`[LiveStreamService: endLiveStream] Fetching socket instance to emit live_ended event`);
@@ -780,6 +870,7 @@ export class LiveStreamService {
         if (openSeat) {
           openSeat.userId = userObjectId;
           openSeat.status = 'occupied';
+          openSeat.occupiedAt = new Date();
           let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
           if (roomSetting && roomSetting.muteAllSeats) {
             openSeat.isMuted = true;
@@ -803,20 +894,11 @@ export class LiveStreamService {
 
     AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
-      .populate({
-        path: 'hostId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
-      })
-
+      .populate(this.hostPopulate())
       .populate({
         path: 'seats.userId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
+        select: HOST_SAFE_SELECT,
+        populate: { path: 'profileImage' }
       });
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
@@ -924,16 +1006,19 @@ export class LiveStreamService {
       throw new Error(`Seat ${seatIndex} is not open`);
     }
 
-    // If the user is already on another seat, remove them from that seat first
+    // If the user is already on another seat, flush mic time then remove them
     const oldSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
     if (oldSeat) {
+      await this.flushSeatMicTime(liveStream.hostId.toString(), oldSeat);
       oldSeat.userId = undefined;
       oldSeat.status = 'open';
+      oldSeat.occupiedAt = undefined;
     }
 
     // Add user to the new seat
     targetSeat.userId = new mongoose.Types.ObjectId(userId);
     targetSeat.status = 'occupied';
+    targetSeat.occupiedAt = new Date();
     let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
     if (roomSetting && roomSetting.muteAllSeats) {
       targetSeat.isMuted = true;
@@ -981,8 +1066,10 @@ export class LiveStreamService {
     let seatUpdated = false;
     const targetSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
     if (targetSeat) {
+      await this.flushSeatMicTime(liveStream.hostId.toString(), targetSeat);
       targetSeat.userId = undefined;
       targetSeat.status = 'open';
+      targetSeat.occupiedAt = undefined;
       seatUpdated = true;
     }
 
@@ -1140,15 +1227,7 @@ export class LiveStreamService {
    */
   public async getRoomDetails(channelName: string, currentUserId?: string) {
     const liveStream = await Room.findOne({ channelName })
-      .populate({
-        path: 'hostId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
-      })
-
-      ;
+      .populate(this.hostPopulate());
     if (!liveStream) {
       throw new Error('Room not found');
     }
@@ -1197,25 +1276,65 @@ export class LiveStreamService {
    * Helper to populate room host with their daily charm ranking, followers count, and follow status
    */
   public async populateRoomWithDailyRank(room: any, currentUserId?: string) {
+    return this.buildLiveRoomPayload(room, currentUserId);
+  }
+
+  public async buildLiveRoomPayload(room: any, currentUserId?: string) {
     if (!room) return room;
-    const roomObj = room.toObject ? room.toObject() : room;
+
+    await this.ensureRoomId(room);
+
+    const roomObj = room.toObject ? room.toObject() : { ...room };
+    roomObj.roomId = room.roomId ?? roomObj.roomId ?? null;
+    roomObj.room_id = roomObj.roomId ?? null;
+
     if (roomObj.hostId) {
-      const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
+      if (roomObj.hostId.toObject) {
+        roomObj.hostId = roomObj.hostId.toObject();
+      } else if (typeof roomObj.hostId === 'object' && !roomObj.hostId._id && mongoose.Types.ObjectId.isValid(roomObj.hostId)) {
+        const populatedHost = await User.findById(roomObj.hostId)
+          .select(HOST_SAFE_SELECT)
+          .populate('profileImage')
+          .populate('countryId');
+        roomObj.hostId = populatedHost ? (populatedHost.toObject ? populatedHost.toObject() : populatedHost) : roomObj.hostId;
+      }
+
+      const host = roomObj.hostId;
+      const hostIdStr = host._id ? host._id.toString() : host.toString();
+
+      if (host.countryId && !host.countryId.name && mongoose.Types.ObjectId.isValid(host.countryId)) {
+        host.countryId = await Country.findById(host.countryId);
+      }
+
       const dailyRank = await this.getHostDailyCharmRank(hostIdStr);
       const followersCount = await Follow.countDocuments({ followingId: hostIdStr, status: 'accepted' });
       const isFollowing = currentUserId
         ? !!(await Follow.findOne({ followerId: currentUserId, followingId: hostIdStr, status: 'accepted' }))
         : false;
 
-      if (roomObj.hostId.toObject) {
-        roomObj.hostId = roomObj.hostId.toObject();
-      }
-      roomObj.hostId.charmRankingDaily = dailyRank;
-      roomObj.hostId.followersCount = followersCount;
-      roomObj.hostId.isFollowing = isFollowing;
+      const wealthCoins = host.wealthCoins || 0;
+      const charmCoins = host.charmCoins || 0;
+      const richLevelInfo = await this.levelService.getLevelInfoForCoins(wealthCoins, 'rich');
+      const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+      const isOnline = host.lastLoginAt
+        ? new Date(host.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+        : false;
+
+      host.id = host._id || null;
+      host.userId = host.userId ?? null;
+      host.name = host.name ?? null;
+      host.profileImage = host.profileImage ?? null;
+      host.country = host.country ?? host.countryId?.name ?? null;
+      host.richLevelInfo = richLevelInfo;
+      host.charmLevelInfo = charmLevelInfo;
+      host.levelInfo = richLevelInfo;
+      host.isOnline = isOnline;
+      host.status = roomObj.status === 'live' ? 'live' : (isOnline ? 'online' : 'offline');
+      host.charmRankingDaily = dailyRank;
+      host.followersCount = followersCount;
+      host.isFollowing = isFollowing;
     }
 
-    // Populate Room Follow details
     const isFollowingRoom = currentUserId && roomObj._id
       ? !!(await RoomFollow.exists({ userId: new mongoose.Types.ObjectId(currentUserId), roomId: roomObj._id }))
       : false;
@@ -1223,19 +1342,51 @@ export class LiveStreamService {
     roomObj.isFollowingRoom = isFollowingRoom;
     roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
     roomObj.totalMember = roomObj.roomFollowerCount || 0;
+    roomObj.maxSeats = roomObj.seats ? roomObj.seats.length : 0;
+    roomObj.viewerCount = roomObj.viewerCount || 0;
+    roomObj.totalGiftRevenue = roomObj.totalGiftRevenue || 0;
 
-    // Fetch and merge RoomSetting
     if (roomObj.hostId) {
       const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
       const roomSetting = await RoomSetting.findOne({ hostId: hostIdStr })
         .populate({ path: 'roomTheme', populate: { path: 'media' } })
         .populate({ path: 'gameId', populate: { path: 'image' } });
       if (roomSetting) {
-        (roomObj as any).roomTheme = roomSetting.roomTheme;
-        (roomObj as any).gameId = roomSetting.gameId;
-        (roomObj as any).muteAllSeats = roomSetting.muteAllSeats;
-        (roomObj as any).announcement = roomSetting.announcement;
+        roomObj.roomTheme = roomSetting.roomTheme ?? null;
+        roomObj.gameId = roomSetting.gameId ?? null;
+        roomObj.muteAllSeats = roomSetting.muteAllSeats;
+        roomObj.announcement = roomSetting.announcement ?? null;
+      } else {
+        roomObj.roomTheme = roomObj.roomTheme ?? null;
+        roomObj.gameId = roomObj.gameId ?? null;
+        roomObj.announcement = roomObj.announcement ?? null;
       }
+    }
+
+    if (currentUserId && roomObj.channelName) {
+      const uid = this.agoraUidFromUserId(currentUserId);
+      roomObj.viewerToken = this.generateAgoraToken(roomObj.channelName, uid, 'subscriber');
+    } else {
+      roomObj.viewerToken = null;
+    }
+
+    if (currentUserId) {
+      const me = await User.findById(currentUserId)
+        .select('name userId profileImage')
+        .populate('profileImage');
+      const meObj = me ? (me.toObject ? me.toObject() : me) : null;
+      roomObj.currentUser = meObj
+        ? {
+            id: meObj._id,
+            userId: meObj.userId ?? null,
+            name: meObj.name ?? null,
+            profileImage: meObj.profileImage ?? null,
+            isFollowing: roomObj.hostId?.isFollowing ?? false,
+            isFollowingRoom
+          }
+        : null;
+    } else {
+      roomObj.currentUser = null;
     }
 
     return roomObj;

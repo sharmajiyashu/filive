@@ -50,18 +50,24 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       const liveStream = await liveStreamService.joinLiveStream(userId, channelName);
       AppLogger.info(`[Socket Event: join_room/join_live] liveStreamService.joinLiveStream returned successfully. viewerCount=${liveStream.viewerCount}`);
 
-      // Fetch user profile details for broadcasting presence
+      socket.emit('live_joined', liveStream);
+      socket.emit('room_joined', liveStream);
+
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name profileImage bio location isPremium gender country')
+        .select('name userId profileImage bio location isPremium gender country')
         .populate('profileImage');
 
       const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
       if (userJson) {
+        userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
       }
 
       const payload = {
+        channelName,
+        roomId: liveStream.roomId ?? null,
+        room_id: liveStream.roomId ?? null,
         user: userJson || userObj,
         viewerCount: liveStream.viewerCount,
         charmRankingDaily: userJson?.charmRankingDaily,
@@ -111,16 +117,29 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: leave_room/leave_live] Fetching User details for leave broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name profileImage')
+        .select('name userId profileImage')
         .populate('profileImage');
 
       const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
       if (userJson) {
+        userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
       }
 
+      const leaveAck = {
+        channelName,
+        roomId: liveStream?.roomId ?? null,
+        room_id: liveStream?.roomId ?? null,
+        viewerCount: liveStream?.viewerCount ?? 0
+      };
+      socket.emit('live_left', leaveAck);
+      socket.emit('room_left', leaveAck);
+
       if (liveStream) {
         const payload = {
+          channelName,
+          roomId: liveStream.roomId ?? null,
+          room_id: liveStream.roomId ?? null,
           user: userJson || userObj,
           viewerCount: liveStream.viewerCount,
           charmRankingDaily: userJson?.charmRankingDaily,
@@ -167,12 +186,19 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name profileImage bio isPremium')
+        .select('name userId profileImage bio isPremium')
         .populate('profileImage');
+      const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+      if (userJson) {
+        userJson.userId = userJson.userId ?? null;
+        userJson.profileImage = userJson.profileImage ?? null;
+      }
 
-      // Broadcast comment to both rooms
       const payload = {
-        user: userObj,
+        channelName,
+        roomId: liveStream?.roomId ?? null,
+        room_id: liveStream?.roomId ?? null,
+        user: userJson,
         message,
         createdAt: new Date()
       };
@@ -343,8 +369,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       const parsedQuantity = quantity ? Number(quantity) : 1;
       const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType, parsedQuantity);
 
-      // Broadcast gift sent event to both rooms
+      const liveRoom = channelName ? await Room.findOne({ channelName }).select('roomId') : null;
       const payload = {
+        channelName: channelName || null,
+        roomId: liveRoom?.roomId ?? null,
+        room_id: liveRoom?.roomId ?? null,
         sender: result.sender,
         host: result.host,
         receiver: result.receiver,
@@ -572,17 +601,21 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
         AppLogger.info(`[Socket Event: disconnect] Fetching username and profile image for ${userId}`);
         const userObj = await User.findById(userId)
-          .select('name profileImage')
+          .select('name userId profileImage')
           .populate('profileImage');
 
         const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
         if (userJson) {
+          userJson.userId = userJson.userId ?? null;
           userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
         }
 
         const payload = {
+          channelName: stream.channelName,
+          roomId: stream.roomId ?? null,
+          room_id: stream.roomId ?? null,
           user: userJson || userObj,
-          viewerCount: stream.viewerCount - 1,
+          viewerCount: Math.max(0, (stream.viewerCount || 1) - 1),
           charmRankingDaily: userJson?.charmRankingDaily,
           totalGiftRevenue: stream.totalGiftRevenue || 0,
           roomFollowerCount: stream.roomFollowerCount || 0

@@ -66,6 +66,7 @@ export class AdminAgencyCommissionService {
       useCommissionSlabs: settings.agency_use_commission_slabs !== false,
       autoSettlementEnabled: settings.agency_auto_settlement_enabled ?? true,
       settlementDay: settings.agency_settlement_day ?? 1,
+      eDayMinHours: settings.e_day_min_hours ?? 1,
     };
   }
 
@@ -74,6 +75,7 @@ export class AdminAgencyCommissionService {
     useCommissionSlabs?: boolean;
     autoSettlementEnabled?: boolean;
     settlementDay?: number;
+    eDayMinHours?: number;
   }) {
     const updates: Record<string, unknown> = {};
     if (data.globalCommissionRate != null) {
@@ -87,6 +89,12 @@ export class AdminAgencyCommissionService {
     }
     if (data.settlementDay != null) {
       updates.agency_settlement_day = data.settlementDay;
+    }
+    if (data.eDayMinHours != null) {
+      if (Number(data.eDayMinHours) < 0) {
+        throw new Error('eDayMinHours must be greater than or equal to 0');
+      }
+      updates.e_day_min_hours = Number(data.eDayMinHours);
     }
     await this.appSettingService.updateSettings(updates);
     return this.getCommissionSettings();

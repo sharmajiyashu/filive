@@ -244,27 +244,33 @@ export class GiftService {
 
     AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);
 
+    await sender.populate('profileImage');
+    await receiver.populate('profileImage');
+
+    const toPublicUser = (user: any, extra: Record<string, any> = {}) => ({
+      id: user._id,
+      _id: user._id,
+      userId: user.userId ?? null,
+      name: user.name ?? null,
+      profileImage: user.profileImage ?? null,
+      ...extra
+    });
+
     return {
       gift,
       quantity,
-      sender: {
-        id: sender._id,
-        name: sender.name,
+      sender: toPublicUser(sender, {
         coins: sender.coins,
         wealthCoins: sender.wealthCoins,
-      },
-      host: {
-        id: receiver._id,
-        name: receiver.name,
+      }),
+      host: toPublicUser(receiver, {
         coins: receiver.coins,
         charmCoins: receiver.charmCoins,
-      },
-      receiver: {
-        id: receiver._id,
-        name: receiver.name,
+      }),
+      receiver: toPublicUser(receiver, {
         coins: receiver.coins,
         charmCoins: receiver.charmCoins,
-      }
+      })
     };
   }
 

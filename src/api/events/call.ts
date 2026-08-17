@@ -50,23 +50,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       }
 
       const call = await callService.initiateCall(userId, receiverId, callType);
+      const callerPayload = await callService.buildCallScreenPayload(call, userId);
+      const hostPayload = await callService.buildCallScreenPayload(call, receiverId);
 
-      // Notify caller that call is successfully initiated
-      socket.emit('call_initiated', call);
-
-      const callerUser = call.callerId as any;
-
-      // Notify receiver about incoming call request
-      io.to(`user_${receiverId}`).emit('incoming_call', {
-        callId: call._id,
-        caller: {
-          id: callerUser?._id || socket.user?.id,
-          name: callerUser?.name || socket.user?.fullName,
-          profileImage: callerUser?.profileImage || null,
-        },
-        callType,
-        roomId: call.roomId,
-      });
+      socket.emit('call_initiated', callerPayload);
+      io.to(`user_${receiverId}`).emit('incoming_call', hostPayload);
 
       // Start a 45-second auto-cut timeout for the call
       const callIdStr = call._id.toString().trim();
@@ -121,10 +109,13 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       clearCallTimeout(callId.toString().trim());
 
       const call = await callService.acceptCall(userId, callId);
+      const callerId = call.callerId._id.toString();
+      const receiverId = call.receiverId._id.toString();
+      const callerPayload = await callService.buildCallScreenPayload(call, callerId);
+      const hostPayload = await callService.buildCallScreenPayload(call, receiverId);
 
-      // Notify both parties that the call has been accepted and send the Zego token/roomId
-      io.to(`user_${call.callerId._id}`).emit('call_accepted', call);
-      io.to(`user_${call.receiverId._id}`).emit('call_accepted', call);
+      io.to(`user_${callerId}`).emit('call_accepted', callerPayload);
+      io.to(`user_${receiverId}`).emit('call_accepted', hostPayload);
 
       AppLogger.info(`[Socket Event: accept_call] Call accepted. ID=${callId}, roomId=${call.roomId}`);
     } catch (error: any) {
@@ -174,26 +165,25 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       clearCallTimeout(callId.toString().trim());
 
       const call = await callService.endCall(userId, callId);
+      const callerId = (call.callerId as any)?._id?.toString?.() || call.callerId?.toString?.();
+      const receiverId = (call.receiverId as any)?._id?.toString?.() || call.receiverId?.toString?.();
+      const callerSummary = await callService.buildAfterCallSummary(call, callerId);
+      const hostSummary = await callService.buildAfterCallSummary(call, receiverId);
 
-      // If caller cancelled before receiver answered → emit call_cancelled to receiver
       if (call.status === 'cancelled') {
-        socket.emit('call_cancelled', { callId: call._id, call });
-        io.to(`user_${call.receiverId.toString()}`).emit('call_cancelled', { callId: call._id, call });
+        socket.emit('call_cancelled', callerSummary);
+        io.to(`user_${receiverId}`).emit('call_cancelled', hostSummary);
         AppLogger.info(`[Socket Event: end_call] Call cancelled by caller. ID=${callId}`);
       } else if (call.status === 'rejected') {
-        // Receiver dismissed the incoming call via end_call
-        socket.emit('call_ended', call);
-        io.to(`user_${call.callerId.toString()}`).emit('call_ended', call);
+        socket.emit('call_ended', hostSummary);
+        io.to(`user_${callerId}`).emit('call_ended', callerSummary);
         AppLogger.info(`[Socket Event: end_call] Call ended (rejected by receiver via end_call). ID=${callId}`);
       } else {
-        // Active call ended normally — notify both parties
-        io.to(`user_${(call.callerId as any)._id || call.callerId}`).emit('call_ended', call);
-        io.to(`user_${(call.receiverId as any)._id || call.receiverId}`).emit('call_ended', call);
+        io.to(`user_${callerId}`).emit('call_ended', callerSummary);
+        io.to(`user_${receiverId}`).emit('call_ended', hostSummary);
         AppLogger.info(`[Socket Event: end_call] Call ended. ID=${callId}, duration=${call.duration}s`);
 
         const randomMatchService = Container.get(RandomMatchService);
-        const callerId = (call.callerId as any)?._id?.toString?.() || call.callerId?.toString?.();
-        const receiverId = (call.receiverId as any)?._id?.toString?.() || call.receiverId?.toString?.();
         if (callerId) await randomMatchService.restoreHostIfNeeded(callerId, io);
         if (receiverId) await randomMatchService.restoreHostIfNeeded(receiverId, io);
       }

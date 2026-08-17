@@ -418,38 +418,25 @@ export class RandomMatchService {
     this.availableHosts.delete(hostId);
     // hostPreferences kept so the host re-enters the pool after the call ends
 
-    const callerObj = call.callerId as any;
-    const receiverObj = call.receiverId as any;
-
-    const basePeer = (user: any) => ({
-      id: user?._id?.toString?.() || user?._id || user,
-      name: user?.name || null,
-      profileImage: user?.profileImage || null,
-      voiceCallPrice: user?.voiceCallPrice ?? null,
-      videoCallPrice: user?.videoCallPrice ?? null,
-    });
+    const callerPayload = await this.callService.buildCallScreenPayload(call, callerId);
+    const hostPayload = await this.callService.buildCallScreenPayload(call, hostId);
 
     const common = {
-      callId: call._id,
-      callType: call.callType,
-      roomId: call.roomId,
       agoraAppId: config.agora.appId,
       matchType: 'random' as const,
       startedAt: call.startedAt,
     };
 
     io.to(`user_${callerId}`).emit('random_match_found', {
+      ...callerPayload,
       ...common,
-      agoraToken: call.callerAgoraToken,
-      peer: basePeer(receiverObj),
-      role: 'caller',
+      peer: callerPayload.otherUser,
     });
 
     io.to(`user_${hostId}`).emit('random_match_found', {
+      ...hostPayload,
       ...common,
-      agoraToken: call.receiverAgoraToken,
-      peer: basePeer(callerObj),
-      role: 'host',
+      peer: hostPayload.otherUser,
     });
 
     AppLogger.info(

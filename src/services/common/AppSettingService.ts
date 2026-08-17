@@ -11,6 +11,7 @@ export class AppSettingService {
     agency_use_commission_slabs: true,
     agency_auto_settlement_enabled: true,
     agency_settlement_day: 1,
+    e_day_min_hours: 1,
     call_platform_fee_percent: 10,
     invite_reward_coins: 2000,
     deep_link_base_url: 'https://filive.app/invite',

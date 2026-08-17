@@ -33,6 +33,8 @@ export interface ILiveDataLog extends Document {
   userOnMicCount: number;
   audienceCount: number;
   partyGiftSendersCount: number;
+  micUserIds?: mongoose.Types.ObjectId[];
+  audienceUserIds?: mongoose.Types.ObjectId[];
 
   // Fans & Tasks
   newFansCount: number;
@@ -82,6 +84,8 @@ const LiveDataLogSchema: Schema = new Schema(
     userOnMicCount: { type: Number, default: 0 },
     audienceCount: { type: Number, default: 0 },
     partyGiftSendersCount: { type: Number, default: 0 },
+    micUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    audienceUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 
     // Fans & Tasks
     newFansCount: { type: Number, default: 0 },
