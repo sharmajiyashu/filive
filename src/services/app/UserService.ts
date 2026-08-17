@@ -186,16 +186,15 @@ export class UserService {
 
     const userObjectIdStr = user._id.toString();
 
+    let isBlock = false;
     if (currentUserId) {
-      const isBlocked = await Block.findOne({
+      const blockRecord = await Block.findOne({
         $or: [
           { blockerId: currentUserId, blockedId: userObjectIdStr },
           { blockerId: userObjectIdStr, blockedId: currentUserId }
         ]
       });
-      if (isBlocked) {
-        throw new Error('User blocked');
-      }
+      isBlock = !!blockRecord;
     }
 
     // Track visitor if it's not the user viewing their own profile
@@ -398,11 +397,13 @@ export class UserService {
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null,
         followedLiveStreams,
-        followedLiveRooms: followedLiveStreams
+        followedLiveRooms: followedLiveStreams,
+        isBlock
       },
       family,
       familyRole,
       groups: groupChats,
+      isBlock,
       isFollowing: isFollowingAuthor,
       isChatCreated,
       chatId,
