@@ -119,9 +119,14 @@ export class LiveStreamService {
     const otherLiveRoom = await Room.findOne({ hostId, status: 'live', roomType: otherRoomType });
     if (otherLiveRoom) {
       AppLogger.info(`[LiveStreamService: startLiveStream] Ending other live room type=${otherRoomType}, channelName=${otherLiveRoom.channelName}`);
-      otherLiveRoom.status = 'ended';
-      otherLiveRoom.endedAt = new Date();
-      await otherLiveRoom.save();
+      try {
+        await this.endLiveStream(hostId, otherLiveRoom.channelName);
+      } catch (err: any) {
+        AppLogger.error(`[LiveStreamService: startLiveStream] Failed to end other live room: ${err?.message || err}`);
+        otherLiveRoom.status = 'ended';
+        otherLiveRoom.endedAt = new Date();
+        await otherLiveRoom.save();
+      }
     }
 
     // Reuse only a room of the same type (never convert party <-> livestream)

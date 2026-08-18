@@ -15,9 +15,11 @@ export default (router: Router) => {
    *   get:
    *     summary: Get Live Data statistics computed from gifts, live sessions, and party rooms
    *     description: >
-   *       Server-computed daily/monthly stats. Live/Party beans income comes from received gifts
-   *       (charm_received), not client logs. Caller/user spending is never counted as income.
-   *       Response keys are stable for Flutter mapping.
+   *       Server-computed daily/monthly stats from CoinHistory, Room, and Call records.
+   *       Live Beans Income and Party Beans Income are beans actually received
+   *       (charm_received / gift_received) in livestream or party rooms — never sender
+   *       spend. Call UI still uses gender for accountRole, coinsSpent, and uniqueHosts.
+   *       Client logs never count as revenue. Response keys are stable for Flutter mapping.
    *     tags: [Live Data]
    *     security:
    *       - bearerAuth: []
@@ -48,6 +50,9 @@ export default (router: Router) => {
    *                 data:
    *                   type: object
    *                   properties:
+   *                     accountRole:
+   *                       type: string
+   *                       enum: [host, caller]
    *                     type:
    *                       type: string
    *                       enum: [daily, monthly]
@@ -59,6 +64,33 @@ export default (router: Router) => {
    *                       type: object
    *                       properties:
    *                         totalBeansIncome:
+   *                           type: number
+   *                     callData:
+   *                       type: object
+   *                       properties:
+   *                         totalBeansIncome:
+   *                           type: number
+   *                         totalCallIncome:
+   *                           type: number
+   *                         voiceIncome:
+   *                           type: number
+   *                         videoIncome:
+   *                           type: number
+   *                         coinsSpent:
+   *                           type: number
+   *                         totalCalls:
+   *                           type: number
+   *                         totalDuration:
+   *                           type: string
+   *                         totalDurationSeconds:
+   *                           type: number
+   *                         giftSenders:
+   *                           type: number
+   *                         uniqueCallers:
+   *                           type: number
+   *                         uniqueHosts:
+   *                           type: number
+   *                         repeatUsers:
    *                           type: number
    *                     liveStreamData:
    *                       type: object
@@ -118,9 +150,9 @@ export default (router: Router) => {
    *   post:
    *     summary: Optional internal increment for Live Data log (session/mic helpers)
    *     description: >
-   *       Optional/internal. GET /app/live-data now computes income and most stats from
-   *       CoinHistory, Room, and Call records. This endpoint remains for incremental
-   *       session/mic logging.
+   *       Optional/internal session and mic logging only. Income fields
+   *       (totalCallIncome, totalBeansIncome, liveBeansIncome, partyBeansIncome, voiceIncome, videoIncome)
+   *       are ignored so the client cannot write Call Revenue.
    *     tags: [Live Data]
    *     security:
    *       - bearerAuth: []
@@ -133,14 +165,6 @@ export default (router: Router) => {
    *             properties:
    *               date:
    *                 type: string
-   *               totalBeansIncome:
-   *                 type: number
-   *               totalCallIncome:
-   *                 type: number
-   *               liveBeansIncome:
-   *                 type: number
-   *               partyBeansIncome:
-   *                 type: number
    *               liveDurationSeconds:
    *                 type: number
    *               totalDurationSeconds:

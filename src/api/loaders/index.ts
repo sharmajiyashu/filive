@@ -11,18 +11,15 @@ import { startAgencySettlementJob } from '../../jobs/agencySettlementJob';
 export default async (expressApp: Express): Promise<void> => {
     const mongoConnection = await dbLoader();
 
-    // Reset active/busy calls stuck in 'initiated' or 'accepted' state on server startup
+    // Ringing calls that never accepted can safely become missed.
+    // Accepted calls are not closed here — that would skip billing.
     try {
         const Call = (await import('../../models/Call')).default;
         const initiatedReset = await Call.updateMany(
             { status: 'initiated' },
             { status: 'missed', endedAt: new Date() }
         );
-        const acceptedReset = await Call.updateMany(
-            { status: 'accepted' },
-            { status: 'ended', endedAt: new Date() }
-        );
-        AppLogger.info(`🧹 Startup cleanup: Reset ${initiatedReset.modifiedCount} initiated calls to 'missed' and ${acceptedReset.modifiedCount} accepted calls to 'ended'.`);
+        AppLogger.info(`🧹 Startup cleanup: Reset ${initiatedReset.modifiedCount} initiated calls to 'missed'.`);
     } catch (err: any) {
         AppLogger.error('❌ Failed to run startup cleanup for stuck calls:', err);
     }
@@ -37,6 +34,17 @@ export default async (expressApp: Express): Promise<void> => {
         firebaseApp,
         emailClient: null,
     });
+
+    try {
+        const { Container } = await import('typedi');
+        const { CallService } = await import('../../services/app/CallService');
+        const staleCount = await Container.get(CallService).settleStaleAcceptedCalls();
+        if (staleCount > 0) {
+            AppLogger.info(`🧹 Startup cleanup: Settled ${staleCount} stale accepted call(s) through billing.`);
+        }
+    } catch (err: any) {
+        AppLogger.error('❌ Failed to settle stale accepted calls:', err);
+    }
 
     expressLoader(expressApp);
     startAgencySettlementJob();

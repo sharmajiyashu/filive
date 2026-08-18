@@ -51,6 +51,45 @@ export class LiveDataService {
     return Array.from(set);
   }
 
+  private resolveGiftContext(
+    history: { type?: string; contextType?: string; channelName?: string; description?: string },
+    roomsByChannel: Map<string, 'livestream' | 'party_room'>
+  ): 'livestream' | 'party_room' | 'call' | undefined {
+    if (history.type === 'call_income') {
+      return 'call';
+    }
+
+    if (history.contextType === 'live_stream') {
+      return 'livestream';
+    }
+    if (history.contextType === 'party_room') {
+      return 'party_room';
+    }
+    if (history.contextType === 'audio_call' || history.contextType === 'video_call') {
+      return 'call';
+    }
+
+    if (history.channelName) {
+      const roomType = roomsByChannel.get(history.channelName);
+      if (roomType) {
+        return roomType;
+      }
+    }
+
+    const description = history.description || '';
+    if (/during live_stream|during live stream/i.test(description)) {
+      return 'livestream';
+    }
+    if (/during party_room/i.test(description)) {
+      return 'party_room';
+    }
+    if (/during audio_call|during video_call/i.test(description)) {
+      return 'call';
+    }
+
+    return undefined;
+  }
+
   public async recordMicTime(hostUserId: string, micUserId: string, seconds: number, at: Date = new Date()) {
     if (!mongoose.Types.ObjectId.isValid(hostUserId) || seconds <= 0) {
       return;
@@ -133,7 +172,7 @@ export class LiveDataService {
   ) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const user = await User.findById(userObjectId)
-      .select('name profileImage isVerified userId')
+      .select('name profileImage isVerified userId gender')
       .populate('profileImage');
 
     if (!user) {
@@ -178,49 +217,78 @@ export class LiveDataService {
       : await LiveDataLog.find({ userId: userObjectId, date: dateStr });
 
     const dataLog = logs[0];
-
-    const callMatch = {
-      receiverId: userObjectId,
-      status: 'ended',
-      createdAt: { $gte: startDate, $lte: endDate }
+    const isHost = user.gender === 'Female';
+    const accountRole: 'host' | 'caller' = isHost ? 'host' : 'caller';
+    const callDateRange = {
+      $or: [
+        { endedAt: { $gte: startDate, $lte: endDate } },
+        { endedAt: { $exists: false }, createdAt: { $gte: startDate, $lte: endDate } }
+      ]
     };
 
     const callAgg = await Call.aggregate([
-      { $match: callMatch },
+      {
+        $match: {
+          ...(isHost ? { receiverId: userObjectId } : { callerId: userObjectId }),
+          status: 'ended',
+          ...callDateRange
+        }
+      },
       {
         $group: {
           _id: null,
           totalCalls: { $sum: 1 },
           totalDuration: { $sum: '$duration' },
-          totalCallIncome: { $sum: '$coinsEarned' },
+          coinsSpent: { $sum: '$coinsDeducted' },
           voiceIncome: {
             $sum: {
               $cond: [{ $eq: ['$callType', 'voice'] }, '$coinsEarned', 0]
             }
           },
-          callers: { $push: '$callerId' }
+          videoIncome: {
+            $sum: {
+              $cond: [{ $eq: ['$callType', 'video'] }, '$coinsEarned', 0]
+            }
+          },
+          counterparts: { $push: isHost ? '$callerId' : '$receiverId' }
         }
       }
     ]);
 
+    const callIncomeAgg = isHost
+      ? await CoinHistory.aggregate([
+          {
+            $match: {
+              userId: userObjectId,
+              type: 'call_income',
+              createdAt: { $gte: startDate, $lte: endDate }
+            }
+          },
+          { $group: { _id: null, total: { $sum: '$amount' } } }
+        ])
+      : [];
+
     const callStats = callAgg[0] || {
       totalCalls: 0,
       totalDuration: 0,
-      totalCallIncome: 0,
+      coinsSpent: 0,
       voiceIncome: 0,
-      callers: []
+      videoIncome: 0,
+      counterparts: []
     };
 
-    const callerIdsStr = callStats.callers
-      .map((c: any) => c?.toString())
+    const counterpartIds = (callStats.counterparts || [])
+      .map((id: any) => id?.toString())
       .filter((id: string) => id && id !== userId);
-    const uniqueCallersCount = new Set<string>(callerIdsStr).size;
+    const uniqueCounterparts = new Set<string>(counterpartIds).size;
 
-    const callerFrequency: { [key: string]: number } = {};
-    callerIdsStr.forEach((c: string) => {
-      callerFrequency[c] = (callerFrequency[c] || 0) + 1;
+    const counterpartFrequency: { [key: string]: number } = {};
+    counterpartIds.forEach((id: string) => {
+      counterpartFrequency[id] = (counterpartFrequency[id] || 0) + 1;
     });
-    const repeatUsersCount = Object.values(callerFrequency).filter(count => count > 1).length;
+    const repeatUsersCount = isHost
+      ? Object.values(counterpartFrequency).filter(count => count > 1).length
+      : 0;
 
     const newFansCount = await Follow.countDocuments({
       followingId: userObjectId,
@@ -232,7 +300,7 @@ export class LiveDataService {
       userId: userObjectId,
       type: { $in: ['gift_received', 'charm_received', 'call_income'] },
       createdAt: { $gte: startDate, $lte: endDate }
-    }).select('relatedUserId channelName amount type');
+    }).select('relatedUserId channelName amount type contextType description');
 
     const channelNames = this.uniqueIdStrings(
       giftHistory.map(h => h.channelName).filter((name): name is string => !!name)
@@ -254,26 +322,28 @@ export class LiveDataService {
     giftHistory.forEach(history => {
       const senderId = history.relatedUserId?.toString();
       const amount = Math.abs(history.amount || 0);
-      const roomType = history.channelName ? roomsByChannel.get(history.channelName) : undefined;
+      const giftContext = this.resolveGiftContext(history, roomsByChannel);
 
-      if (history.type === 'call_income') {
-        if (senderId && senderId !== userId) callGiftSenders.add(senderId);
+      if (history.type === 'call_income' || giftContext === 'call') {
+        if (isHost && senderId && senderId !== userId) {
+          callGiftSenders.add(senderId);
+        }
         return;
       }
 
-      if (roomType === 'livestream') {
+      if (giftContext === 'livestream') {
         liveBeansIncome += amount;
         if (senderId && senderId !== userId) liveGiftSenders.add(senderId);
         return;
       }
 
-      if (roomType === 'party_room') {
+      if (giftContext === 'party_room') {
         partyBeansIncome += amount;
         if (senderId && senderId !== userId) partyGiftSenders.add(senderId);
         return;
       }
 
-      if (senderId && senderId !== userId) {
+      if (isHost && senderId && senderId !== userId) {
         callGiftSenders.add(senderId);
       }
     });
@@ -311,50 +381,76 @@ export class LiveDataService {
       secondsByDate.set(log.date, (secondsByDate.get(log.date) || 0) + (log.roomOwnerSeconds || 0));
     });
 
-    const livePartyRoom = hostedRooms.find(room => room.roomType === 'party_room' && room.status === 'live');
-    if (livePartyRoom && livePartyRoom.startedAt <= endDate) {
-      const currentPartySeconds = this.clipDurationSeconds(livePartyRoom.startedAt, now, startDate, endDate);
-      roomOwnerSeconds += currentPartySeconds;
+    const logsHavePartyActivity = logs.some(log =>
+      (log.roomOwnerSeconds || 0) > 0 ||
+      (log.totalMicSeconds || 0) > 0 ||
+      (log.micUserIds || []).length > 0 ||
+      (log.audienceUserIds || []).length > 0
+    );
 
-      const todayStr = this.localDateStr(now);
-      if (todayStr >= this.localDateStr(startDate) && todayStr <= this.localDateStr(endDate)) {
-        secondsByDate.set(todayStr, (secondsByDate.get(todayStr) || 0) + currentPartySeconds);
+    const addPartyRoomActivity = (room: typeof hostedRooms[number], sessionEnd: Date) => {
+      if (!room.startedAt || room.startedAt > endDate) {
+        return;
+      }
+      if (sessionEnd < startDate) {
+        return;
       }
 
-      (livePartyRoom.joinedUsers || []).forEach(id => {
+      const partySeconds = this.clipDurationSeconds(room.startedAt, sessionEnd, startDate, endDate);
+      roomOwnerSeconds += partySeconds;
+
+      const activityDate = this.localDateStr(sessionEnd);
+      if (activityDate >= this.localDateStr(startDate) && activityDate <= this.localDateStr(endDate)) {
+        secondsByDate.set(activityDate, (secondsByDate.get(activityDate) || 0) + partySeconds);
+      }
+
+      (room.joinedUsers || []).forEach(id => {
         if (id.toString() !== userId) audienceUserIds.add(id.toString());
       });
 
-      (livePartyRoom.seats || []).forEach(seat => {
+      (room.seats || []).forEach(seat => {
         if (!seat.userId) return;
         micUserIds.add(seat.userId.toString());
         if (seat.occupiedAt) {
           const occupiedAt = new Date(seat.occupiedAt);
           if (occupiedAt <= endDate) {
-            totalMicSeconds += this.clipDurationSeconds(occupiedAt, now, startDate, endDate);
+            totalMicSeconds += this.clipDurationSeconds(occupiedAt, sessionEnd, startDate, endDate);
           }
         }
       });
+    };
+
+    const livePartyRoom = hostedRooms.find(room => room.roomType === 'party_room' && room.status === 'live');
+    if (livePartyRoom) {
+      addPartyRoomActivity(livePartyRoom, now);
     }
 
-    const loggedCallIncome = logs.reduce((sum, log) => sum + (log.totalCallIncome || 0), 0);
-    const loggedCalls = logs.reduce((sum, log) => sum + (log.totalCalls || 0), 0);
-    const loggedVoiceIncome = logs.reduce((sum, log) => sum + (log.voiceIncome || 0), 0);
-    const loggedCallDuration = logs.reduce((sum, log) => sum + (log.totalDurationSeconds || 0), 0);
-    const loggedGiftSenders = logs.reduce((sum, log) => sum + (log.giftSendersCount || 0), 0);
-    const loggedUniqueCallers = logs.reduce((sum, log) => sum + (log.uniqueCallersCount || 0), 0);
-    const loggedRepeatUsers = logs.reduce((sum, log) => sum + (log.repeatUsersCount || 0), 0);
+    if (!logsHavePartyActivity) {
+      hostedRooms.forEach(room => {
+        if (room.roomType !== 'party_room' || room.status === 'live') {
+          return;
+        }
+        const endedAt = room.endedAt || room.startedAt;
+        if (!endedAt) {
+          return;
+        }
+        addPartyRoomActivity(room, endedAt);
+      });
+    }
+
     const loggedReports = logs.reduce((sum, log) => sum + (log.reportsCount || 0), 0);
     const loggedNewFans = logs.reduce((sum, log) => sum + (log.newFansCount || 0), 0);
 
-    const totalCallIncome = Math.max(callStats.totalCallIncome, loggedCallIncome);
-    const totalCalls = Math.max(callStats.totalCalls, loggedCalls);
-    const voiceIncome = Math.max(callStats.voiceIncome, loggedVoiceIncome);
-    const totalDurationSeconds = Math.max(callStats.totalDuration, loggedCallDuration);
-    const giftSendersCount = Math.max(callGiftSenders.size, loggedGiftSenders);
+    const totalCalls = callStats.totalCalls || 0;
+    const totalDurationSeconds = callStats.totalDuration || 0;
+    const totalCallIncome = isHost ? Number(callIncomeAgg[0]?.total || 0) : 0;
+    const voiceIncome = isHost ? (callStats.voiceIncome || 0) : 0;
+    const videoIncome = isHost ? (callStats.videoIncome || 0) : 0;
+    const coinsSpent = isHost ? 0 : (callStats.coinsSpent || 0);
+    const uniqueCallers = isHost ? uniqueCounterparts : 0;
+    const uniqueHosts = isHost ? 0 : uniqueCounterparts;
+    const giftSendersCount = isHost ? callGiftSenders.size : 0;
     const avgRating = dataLog?.avgRating || 4.8;
-    const finalUniqueCallers = Math.max(uniqueCallersCount, loggedUniqueCallers);
-    const finalRepeatUsers = Math.max(repeatUsersCount, loggedRepeatUsers);
     const reportsCount = loggedReports;
 
     const eDayMinHours = Number(await this.appSettingService.getSettingValue('e_day_min_hours') ?? 1);
@@ -364,7 +460,7 @@ export class LiveDataService {
       ? Array.from(secondsByDate.values()).filter(seconds => this.secondsToEHours(seconds) >= eDayMinHours).length
       : (partyEHours >= eDayMinHours ? 1 : 0);
 
-    const totalBeansIncome = totalCallIncome + liveBeansIncome + partyBeansIncome;
+    const summaryBeansIncome = totalCallIncome + liveBeansIncome + partyBeansIncome;
 
     const completedMinutes = Math.floor(totalDurationSeconds / 60);
     const targetMinutes = dataLog?.hostTask?.targetMinutes || 120;
@@ -380,26 +476,30 @@ export class LiveDataService {
         isVerified: user.isVerified || false,
         verificationStatus: user.isVerified ? 'Verified' : 'Unverified'
       },
+      accountRole,
       type,
       selectedDate: dateStr,
       selectedMonth: monthStr,
 
       summary: {
-        totalBeansIncome
+        totalBeansIncome: summaryBeansIncome
       },
 
       callData: {
-        totalBeansIncome,
+        totalBeansIncome: totalCallIncome,
         totalCallIncome,
+        coinsSpent,
         totalCalls,
         voiceIncome,
+        videoIncome,
         totalDuration: this.formatSecondsToHHMMSS(totalDurationSeconds),
         totalDurationSeconds,
         giftSenders: giftSendersCount,
         avgRating: `${avgRating.toFixed(1)}/5`,
         avgRatingValue: avgRating,
-        uniqueCallers: finalUniqueCallers,
-        repeatUsers: finalRepeatUsers,
+        uniqueCallers,
+        uniqueHosts,
+        repeatUsers: repeatUsersCount,
         reports: reportsCount
       },
 
@@ -450,17 +550,12 @@ export class LiveDataService {
       {
         $set: { month: monthStr },
         $inc: {
-          totalBeansIncome: body.totalBeansIncome || 0,
-          totalCallIncome: body.totalCallIncome || 0,
           totalCalls: body.totalCalls || 0,
-          voiceIncome: body.voiceIncome || 0,
           totalDurationSeconds: body.totalDurationSeconds || 0,
-          liveBeansIncome: body.liveBeansIncome || 0,
           liveEHours: body.liveEHours || 0,
           liveViewers: body.liveViewers || 0,
           liveDurationSeconds: body.liveDurationSeconds || 0,
           liveGiftSendersCount: body.liveGiftSendersCount || 0,
-          partyBeansIncome: body.partyBeansIncome || 0,
           roomOwnerSeconds: body.roomOwnerSeconds || 0,
           partyEHours: body.partyEHours || 0,
           totalMicSeconds: body.totalMicSeconds || 0,

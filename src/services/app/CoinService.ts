@@ -142,7 +142,8 @@ export class CoinService {
           path: 'giftId',
           populate: { path: 'media', select: 'url' }
         })
-        .populate({ path: 'relatedUserId', select: 'isCoinseller' })
+        .populate({ path: 'relatedUserId', select: 'name userId isCoinseller' })
+        .populate({ path: 'callId', select: 'callType' })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -243,10 +244,26 @@ export class CoinService {
     return { name: match[1], quantity: parseInt(match[2], 10) };
   }
 
-  private resolveRelatedUserId(relatedUserId: any): string | undefined {
-    if (!relatedUserId) return undefined;
-    if (relatedUserId._id) return relatedUserId._id.toString();
-    return relatedUserId.toString();
+  private resolveRelatedUser(relatedUserId: any): { name: string | null; userId: number | null } | null {
+    if (!relatedUserId || !relatedUserId._id) return null;
+    if (relatedUserId.name === undefined && relatedUserId.userId === undefined && relatedUserId.isCoinseller === undefined) {
+      return null;
+    }
+    return {
+      name: relatedUserId.name ?? null,
+      userId: relatedUserId.userId ?? null
+    };
+  }
+
+  private resolveCallType(row: any): 'voice' | 'video' | null {
+    if (row.contextType === 'audio_call') return 'voice';
+    if (row.contextType === 'video_call') return 'video';
+    const populatedCallType = row.callId?.callType;
+    if (populatedCallType === 'voice' || populatedCallType === 'video') return populatedCallType;
+    const description = row.description || '';
+    if (/video call/i.test(description)) return 'video';
+    if (/voice call/i.test(description)) return 'voice';
+    return null;
   }
 
   private resolveTransactionType(row: any): string {
@@ -263,6 +280,37 @@ export class CoinService {
     return row.type;
   }
 
+  private resolveIconType(transactionType: string, callType: 'voice' | 'video' | null): string {
+    if (transactionType === 'call_income') {
+      return callType === 'video' ? 'video_call' : 'voice_call';
+    }
+    if (transactionType === 'gift_income') return 'gift';
+    if (transactionType === 'cash_out') return 'cash_out';
+    if (transactionType === 'bean_to_coin_exchange') return 'exchange';
+    if (transactionType === 'user_transfer') return 'user_transfer';
+    if (transactionType === 'coinseller_transfer') return 'coinseller_transfer';
+    if (transactionType === 'agency_commission') return 'agency_commission';
+    return transactionType;
+  }
+
+  private resolveTitle(
+    relatedUser: { name: string | null; userId: number | null } | null,
+    gift: { name?: string } | null,
+    transactionType: string,
+    callType: 'voice' | 'video' | null
+  ): string {
+    if (relatedUser?.name) return relatedUser.name;
+    if (gift?.name) return gift.name;
+    if (transactionType === 'call_income') return callType === 'video' ? 'Video Call' : 'Voice Call';
+    if (transactionType === 'gift_income') return 'Gift Income';
+    if (transactionType === 'cash_out') return 'Cash Out';
+    if (transactionType === 'bean_to_coin_exchange') return 'Bean to Coin Exchange';
+    if (transactionType === 'user_transfer') return 'User Transfer';
+    if (transactionType === 'coinseller_transfer') return 'CoinSeller Transfer';
+    if (transactionType === 'agency_commission') return 'Agency Commission';
+    return transactionType;
+  }
+
   private resolveGiftPayload(row: any, giftByName: Map<string, any>) {
     const populatedGift = row.giftId && row.giftId._id ? row.giftId : null;
     const parsed = !populatedGift && row.type === 'charm_received'
@@ -277,7 +325,6 @@ export class CoinService {
     const media = giftDoc.media;
 
     return {
-      id: giftDoc._id.toString(),
       name: giftDoc.name,
       icon: media?.url || null,
       quantity
@@ -285,20 +332,28 @@ export class CoinService {
   }
 
   private mapBeansHistoryRow(row: any, giftByName: Map<string, any>) {
+    const transactionType = this.resolveTransactionType(row);
+    const callType = transactionType === 'call_income' ? this.resolveCallType(row) : null;
+    const relatedUser = this.resolveRelatedUser(row.relatedUserId);
+    const gift = this.resolveGiftPayload(row, giftByName);
+
     return {
       _id: row._id,
-      userId: row.userId,
-      relatedUserId: this.resolveRelatedUserId(row.relatedUserId),
       amount: row.amount,
       type: row.type,
-      transactionType: this.resolveTransactionType(row),
+      transactionType,
+      title: this.resolveTitle(relatedUser, gift, transactionType, callType),
+      subtitle: relatedUser?.userId != null ? String(relatedUser.userId) : '',
+      relatedUser,
+      callType,
+      iconType: this.resolveIconType(transactionType, callType),
       description: row.description,
       transactionId: row.transactionId,
       packageId: row.packageId,
       paymentGateway: row.paymentGateway,
       channelName: row.channelName,
       transferTarget: row.transferTarget || null,
-      gift: this.resolveGiftPayload(row, giftByName),
+      gift,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };

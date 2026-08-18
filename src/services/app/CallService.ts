@@ -135,8 +135,8 @@ export class CallService {
     const role = isCaller ? 'caller' : 'host';
 
     const [caller, host] = await Promise.all([
-      User.findById(callerId).select('name profileImage coins').populate('profileImage'),
-      User.findById(receiverId).select('name profileImage beans').populate('profileImage')
+      User.findById(callerId).select('name userId profileImage coins').populate('profileImage'),
+      User.findById(receiverId).select('name userId profileImage beans').populate('profileImage')
     ]);
 
     const other = isCaller ? host : caller;
@@ -153,6 +153,7 @@ export class CallService {
       otherUser: other
         ? {
             id: other._id,
+            userId: other.userId ?? null,
             name: other.name ?? null,
             profileImage: other.profileImage ?? null
           }
@@ -458,103 +459,8 @@ export class CallService {
     return call;
   }
 
-  /**
-   * Ends an active call session and performs billing calculations
-   */
-  public async endCall(userId: string, callId: string) {
-    AppLogger.info(`[CallService: endCall] userId=${userId}, callId=${callId}`);
-
-    const call = await Call.findById(callId);
-    if (!call) throw new Error('Call session not found');
-
-    // Verify user is participant in call
-    if (call.callerId.toString() !== userId && call.receiverId.toString() !== userId) {
-      throw new Error('Unauthorized to end this call');
-    }
-
-    // If call was still in 'initiated' status (caller cancelled or receiver declined before accepting)
-    if (call.status === 'initiated') {
-      // Caller cancelled the call before receiver answered
-      if (userId === call.callerId.toString()) {
-        call.status = 'cancelled';
-      } else {
-        // Receiver explicitly ended the incoming call (treated as rejected)
-        call.status = 'rejected';
-      }
-      call.endedAt = new Date();
-      await call.save();
-      return call;
-    }
-
-    if (call.status !== 'accepted') {
-      return call; // already ended/rejected
-    }
-
-    call.endedAt = new Date();
-    call.status = 'ended';
-
-    // Calculate call duration in seconds
-    const start = call.startedAt ? call.startedAt.getTime() : call.createdAt.getTime();
-    const duration = Math.max(0, Math.floor((call.endedAt.getTime() - start) / 1000));
-    call.duration = duration;
-
-    // Billing calculation (cost per minute)
-    const receiver = await User.findById(call.receiverId);
-    const caller = await User.findById(call.callerId);
-
-    if (receiver && caller) {
-      const rate = call.callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
-
-      // Calculate total cost (charge per started minute)
-      const minutes = Math.ceil(duration / 60);
-      const cost = minutes * rate;
-
-      if (cost > 0) {
-        // Cap the cost to caller's current balance to avoid negative balance
-        const actualCost = Math.min(caller.coins || 0, cost);
-
-        // Calculate platform fee and receiver's earnings
-        const platformFeePercent = await this.appSettingService.getSettingValue('call_platform_fee_percent') ?? 10;
-        const platformFee = Math.round((actualCost * platformFeePercent) / 100);
-        const coinsEarned = Math.max(0, actualCost - platformFee);
-
-        caller.coins = Math.max(0, (caller.coins || 0) - actualCost);
-        caller.wealthCoins = (caller.wealthCoins || 0) + actualCost;
-        await caller.save();
-
-        receiver.beans = (receiver.beans || 0) + coinsEarned;
-        receiver.charmCoins = (receiver.charmCoins || 0) + coinsEarned;
-        await receiver.save();
-
-        call.coinsDeducted = actualCost;
-        call.coinsEarned = coinsEarned;
-        call.platformFee = platformFee;
-
-        await CoinHistory.create({
-          userId: caller._id,
-          relatedUserId: receiver._id,
-          amount: -actualCost,
-          type: 'transfer',
-          description: `Paid for ${call.callType} call duration of ${minutes} min(s)`,
-          channelName: call.roomId,
-        });
-
-        await CoinHistory.create({
-          userId: receiver._id,
-          relatedUserId: caller._id,
-          amount: coinsEarned,
-          type: 'call_income',
-          description: `Earned ${coinsEarned} beans from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
-          channelName: call.roomId,
-        });
-
-        AppLogger.info(`[CallService: endCall] Billed ${actualCost} coins for callId=${callId}. Duration=${duration}s`);
-      }
-    }
-
-    await call.save();
-
-    const populatedCall = await Call.findById(call._id)
+  private async populateEndedCall(callId: string | mongoose.Types.ObjectId) {
+    return Call.findById(callId)
       .populate({
         path: 'callerId',
         select: 'name profileImage coins',
@@ -565,8 +471,177 @@ export class CallService {
         select: 'name profileImage dob audioCallChargePerMinute videoCallChargePerMinute',
         populate: { path: 'profileImage' }
       });
+  }
 
-    return populatedCall || call;
+  private isDuplicateKeyError(error: any): boolean {
+    return error?.code === 11000;
+  }
+
+  /**
+   * Deducts caller recharge coins and credits host beans once per call.
+   */
+  private async settleEndedCall(call: any) {
+    const [receiver, caller] = await Promise.all([
+      User.findById(call.receiverId).select('voiceCallPrice videoCallPrice'),
+      User.findById(call.callerId).select('coins')
+    ]);
+
+    if (!receiver || !caller) {
+      return;
+    }
+
+    const rate = call.callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
+    const minutes = Math.ceil((call.duration || 0) / 60);
+    const cost = minutes * rate;
+    if (cost <= 0) {
+      return;
+    }
+
+    const actualCost = Math.min(caller.coins || 0, cost);
+    if (actualCost <= 0) {
+      return;
+    }
+
+    const platformFeePercent = Number(await this.appSettingService.getSettingValue('call_platform_fee_percent') ?? 10);
+    const platformFee = Math.round((actualCost * platformFeePercent) / 100);
+    const coinsEarned = Math.max(0, actualCost - platformFee);
+
+    const deducted = await User.findOneAndUpdate(
+      { _id: caller._id, coins: { $gte: actualCost } },
+      { $inc: { coins: -actualCost, wealthCoins: actualCost } },
+      { new: true }
+    );
+
+    if (!deducted) {
+      AppLogger.warn(`[CallService: settleEndedCall] Caller coins changed before debit. callId=${call._id}`);
+      return;
+    }
+
+    if (coinsEarned > 0) {
+      await User.updateOne(
+        { _id: receiver._id },
+        { $inc: { beans: coinsEarned, charmCoins: coinsEarned } }
+      );
+    }
+
+    call.coinsDeducted = actualCost;
+    call.coinsEarned = coinsEarned;
+    call.platformFee = platformFee;
+    await Call.updateOne(
+      { _id: call._id },
+      {
+        coinsDeducted: actualCost,
+        coinsEarned,
+        platformFee
+      }
+    );
+
+    const contextType = call.callType === 'video' ? 'video_call' : 'audio_call';
+
+    try {
+      await CoinHistory.create({
+        userId: caller._id,
+        relatedUserId: receiver._id,
+        amount: -actualCost,
+        type: 'call_spent',
+        wallet: 'coins',
+        callId: call._id,
+        contextType,
+        description: `Paid for ${call.callType} call duration of ${minutes} min(s)`,
+        channelName: call.roomId,
+      });
+    } catch (error: any) {
+      if (!this.isDuplicateKeyError(error)) throw error;
+    }
+
+    if (coinsEarned > 0) {
+      try {
+        await CoinHistory.create({
+          userId: receiver._id,
+          relatedUserId: caller._id,
+          amount: coinsEarned,
+          type: 'call_income',
+          wallet: 'beans',
+          callId: call._id,
+          contextType,
+          description: `Earned ${coinsEarned} beans from ${call.callType} call duration of ${minutes} min(s) (Platform Fee: ${platformFee})`,
+          channelName: call.roomId,
+        });
+      } catch (error: any) {
+        if (!this.isDuplicateKeyError(error)) throw error;
+      }
+    }
+
+    AppLogger.info(`[CallService: endCall] Billed ${actualCost} coins for callId=${call._id}. Duration=${call.duration}s`);
+  }
+
+  /**
+   * Ends an active call session and performs billing calculations once.
+   */
+  public async endCall(userId: string, callId: string) {
+    AppLogger.info(`[CallService: endCall] userId=${userId}, callId=${callId}`);
+
+    const call = await Call.findById(callId);
+    if (!call) throw new Error('Call session not found');
+
+    if (call.callerId.toString() !== userId && call.receiverId.toString() !== userId) {
+      throw new Error('Unauthorized to end this call');
+    }
+
+    if (call.status === 'initiated') {
+      const nextStatus = userId === call.callerId.toString() ? 'cancelled' : 'rejected';
+      const updated = await Call.findOneAndUpdate(
+        { _id: callId, status: 'initiated' },
+        { status: nextStatus, endedAt: new Date() },
+        { new: true }
+      );
+      return updated || call;
+    }
+
+    if (call.status !== 'accepted') {
+      return (await this.populateEndedCall(call._id)) || call;
+    }
+
+    const endedAt = new Date();
+    const start = call.startedAt ? call.startedAt.getTime() : call.createdAt.getTime();
+    const duration = Math.max(0, Math.floor((endedAt.getTime() - start) / 1000));
+
+    const claimed = await Call.findOneAndUpdate(
+      { _id: callId, status: 'accepted' },
+      { status: 'ended', endedAt, duration },
+      { new: true }
+    );
+
+    if (!claimed) {
+      return (await this.populateEndedCall(callId)) || call;
+    }
+
+    await this.settleEndedCall(claimed);
+    return (await this.populateEndedCall(claimed._id)) || claimed;
+  }
+
+  /**
+   * Settles accepted calls left open across a restart (older than maxAgeMs).
+   */
+  public async settleStaleAcceptedCalls(maxAgeMs: number = 3 * 60 * 60 * 1000) {
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    const staleCalls = await Call.find({
+      status: 'accepted',
+      $or: [
+        { startedAt: { $lte: cutoff } },
+        { startedAt: { $exists: false }, createdAt: { $lte: cutoff } }
+      ]
+    }).select('_id callerId');
+
+    for (const stale of staleCalls) {
+      try {
+        await this.endCall(stale.callerId.toString(), stale._id.toString());
+      } catch (error: any) {
+        AppLogger.error(`[CallService: settleStaleAcceptedCalls] callId=${stale._id}: ${error.message}`);
+      }
+    }
+
+    return staleCalls.length;
   }
 
   /**

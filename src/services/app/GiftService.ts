@@ -198,35 +198,41 @@ export class GiftService {
       throw new Error('Receiver profile not found');
     }
 
-    // 5. Verify sender balance
-    const currentCoins = sender.coins || 0;
-    if (currentCoins < totalPrice) {
+    // 5. Deduct sender recharge coins and credit receiver beans atomically
+    const updatedSender = await User.findOneAndUpdate(
+      { _id: senderId, coins: { $gte: totalPrice } },
+      { $inc: { coins: -totalPrice, wealthCoins: totalPrice } },
+      { new: true }
+    );
+    if (!updatedSender) {
       throw new Error('Insufficient coins to purchase and send this gift');
     }
 
-    // 6. Perform balance updates
-    sender.coins = currentCoins - totalPrice;
-    sender.wealthCoins = (sender.wealthCoins || 0) + totalPrice;
-    await sender.save();
-
-    receiver.coins = (receiver.coins || 0) + totalPrice;
-    receiver.charmCoins = (receiver.charmCoins || 0) + totalPrice;
-    await receiver.save();
-
-    // Update room totalGiftRevenue if inside an active liveStream/partyRoom
-    if (liveStream) {
-      liveStream.totalGiftRevenue = (liveStream.totalGiftRevenue || 0) + totalPrice;
-      await liveStream.save();
+    const updatedReceiver = await User.findByIdAndUpdate(
+      receiverId,
+      { $inc: { beans: totalPrice, charmCoins: totalPrice } },
+      { new: true }
+    );
+    if (!updatedReceiver) {
+      throw new Error('Receiver profile not found');
     }
 
-    // 7. Record Coin History for both users
+    if (liveStream) {
+      await Room.updateOne(
+        { _id: liveStream._id },
+        { $inc: { totalGiftRevenue: totalPrice } }
+      );
+    }
+
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
       relatedUserId: new mongoose.Types.ObjectId(receiverId),
       amount: -totalPrice,
       type: 'gift_sent',
+      wallet: 'coins',
       description: `Sent gift '${gift.name}' x${quantity} during ${resolvedContext || 'live stream'}`,
       channelName: channelName || undefined,
+      contextType: resolvedContext || undefined,
       giftId: gift._id,
       quantity
     });
@@ -236,16 +242,18 @@ export class GiftService {
       relatedUserId: new mongoose.Types.ObjectId(senderId),
       amount: totalPrice,
       type: 'charm_received',
+      wallet: 'beans',
       description: `Received gift '${gift.name}' x${quantity} from viewer`,
       channelName: channelName || undefined,
+      contextType: resolvedContext || undefined,
       giftId: gift._id,
       quantity
     });
 
     AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);
 
-    await sender.populate('profileImage');
-    await receiver.populate('profileImage');
+    await updatedSender.populate('profileImage');
+    await updatedReceiver.populate('profileImage');
 
     const toPublicUser = (user: any, extra: Record<string, any> = {}) => ({
       id: user._id,
@@ -259,17 +267,19 @@ export class GiftService {
     return {
       gift,
       quantity,
-      sender: toPublicUser(sender, {
-        coins: sender.coins,
-        wealthCoins: sender.wealthCoins,
+      sender: toPublicUser(updatedSender, {
+        coins: updatedSender.coins,
+        wealthCoins: updatedSender.wealthCoins,
       }),
-      host: toPublicUser(receiver, {
-        coins: receiver.coins,
-        charmCoins: receiver.charmCoins,
+      host: toPublicUser(updatedReceiver, {
+        coins: updatedReceiver.coins,
+        beans: updatedReceiver.beans,
+        charmCoins: updatedReceiver.charmCoins,
       }),
-      receiver: toPublicUser(receiver, {
-        coins: receiver.coins,
-        charmCoins: receiver.charmCoins,
+      receiver: toPublicUser(updatedReceiver, {
+        coins: updatedReceiver.coins,
+        beans: updatedReceiver.beans,
+        charmCoins: updatedReceiver.charmCoins,
       })
     };
   }

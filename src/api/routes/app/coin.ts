@@ -159,7 +159,66 @@ export default (router: Router) => {
    *         description: Filter by transaction type
    *     responses:
    *       200:
-   *         description: Beans history details with gift icon/name/quantity and transactionType
+   *         description: >
+   *           Beans history with display title (username), subtitle (public User ID),
+   *           relatedUser, callType, iconType, and gift name/icon/quantity.
+   *           Call ID and Gift ID are not returned.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 message:
+   *                   type: string
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     history:
+   *                       type: array
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           title:
+   *                             type: string
+   *                             description: Primary display text (other user's name)
+   *                           subtitle:
+   *                             type: string
+   *                             description: Secondary display text (public numeric User ID)
+   *                           relatedUser:
+   *                             type: object
+   *                             nullable: true
+   *                             properties:
+   *                               name:
+   *                                 type: string
+   *                                 nullable: true
+   *                               userId:
+   *                                 type: integer
+   *                                 nullable: true
+   *                           callType:
+   *                             type: string
+   *                             nullable: true
+   *                             enum: [voice, video]
+   *                           iconType:
+   *                             type: string
+   *                             enum: [voice_call, video_call, gift, cash_out, exchange, user_transfer, coinseller_transfer, agency_commission]
+   *                           transactionType:
+   *                             type: string
+   *                           amount:
+   *                             type: number
+   *                           gift:
+   *                             type: object
+   *                             nullable: true
+   *                             properties:
+   *                               name:
+   *                                 type: string
+   *                               icon:
+   *                                 type: string
+   *                                 nullable: true
+   *                               quantity:
+   *                                 type: integer
+   *                                 nullable: true
    */
   coinRouter.get('/beans-history', appAuthMiddleware, async (req: any, res: Response) => {
     try {
