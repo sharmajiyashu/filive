@@ -141,7 +141,7 @@ export default (router: Router) => {
   });
 
   const parseHostFilters = (req: any) => ({
-    agencyId: req.query.agency_id?.toString() || req.params.id?.toString(),
+    agencyId: req.query.agency_id?.toString(),
     range: req.query.range?.toString(),
     startDate: req.query.start_date?.toString(),
     endDate: req.query.end_date?.toString(),
