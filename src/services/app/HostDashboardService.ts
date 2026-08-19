@@ -19,6 +19,7 @@ export type HostDateRange =
   | 'custom';
 
 export interface HostDashboardFilters {
+  agencyId?: string;
   range?: string;
   startDate?: string;
   endDate?: string;
@@ -118,8 +119,32 @@ export class HostDashboardService {
     };
   }
 
-  private async getOwnerAgency(ownerUserId: string) {
-    const agency = await Agency.findOne({ creatorId: ownerUserId });
+  private mapAgencyInfo(agency: InstanceType<typeof Agency>) {
+    const logo = (agency as any).logo;
+    return {
+      id: agency._id,
+      name: agency.name,
+      agency_code: agency.agencyCode || null,
+      logo_url: this.mediaUrl(logo),
+      logo: logo || null,
+      status: agency.status,
+      is_verified: agency.isVerified,
+    };
+  }
+
+  private async getOwnerAgency(ownerUserId: string, agencyId?: string) {
+    if (agencyId) {
+      if (!mongoose.Types.ObjectId.isValid(agencyId)) {
+        throw new Error('Invalid agency_id');
+      }
+      const agency = await Agency.findOne({ _id: agencyId, creatorId: ownerUserId }).populate('logo');
+      if (!agency) {
+        throw new Error('Agency not found or you are not the owner');
+      }
+      return agency;
+    }
+
+    const agency = await Agency.findOne({ creatorId: ownerUserId }).populate('logo');
     if (!agency) {
       throw new Error('Agency not found for this user');
     }
@@ -412,7 +437,7 @@ export class HostDashboardService {
   }
 
   public async getHostDashboard(ownerUserId: string, filters: HostDashboardFilters = {}) {
-    const agency = await this.getOwnerAgency(ownerUserId);
+    const agency = await this.getOwnerAgency(ownerUserId, filters.agencyId);
     const dateRange = this.resolveDateRange(filters);
     const page = Math.max(1, filters.page || 1);
     const limit = Math.min(50, Math.max(1, filters.limit || 20));
@@ -461,6 +486,7 @@ export class HostDashboardService {
         if (!user) {
           return {
             host_record_id: host._id,
+            agency_id: agency._id,
             avatar_url: null,
             display_name: 'Unknown',
             user_id: null,
@@ -475,6 +501,7 @@ export class HostDashboardService {
 
         return {
           host_record_id: host._id,
+          agency_id: agency._id,
           id: user._id,
           avatar_url: this.mediaUrl(user.profileImage),
           profile_image: user.profileImage || null,
@@ -488,6 +515,7 @@ export class HostDashboardService {
     );
 
     return {
+      agency: this.mapAgencyInfo(agency),
       total_commission: Number(commissionAgg[0]?.total || 0),
       filters: {
         range: dateRange.range,
@@ -504,7 +532,7 @@ export class HostDashboardService {
   }
 
   public async getHostRevenueDetails(ownerUserId: string, hostId: string, filters: HostDashboardFilters = {}) {
-    const agency = await this.getOwnerAgency(ownerUserId);
+    const agency = await this.getOwnerAgency(ownerUserId, filters.agencyId);
     const dateRange = this.resolveDateRange(filters);
     const membership = await this.resolveHostMembership(agency._id, hostId);
     const user = membership.userId as any;
@@ -513,6 +541,7 @@ export class HostDashboardService {
     const isOnline = this.isUserOnline(user);
 
     return {
+      agency: this.mapAgencyInfo(agency),
       filters: {
         range: dateRange.range,
         start_date: dateRange.start_date,
@@ -520,6 +549,7 @@ export class HostDashboardService {
       },
       host_info: {
         host_record_id: membership._id,
+        agency_id: agency._id,
         id: user._id,
         name: user.name || 'Unknown',
         user_id: user.userId ?? null,
@@ -561,6 +591,7 @@ export class HostDashboardService {
 
     return {
       removed: true,
+      agency: this.mapAgencyInfo(agency),
       host_record_id: membership._id,
       user_id: user?.userId ?? null,
       name: user?.name || 'Unknown',

@@ -141,6 +141,7 @@ export default (router: Router) => {
   });
 
   const parseHostFilters = (req: any) => ({
+    agencyId: req.query.agency_id?.toString() || req.params.id?.toString(),
     range: req.query.range?.toString(),
     startDate: req.query.start_date?.toString(),
     endDate: req.query.end_date?.toString(),
@@ -161,6 +162,10 @@ export default (router: Router) => {
    *     security:
    *       - bearerAuth: []
    *     parameters:
+   *       - in: query
+   *         name: agency_id
+   *         schema: { type: string }
+   *         description: Agency MongoDB _id from profile.agency._id. Optional — owner token se agency auto-detect hoti hai.
    *       - in: query
    *         name: range
    *         schema: { type: string, enum: [last_7_days, last_30_days, last_90_days, this_month, custom], default: last_30_days }
@@ -211,6 +216,10 @@ export default (router: Router) => {
    *         name: hostId
    *         required: true
    *         schema: { type: string }
+   *       - in: query
+   *         name: agency_id
+   *         schema: { type: string }
+   *         description: Optional agency MongoDB _id. Owner token se auto-detect bhi hota hai.
    *       - in: query
    *         name: range
    *         schema: { type: string, enum: [last_7_days, last_30_days, last_90_days, this_month, custom], default: last_30_days }
