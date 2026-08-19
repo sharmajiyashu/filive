@@ -1,11 +1,13 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import { AgencyService } from '../../../services/app/AgencyService';
+import { HostDashboardService } from '../../../services/app/HostDashboardService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 
 export default (router: Router) => {
   const agencyService = Container.get(AgencyService);
+  const hostDashboardService = Container.get(HostDashboardService);
   const agencyRouter = Router();
 
   router.use('/agencies', appAuthMiddleware, agencyRouter);
@@ -133,6 +135,131 @@ export default (router: Router) => {
     try {
       const result = await agencyService.getAgencyDashboard(req.user.id);
       return ResponseWrapper.success(res, result, 'Agency dashboard fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  const parseHostFilters = (req: any) => ({
+    range: req.query.range?.toString(),
+    startDate: req.query.start_date?.toString(),
+    endDate: req.query.end_date?.toString(),
+    search: req.query.search?.toString() || req.query.user_id?.toString() || req.query.q?.toString(),
+    page: req.query.page ? parseInt(req.query.page) : 1,
+    limit: req.query.limit ? parseInt(req.query.limit) : 20,
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/hosts:
+   *   get:
+   *     summary: Host dashboard — commission + host list
+   *     description: >
+   *       Agency owner Host screen. Returns total commission and hosts with avatar, name, user id, level, and live duration.
+   *       Default range is last 30 days. Use start_date + end_date for Date Choice, or search for user id.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: range
+   *         schema: { type: string, enum: [last_7_days, last_30_days, last_90_days, this_month, custom], default: last_30_days }
+   *       - in: query
+   *         name: start_date
+   *         schema: { type: string, example: '2026-07-20' }
+   *         description: Custom range start (YYYY-MM-DD). Use with end_date.
+   *       - in: query
+   *         name: end_date
+   *         schema: { type: string, example: '2026-08-19' }
+   *         description: Custom range end (YYYY-MM-DD). Use with start_date.
+   *       - in: query
+   *         name: search
+   *         schema: { type: string, example: '45560548' }
+   *         description: Search host by numeric user id
+   *       - in: query
+   *         name: page
+   *         schema: { type: integer, default: 1 }
+   *       - in: query
+   *         name: limit
+   *         schema: { type: integer, default: 20 }
+   *     responses:
+   *       200:
+   *         description: Host dashboard fetched successfully
+   */
+  agencyRouter.get('/hosts', async (req: any, res: Response) => {
+    try {
+      const result = await hostDashboardService.getHostDashboard(req.user.id, parseHostFilters(req));
+      return ResponseWrapper.success(res, result, 'Host dashboard fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/hosts/{hostId}/revenue:
+   *   get:
+   *     summary: Host revenue details
+   *     description: >
+   *       Agency owner Revenue Details screen for one host. Same date filters as the Host list.
+   *       hostId can be AgencyHost id, user MongoDB id, or numeric user id.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: hostId
+   *         required: true
+   *         schema: { type: string }
+   *       - in: query
+   *         name: range
+   *         schema: { type: string, enum: [last_7_days, last_30_days, last_90_days, this_month, custom], default: last_30_days }
+   *       - in: query
+   *         name: start_date
+   *         schema: { type: string }
+   *       - in: query
+   *         name: end_date
+   *         schema: { type: string }
+   *     responses:
+   *       200:
+   *         description: Host revenue details fetched successfully
+   */
+  agencyRouter.get('/hosts/:hostId/revenue', async (req: any, res: Response) => {
+    try {
+      const result = await hostDashboardService.getHostRevenueDetails(
+        req.user.id,
+        req.params.hostId,
+        parseHostFilters(req)
+      );
+      return ResponseWrapper.success(res, result, 'Host revenue details fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/agencies/hosts/{hostId}:
+   *   delete:
+   *     summary: Remove host from agency
+   *     description: Agency owner removes an accepted host. Host status becomes SUSPENDED.
+   *     tags: [Agencies]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: hostId
+   *         required: true
+   *         schema: { type: string }
+   *         description: AgencyHost id, user MongoDB id, or numeric user id
+   *     responses:
+   *       200:
+   *         description: Host removed successfully
+   */
+  agencyRouter.delete('/hosts/:hostId', async (req: any, res: Response) => {
+    try {
+      const result = await hostDashboardService.removeHost(req.user.id, req.params.hostId);
+      return ResponseWrapper.success(res, result, 'Host removed successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
