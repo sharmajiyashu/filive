@@ -85,10 +85,13 @@ export class AdminCallService {
     const receiver = obj.receiverId && typeof obj.receiverId === 'object' ? obj.receiverId : null;
     if (caller) caller.uniqueId = caller.userId;
     if (receiver) receiver.uniqueId = receiver.userId;
+    const callId = (obj._id || obj.id || '').toString();
+    const hex = callId.replace(/[^a-fA-F0-9]/g, '').slice(-7).toUpperCase();
     return {
       ...obj,
       caller,
       receiver,
+      displayCallId: hex ? `Call #${hex}` : 'Call #------',
       senderCoins: obj.coinsDeducted || 0,
       receiverCoins: obj.coinsEarned || 0,
       adminCoins: obj.platformFee || 0,

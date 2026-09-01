@@ -171,8 +171,9 @@ export default (router: Router) => {
    *   post:
    *     summary: End a call and return role-specific after-call summary
    *     description: >
-   *       Caller sees coinsSpent and remainingCoins. Host sees beansIncome and beansBalance.
-   *       displayCallId is the short UI id (e.g. Call #55FF0EA). Full callId stays in the payload.
+   *       Caller sees coinsSpent and remainingCoins (viewerWallet=coins). Host sees beansIncome
+   *       and beansBalance (viewerWallet=beans). Use displayCallId on the After Call screen
+   *       (e.g. Call #55FF0EA). Full callId stays in the payload for API follow-up.
    *     tags: [Calls]
    *     security:
    *       - bearerAuth: []
@@ -204,8 +205,8 @@ export default (router: Router) => {
    *   get:
    *     summary: Get after-call summary for the logged-in caller or host
    *     description: >
-   *       Role-aware compact payload. Caller gets coinsSpent + remainingCoins.
-   *       Host gets beansIncome + beansBalance. Use displayCallId on the After Call screen.
+   *       Role-aware compact payload. Caller gets coinsSpent + remainingCoins (viewerWallet=coins).
+   *       Host gets beansIncome + beansBalance (viewerWallet=beans). Use displayCallId on the After Call screen.
    *     tags: [Calls]
    *     security:
    *       - bearerAuth: []

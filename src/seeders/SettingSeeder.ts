@@ -56,6 +56,20 @@ export async function seedSettings() {
         value: 'https://filive.app/invite',
         description: 'Base URL for invitation deep links'
       },
+      {
+        key: 'default_album_image_url',
+        value: '',
+        description: 'Default album placeholder shown when a user has no uploaded album photos'
+      },
+
+      // Connect With Us – Social Media Links (empty until client URLs are set)
+      { key: 'social_facebook_url', value: '', description: 'Facebook page URL' },
+      { key: 'social_instagram_url', value: '', description: 'Instagram profile URL' },
+      { key: 'social_youtube_url', value: '', description: 'YouTube channel URL' },
+      { key: 'social_twitter_url', value: '', description: 'Twitter/X profile URL' },
+      { key: 'social_telegram_url', value: '', description: 'Telegram channel or group URL' },
+      { key: 'social_whatsapp_url', value: '', description: 'WhatsApp contact link (e.g. https://wa.me/...)' },
+      { key: 'social_tiktok_url', value: '', description: 'TikTok profile URL' },
 
       // PandaPay Gateway Seed
       { key: 'payment_gateway_pandapay_enabled', value: true, description: 'PandaPay gateway toggle status' },

@@ -28,6 +28,7 @@ import notification from './notification';
 import announcement from './announcement';
 import banner from './banner';
 import call from './call';
+import liveData from './liveData';
 
 export default (router: Router): Router => {
   auth(router);
@@ -59,6 +60,7 @@ export default (router: Router): Router => {
   announcement(router);
   banner(router);
   call(router);
+  liveData(router);
   return router;
 };
 

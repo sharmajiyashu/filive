@@ -11,6 +11,7 @@ import Country from '../../models/Country';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 import { LevelService } from './LevelService';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
 
 const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins';
 
@@ -21,6 +22,14 @@ export class LiveStreamService {
   private hostPopulate() {
     return {
       path: 'hostId',
+      select: HOST_SAFE_SELECT,
+      populate: [{ path: 'profileImage' }, { path: 'countryId' }]
+    };
+  }
+
+  private seatPopulate() {
+    return {
+      path: 'seats.userId',
       select: HOST_SAFE_SELECT,
       populate: [{ path: 'profileImage' }, { path: 'countryId' }]
     };
@@ -227,11 +236,7 @@ export class LiveStreamService {
 
       const populatedStream = await Room.findById(activeStream._id)
         .populate(this.hostPopulate())
-        .populate({
-          path: 'seats.userId',
-          select: HOST_SAFE_SELECT,
-          populate: { path: 'profileImage' }
-        });
+        .populate(this.seatPopulate());
       return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
     }
 
@@ -294,11 +299,7 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
       .populate(this.hostPopulate())
-      .populate({
-        path: 'seats.userId',
-        select: HOST_SAFE_SELECT,
-        populate: { path: 'profileImage' }
-      });
+      .populate(this.seatPopulate());
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
   }
@@ -409,7 +410,7 @@ export class LiveStreamService {
     if (io) {
       if (data.maxSeats !== undefined || seatsMutedChanged) {
         try {
-          await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          await liveStream.populate(this.seatPopulate());
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
           io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('seat_updated', {
             channelName: liveStream.channelName,
@@ -448,22 +449,8 @@ export class LiveStreamService {
     }
 
     const updatedRoom = await Room.findById(liveStream._id)
-      .populate({
-        path: 'hostId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
-      })
-      .populate({
-        path: 'seats.userId',
-        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
-      })
-
-      ;
+      .populate(this.hostPopulate())
+      .populate(this.seatPopulate());
 
     // Populate the room with settings and ranks before emitting room_updated
     const fullyPopulatedRoom = await this.populateRoomWithDailyRank(updatedRoom, hostId);
@@ -884,7 +871,7 @@ export class LiveStreamService {
           AppLogger.info(`[LiveStreamService: joinLiveStream] Auto-assigned userId=${userId} to seatIndex=${openSeat.seatIndex}`);
           const io = this.getSocketIo();
           if (io) {
-            await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+            await liveStream.populate(this.seatPopulate());
             const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
             io.to(`live_${channelName}`).to(`room_${channelName}`).emit('seat_updated', {
               channelName,
@@ -900,11 +887,7 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: joinLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
       .populate(this.hostPopulate())
-      .populate({
-        path: 'seats.userId',
-        select: HOST_SAFE_SELECT,
-        populate: { path: 'profileImage' }
-      });
+      .populate(this.seatPopulate());
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
   }
@@ -946,7 +929,7 @@ export class LiveStreamService {
         // Emit seat_updated event to the room
         const io = this.getSocketIo();
         if (io) {
-          await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          await liveStream.populate(this.seatPopulate());
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
           io.to(`live_${channelName}`).emit('seat_updated', {
             channelName,
@@ -1034,7 +1017,7 @@ export class LiveStreamService {
     // Emit socket event
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      await liveStream.populate(this.seatPopulate());
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
       const payload = {
         channelName,
@@ -1084,7 +1067,7 @@ export class LiveStreamService {
       // Emit socket event
       const io = this.getSocketIo();
       if (io) {
-        await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+        await liveStream.populate(this.seatPopulate());
         const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
         const payload = {
           channelName,
@@ -1329,7 +1312,6 @@ export class LiveStreamService {
       host.userId = host.userId ?? null;
       host.name = host.name ?? null;
       host.profileImage = host.profileImage ?? null;
-      host.country = host.country ?? host.countryId?.name ?? null;
       host.richLevelInfo = richLevelInfo;
       host.charmLevelInfo = charmLevelInfo;
       host.levelInfo = richLevelInfo;
@@ -1338,6 +1320,25 @@ export class LiveStreamService {
       host.charmRankingDaily = dailyRank;
       host.followersCount = followersCount;
       host.isFollowing = isFollowing;
+      await attachUserCountryAndAge(host);
+    }
+
+    if (Array.isArray(roomObj.seats)) {
+      roomObj.seats = await Promise.all(roomObj.seats.map(async (seat: any) => {
+        if (!seat?.userId || typeof seat.userId !== 'object') return seat;
+        const seated = seat.userId.toObject ? seat.userId.toObject() : { ...seat.userId };
+        const wealthCoins = seated.wealthCoins || 0;
+        const charmCoins = seated.charmCoins || 0;
+        const [enriched, richLevelInfo, charmLevelInfo] = await Promise.all([
+          attachUserCountryAndAge(seated),
+          this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
+          this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+        ]);
+        enriched.richLevelInfo = richLevelInfo;
+        enriched.charmLevelInfo = charmLevelInfo;
+        enriched.levelInfo = richLevelInfo;
+        return { ...seat, userId: enriched };
+      }));
     }
 
     const isFollowingRoom = currentUserId && roomObj._id
@@ -1483,7 +1484,7 @@ export class LiveStreamService {
         io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', settingsPayload);
 
         if (data.muteAllSeats !== undefined) {
-          await activeStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+          await activeStream.populate(this.seatPopulate());
           const roomAdmins = await this.getRoomAdmins(activeStream.hostId);
           io.to(`live_${activeStream.channelName}`).emit('seat_updated', {
             channelName: activeStream.channelName,
@@ -1527,7 +1528,7 @@ export class LiveStreamService {
 
     await liveStream.save();
     const io = this.getSocketIo();
-    await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+    await liveStream.populate(this.seatPopulate());
     const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
     if (io) {
       io.to(`live_${channelName}`).emit('seat_updated', {
@@ -1560,7 +1561,7 @@ export class LiveStreamService {
     await liveStream.save();
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      await liveStream.populate(this.seatPopulate());
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
       io.to(`live_${channelName}`).emit('seat_updated', {
         channelName,
@@ -1588,7 +1589,7 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      await liveStream.populate(this.seatPopulate());
 
       const userObj = seat.userId ? (seat.userId as any) : null;
       const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
@@ -1635,7 +1636,7 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      await liveStream.populate(this.seatPopulate());
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
 
@@ -1680,7 +1681,7 @@ export class LiveStreamService {
 
     const io = this.getSocketIo();
     if (io) {
-      await liveStream.populate({ path: 'seats.userId', select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins', populate: { path: 'profileImage' } });
+      await liveStream.populate(this.seatPopulate());
       const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
       io.to(`live_${channelName}`).emit('seat_updated', {

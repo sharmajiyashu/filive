@@ -21,6 +21,15 @@ export class AppSettingService {
     home_banners: ['https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1200'],
     party_room_banners: ['https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200'],
     recharge_offer_banners: ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200'],
+    default_album_image_url: '',
+    // Connect With Us – Social Media Links
+    social_facebook_url: '',
+    social_instagram_url: '',
+    social_youtube_url: '',
+    social_twitter_url: '',
+    social_telegram_url: '',
+    social_whatsapp_url: '',
+    social_tiktok_url: '',
     // Payment Gateway Settings (PandaPay)
     payment_gateway_pandapay_enabled: true,
     payment_gateway_pandapay_gateway_url: 'https://pandaxpay.sbs',

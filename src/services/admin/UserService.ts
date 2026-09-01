@@ -7,7 +7,8 @@ import CoinHistory from '../../models/CoinHistory';
 import Country from '../../models/Country';
 import Follow from '../../models/Follow';
 import { LevelService } from '../app/LevelService';
-import { getUserCountryAndLevels } from '../../utils/userLookup';
+import { attachUserCountryAndAge, getUserCountryAndLevels, ageFromDob } from '../../utils/userLookup';
+import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 import { FirebasePushService } from '../common/FirebasePushService';
 import AppLogger from '../../api/loaders/logger';
 
@@ -231,7 +232,20 @@ export class UserService {
 
     // Country filter
     if (params.country && params.country !== 'all') {
-      query.country = new RegExp(params.country, 'i');
+      const escaped = String(params.country).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const countryDoc = await Country.findOne({
+        $or: [
+          { code: new RegExp(`^${escaped}$`, 'i') },
+          { name: new RegExp(`^${escaped}$`, 'i') },
+        ],
+      });
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { country: new RegExp(`^${escaped}$`, 'i') },
+          ...(countryDoc ? [{ countryId: countryDoc._id }] : []),
+        ],
+      });
     }
 
     // Status filter
@@ -318,19 +332,16 @@ export class UserService {
         if (userObj.userRole === 'admin') roleBadge = 'Admin';
         else if (userObj.isCoinseller) roleBadge = 'CoinSeller';
 
-        const age = userObj.dob ? new Date().getFullYear() - new Date(userObj.dob).getFullYear() : 18;
-
         const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1);
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
         const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
 
-        return {
+        return attachUserCountryAndAge({
           ...userObj,
           roleBadge,
           userType: userObj.isPremium ? 'VIP' : 'Normal',
           status: isOnline ? 'Online' : 'Offline',
           isOnline,
-          age,
           wealthLevel: {
             levelNumber: levelNum,
             name: levelNameStr,
@@ -342,7 +353,7 @@ export class UserService {
           videosCount: 0,
           instantBlock: !!userObj.instantBlock,
           deviceBan: !!userObj.deviceBan,
-        };
+        });
       })
     );
 
@@ -372,7 +383,16 @@ export class UserService {
     if (updateData.mobile !== undefined) user.mobile = updateData.mobile;
     if (updateData.whatsapp !== undefined) user.whatsapp = updateData.whatsapp;
     if (updateData.gender !== undefined) user.gender = updateData.gender;
-    if (updateData.country !== undefined) user.country = updateData.country;
+    if (updateData.country !== undefined || updateData.countryId !== undefined || updateData.countryCode !== undefined) {
+      const resolved = await resolveCountryFromSignals({
+        countryId: updateData.countryId,
+        countryCode: updateData.countryCode || updateData.country,
+      });
+      if (resolved?.countryId) {
+        user.countryId = resolved.countryId;
+        user.country = resolved.country;
+      }
+    }
     if (updateData.dob !== undefined) user.dob = new Date(updateData.dob);
     if (updateData.bio !== undefined) user.bio = updateData.bio;
     if (updateData.coins !== undefined) user.coins = Number(updateData.coins);
@@ -833,15 +853,18 @@ export class UserService {
         whatsapp: user.whatsapp || user.mobile || '',
         gender: user.gender || 'Male',
         dob: user.dob,
-        age: user.dob ? new Date().getFullYear() - new Date(user.dob).getFullYear() : 18,
+        age: ageFromDob(user.dob),
         profileImage: user.profileImage,
         isBlocked: user.isBlocked,
         isVerified: user.isVerified,
         isCoinseller: user.isCoinseller,
         isCoinsellerActive: user.isCoinsellerActive !== false,
         createdAt: user.createdAt,
-        country: user.country || 'India',
+        country: country || null,
+        countryId: country || null,
         countryObject: country,
+        countryCode: country?.code ?? null,
+        country_flag: country?.flag ?? null,
         audioCallPrice: user.audioCallChargePerMinute || user.voiceCallPrice || 25,
         videoCallPrice: user.videoCallChargePerMinute || user.videoCallPrice || 50,
         loginType: user.email ? 'Email' : 'Mobile',

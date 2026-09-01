@@ -19,6 +19,42 @@ export class LiveDataService {
     return `${year}-${month}-${day}`;
   }
 
+  public parseDateRange(queryDate?: string, type: 'daily' | 'monthly' = 'daily') {
+    const now = new Date();
+    let dateStr: string;
+    let monthStr: string;
+    let startDate: Date;
+    let endDate: Date;
+
+    if (type === 'monthly') {
+      if (queryDate && /^\d{4}-\d{2}$/.test(queryDate)) {
+        monthStr = queryDate;
+      } else if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
+        monthStr = queryDate.substring(0, 7);
+      } else {
+        monthStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+      }
+      dateStr = `${monthStr}-01`;
+
+      const [year, month] = monthStr.split('-').map(Number);
+      startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    } else {
+      if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
+        dateStr = queryDate;
+      } else {
+        dateStr = this.localDateStr(now);
+      }
+      monthStr = dateStr.substring(0, 7);
+
+      const [year, month, day] = dateStr.split('-').map(Number);
+      startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+    }
+
+    return { dateStr, monthStr, startDate, endDate, type };
+  }
+
   private formatSecondsToHHMMSS(totalSeconds: number): string {
     const secs = Math.max(0, Math.floor(totalSeconds || 0));
     const hours = Math.floor(secs / 3600);
@@ -51,6 +87,10 @@ export class LiveDataService {
     return Array.from(set);
   }
 
+  private normalizeContextType(contextType?: string): string {
+    return (contextType || '').toString().trim().toLowerCase().replace(/[\s-]+/g, '_');
+  }
+
   private resolveGiftContext(
     history: { type?: string; contextType?: string; channelName?: string; description?: string },
     roomsByChannel: Map<string, 'livestream' | 'party_room'>
@@ -59,13 +99,20 @@ export class LiveDataService {
       return 'call';
     }
 
-    if (history.contextType === 'live_stream') {
+    const contextType = this.normalizeContextType(history.contextType);
+    if (contextType === 'live_stream' || contextType === 'livestream' || contextType === 'live') {
       return 'livestream';
     }
-    if (history.contextType === 'party_room') {
+    if (contextType === 'party_room' || contextType === 'party') {
       return 'party_room';
     }
-    if (history.contextType === 'audio_call' || history.contextType === 'video_call') {
+    if (
+      contextType === 'audio_call' ||
+      contextType === 'video_call' ||
+      contextType === 'voice_call' ||
+      contextType === 'voice' ||
+      contextType === 'video'
+    ) {
       return 'call';
     }
 
@@ -77,13 +124,13 @@ export class LiveDataService {
     }
 
     const description = history.description || '';
-    if (/during live_stream|during live stream/i.test(description)) {
+    if (/during live_stream|during live stream|during livestream|during live\b/i.test(description)) {
       return 'livestream';
     }
-    if (/during party_room/i.test(description)) {
+    if (/during party_room|during party room|during party\b/i.test(description)) {
       return 'party_room';
     }
-    if (/during audio_call|during video_call/i.test(description)) {
+    if (/during audio_call|during video_call|during voice_call|during voice call|during video call/i.test(description)) {
       return 'call';
     }
 
@@ -179,38 +226,8 @@ export class LiveDataService {
       throw new Error('User not found');
     }
 
-    let dateStr: string;
-    let monthStr: string;
-    let startDate: Date;
-    let endDate: Date;
-
+    const { dateStr, monthStr, startDate, endDate } = this.parseDateRange(queryDate, type);
     const now = new Date();
-
-    if (type === 'monthly') {
-      if (queryDate && /^\d{4}-\d{2}$/.test(queryDate)) {
-        monthStr = queryDate;
-      } else if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
-        monthStr = queryDate.substring(0, 7);
-      } else {
-        monthStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-      }
-      dateStr = `${monthStr}-01`;
-
-      const [year, month] = monthStr.split('-').map(Number);
-      startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-      endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    } else {
-      if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
-        dateStr = queryDate;
-      } else {
-        dateStr = this.localDateStr(now);
-      }
-      monthStr = dateStr.substring(0, 7);
-
-      const [year, month, day] = dateStr.split('-').map(Number);
-      startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-      endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
-    }
 
     const logs = type === 'monthly'
       ? await LiveDataLog.find({ userId: userObjectId, month: monthStr })
@@ -343,9 +360,7 @@ export class LiveDataService {
         return;
       }
 
-      if (isHost && senderId && senderId !== userId) {
-        callGiftSenders.add(senderId);
-      }
+      // Unresolved charm/gift rows stay out of Live/Party/Call income (chat or unknown).
     });
 
     const hostedRooms = await Room.find({
@@ -537,6 +552,88 @@ export class LiveDataService {
         isCompleted,
         progressPercentage
       }
+    };
+  }
+
+  public async getPlatformLiveData(
+    queryDate?: string,
+    type: 'daily' | 'monthly' = 'daily'
+  ) {
+    const { dateStr, monthStr, startDate, endDate } = this.parseDateRange(queryDate, type);
+
+    const giftHistory = await CoinHistory.find({
+      type: { $in: ['gift_received', 'charm_received', 'call_income'] },
+      createdAt: { $gte: startDate, $lte: endDate }
+    }).select('channelName amount type contextType description');
+
+    const channelNames = this.uniqueIdStrings(
+      giftHistory.map(h => h.channelName).filter((name): name is string => !!name)
+    );
+    const roomsByChannel = new Map<string, 'livestream' | 'party_room'>();
+    if (channelNames.length) {
+      const rooms = await Room.find({ channelName: { $in: channelNames } }).select('channelName roomType');
+      rooms.forEach(room => {
+        roomsByChannel.set(room.channelName, room.roomType === 'party_room' ? 'party_room' : 'livestream');
+      });
+    }
+
+    let liveBeansIncome = 0;
+    let partyBeansIncome = 0;
+    let callRevenue = 0;
+
+    giftHistory.forEach(history => {
+      const amount = Math.abs(history.amount || 0);
+      const giftContext = this.resolveGiftContext(history, roomsByChannel);
+      if (history.type === 'call_income' || giftContext === 'call') {
+        if (history.type === 'call_income') {
+          callRevenue += amount;
+        }
+        return;
+      }
+      if (giftContext === 'livestream') {
+        liveBeansIncome += amount;
+        return;
+      }
+      if (giftContext === 'party_room') {
+        partyBeansIncome += amount;
+      }
+    });
+
+    const callAgg = await Call.aggregate([
+      {
+        $match: {
+          status: 'ended',
+          $or: [
+            { endedAt: { $gte: startDate, $lte: endDate } },
+            { endedAt: { $exists: false }, createdAt: { $gte: startDate, $lte: endDate } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalCalls: { $sum: 1 },
+          coinsSpent: { $sum: { $ifNull: ['$coinsDeducted', 0] } },
+          hostBeansIncome: { $sum: { $ifNull: ['$coinsEarned', 0] } },
+          platformFee: { $sum: { $ifNull: ['$platformFee', 0] } }
+        }
+      }
+    ]);
+
+    const callStats = callAgg[0] || { totalCalls: 0, coinsSpent: 0, hostBeansIncome: 0, platformFee: 0 };
+    const hostCallRevenue = callRevenue || Number(callStats.hostBeansIncome || 0);
+
+    return {
+      type,
+      selectedDate: dateStr,
+      selectedMonth: monthStr,
+      liveBeansIncome,
+      partyBeansIncome,
+      callRevenue: hostCallRevenue,
+      coinsSpent: Number(callStats.coinsSpent || 0),
+      platformFee: Number(callStats.platformFee || 0),
+      totalCalls: Number(callStats.totalCalls || 0),
+      totalBeansIncome: liveBeansIncome + partyBeansIncome + hostCallRevenue
     };
   }
 

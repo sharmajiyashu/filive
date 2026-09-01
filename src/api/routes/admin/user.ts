@@ -12,10 +12,13 @@ import CoinHistory from '../../../models/CoinHistory';
 import { ResponseWrapper } from '../../responseWrapper';
 import { LevelService } from '../../../services/app/LevelService';
 import { UserService } from '../../../services/admin/UserService';
+import { LiveDataService } from '../../../services/app/LiveDataService';
 import upload from '../../middleware/upload';
 import { CloudinaryService } from '../../../services/common/CloudinaryService';
 import { MediaService } from '../../../services/common/MediaService';
 import { resolveMediaType } from '../../../utils/mediaType';
+import { withDefaultAlbum } from '../../../services/app/profileDefaults';
+import { attachUserCountryAndAge } from '../../../utils/userLookup';
 
 export default (router: Router) => {
   const userRouter = Router();
@@ -242,6 +245,22 @@ export default (router: Router) => {
    *       200:
    *         description: User details fetched successfully
    */
+  userRouter.get('/:id/live-data', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID');
+      }
+      const type = (req.query.type as 'daily' | 'monthly') || 'daily';
+      const date = req.query.date?.toString();
+      const liveDataService = Container.get(LiveDataService);
+      const data = await liveDataService.getLiveData(userId, date, type);
+      return ResponseWrapper.success(res, data, 'User Live Data fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   userRouter.get('/:id/details', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
@@ -265,16 +284,16 @@ export default (router: Router) => {
       const followers = await Follow.find({ followingId: userId, status: 'accepted' })
         .populate({
           path: 'followerId',
-          select: 'name email profileImage bio isPremium location country isBlocked',
-          populate: { path: 'profileImage' }
+          select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }]
         });
 
       // 2. Followings
       const followings = await Follow.find({ followerId: userId, status: 'accepted' })
         .populate({
           path: 'followingId',
-          select: 'name email profileImage bio isPremium location country isBlocked',
-          populate: { path: 'profileImage' }
+          select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }]
         });
 
       // 3. Friends (mutual followers)
@@ -285,16 +304,16 @@ export default (router: Router) => {
         status: 'accepted'
       }).populate({
         path: 'followerId',
-        select: 'name email profileImage bio isPremium location country isBlocked',
-        populate: { path: 'profileImage' }
+        select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+        populate: [{ path: 'profileImage' }, { path: 'countryId' }]
       });
 
       // 4. Visitors
       const visitors = await UserVisitor.find({ userId })
         .populate({
           path: 'visitorId',
-          select: 'name email profileImage bio isPremium location country isBlocked',
-          populate: { path: 'profileImage' }
+          select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }]
         })
         .sort({ visitedAt: -1 });
 
@@ -302,15 +321,15 @@ export default (router: Router) => {
       const blockedByThisUser = await Block.find({ blockerId: userId })
         .populate({
           path: 'blockedId',
-          select: 'name email profileImage bio isPremium location country isBlocked',
-          populate: { path: 'profileImage' }
+          select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }]
         });
 
       const blockersOfThisUser = await Block.find({ blockedId: userId })
         .populate({
           path: 'blockerId',
-          select: 'name email profileImage bio isPremium location country isBlocked',
-          populate: { path: 'profileImage' }
+          select: 'name email profileImage bio isPremium location country countryId isBlocked dob',
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }]
         });
 
       // 6. Agents (Agencies created by this user)
@@ -342,12 +361,13 @@ export default (router: Router) => {
       const richLevelInfo = await levelService.getLevelInfoForCoins(richCoins, 'rich');
       const charmLevelInfo = await levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-      const userObj = {
+      const userObj = await attachUserCountryAndAge({
         ...user.toObject(),
         levelInfo: richLevelInfo,
         richLevelInfo,
         charmLevelInfo
-      };
+      });
+      userObj.album = await withDefaultAlbum(userObj.album || []);
 
       return ResponseWrapper.success(res, {
         user: userObj,

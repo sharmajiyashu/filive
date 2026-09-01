@@ -12,10 +12,11 @@ import UserVisitor from '../../models/UserVisitor';
 import AgencyHost from '../../models/AgencyHost';
 import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
-import { applyProfileDefaults } from './profileDefaults';
+import { applyProfileDefaultsWithAlbum, withDefaultAlbum } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
 
 @Service()
 export class ProfileService {
@@ -37,6 +38,7 @@ export class ProfileService {
         path: 'careerId',
         populate: { path: 'image' }
       })
+      .populate('countryId')
       .populate([...ACTIVE_STORE_POPULATE] as any);
     if (!profile) {
       throw new Error('USER_NOT_FOUND');
@@ -79,7 +81,7 @@ export class ProfileService {
       }
     }
 
-    const profileData = applyProfileDefaults(profile);
+    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(profile));
     const { referralCode } = await ensureUserReferralCode(profile);
     const deepLink = await getReferralDeepLink(referralCode);
 
@@ -248,6 +250,7 @@ export class ProfileService {
         path: 'careerId',
         populate: { path: 'image' }
       })
+      .populate('countryId')
       .populate([...ACTIVE_STORE_POPULATE] as any);
 
     if (!updatedUser) {
@@ -291,7 +294,7 @@ export class ProfileService {
       }
     }
 
-    const profileData = applyProfileDefaults(updatedUser);
+    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(updatedUser));
     const { referralCode } = await ensureUserReferralCode(updatedUser);
     const deepLink = await getReferralDeepLink(referralCode);
 
@@ -387,7 +390,9 @@ export class ProfileService {
 
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
-    return updatedUser;
+    const userObj = updatedUser.toObject();
+    userObj.album = await withDefaultAlbum(userObj.album);
+    return userObj;
   }
 
   public async deleteAlbumPhoto(userId: string, photoId: string) {
@@ -409,7 +414,9 @@ export class ProfileService {
 
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
-    return updatedUser;
+    const userObj = updatedUser.toObject();
+    userObj.album = await withDefaultAlbum(userObj.album);
+    return userObj;
   }
 
   public async uploadVideoVerification(userId: string, file: Express.Multer.File) {

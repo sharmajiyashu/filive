@@ -140,10 +140,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       const callerId = (call.callerId as any)._id?.toString() || call.callerId.toString();
       const receiverId = (call.receiverId as any)._id?.toString() || call.receiverId.toString();
+      const callerSummary = await callService.buildAfterCallSummary(call, callerId);
+      const hostSummary = await callService.buildAfterCallSummary(call, receiverId);
 
-      // Notify both caller and receiver that call was rejected
-      io.to(`user_${callerId}`).emit('call_rejected', { callId: call._id, call });
-      io.to(`user_${receiverId}`).emit('call_rejected', { callId: call._id, call });
+      io.to(`user_${callerId}`).emit('call_rejected', callerSummary);
+      io.to(`user_${receiverId}`).emit('call_rejected', hostSummary);
 
       AppLogger.info(`[Socket Event: reject_call] Call rejected. ID=${callId}`);
     } catch (error: any) {

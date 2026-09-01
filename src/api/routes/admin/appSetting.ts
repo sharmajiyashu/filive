@@ -54,6 +54,7 @@ export default (router: Router) => {
       { name: 'home_banners', maxCount: 10 },
       { name: 'party_room_banners', maxCount: 10 },
       { name: 'recharge_offer_banners', maxCount: 10 },
+      { name: 'default_album_image', maxCount: 1 },
     ]),
     async (req: any, res: Response) => {
       try {
@@ -63,6 +64,12 @@ export default (router: Router) => {
 
         // Helper to handle multiple banner file uploads
         const processBannerFiles = async (fieldName: string, existingKey: string) => {
+          const hasFiles = Boolean(req.files && req.files[fieldName]?.length);
+          const hasExistingKey = payload[existingKey] !== undefined;
+          if (!hasFiles && !hasExistingKey) {
+            return;
+          }
+
           let currentList: string[] = [];
           if (payload[existingKey]) {
             try {
@@ -94,6 +101,46 @@ export default (router: Router) => {
         await processBannerFiles('home_banners', 'home_banners');
         await processBannerFiles('party_room_banners', 'party_room_banners');
         await processBannerFiles('recharge_offer_banners', 'recharge_offer_banners');
+
+        const socialUrlKeys = [
+          'social_facebook_url',
+          'social_instagram_url',
+          'social_youtube_url',
+          'social_twitter_url',
+          'social_telegram_url',
+          'social_whatsapp_url',
+          'social_tiktok_url',
+        ];
+        const isValidHttpUrl = (value: string) => {
+          try {
+            const parsed = new URL(value);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+          } catch {
+            return false;
+          }
+        };
+        for (const key of socialUrlKeys) {
+          if (payload[key] === undefined) continue;
+          const trimmed = String(payload[key]).trim();
+          payload[key] = trimmed;
+          if (trimmed && !isValidHttpUrl(trimmed)) {
+            return ResponseWrapper.error(
+              res,
+              `${key} must be a valid http(s) URL, or left empty to hide the platform`
+            );
+          }
+        }
+
+        const defaultAlbumFiles = req.files?.default_album_image;
+        if (defaultAlbumFiles && defaultAlbumFiles.length > 0) {
+          const file = defaultAlbumFiles[0];
+          const mediaType = resolveMediaType(file);
+          const uploadResults = await cloudinaryService.uploadMedia(mediaType, [file], 'defaults');
+          if (uploadResults.length > 0) {
+            const media = await mediaService.createMedia({ ...uploadResults[0] });
+            payload.default_album_image_url = media.url;
+          }
+        }
 
         const result = await appSettingService.updateSettings(payload);
         return ResponseWrapper.success(res, result, 'Settings updated successfully');

@@ -31,6 +31,14 @@ export class CallService {
     return `${pad(hours)}:${pad(minutes)}:${pad(remaining)}`;
   }
 
+  private formatEndedAt(endedAt?: Date | string | null): string | null {
+    if (!endedAt) return null;
+    const date = endedAt instanceof Date ? endedAt : new Date(endedAt);
+    if (Number.isNaN(date.getTime())) return null;
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
   private participantId(value: any): string {
     return (value?._id || value)?.toString();
   }
@@ -94,13 +102,14 @@ export class CallService {
     const callerUser = this.toPublicCallUser(caller);
     const receiverUser = this.toPublicCallUser(receiver);
 
-    return {
+    const payload: any = {
       callId: call._id,
       displayCallId: this.formatDisplayCallId(call._id.toString()),
       roomId: call.roomId || null,
       callType,
       status: call.status,
       role,
+      viewerWallet: isCaller ? 'coins' : 'beans',
       payRatePerMin: currentCallPrice,
       payRateLabel: `Pay ${currentCallPrice} Coins/min`,
       voiceCallPrice: rates.voiceCallPrice,
@@ -110,10 +119,16 @@ export class CallService {
       caller: callerUser,
       receiver: receiverUser,
       otherUser: isCaller ? receiverUser : callerUser,
-      voiceEarnPerMin: rates.voiceEarnPerMin,
-      videoEarnPerMin: rates.videoEarnPerMin,
-      currentEarnPerMin,
-      hostEarning: {
+      agoraToken: isCaller ? (call.callerAgoraToken || call.agoraToken || null) : (call.receiverAgoraToken || call.agoraToken || null),
+      callerAgoraToken: call.callerAgoraToken || null,
+      receiverAgoraToken: call.receiverAgoraToken || null
+    };
+
+    if (!isCaller) {
+      payload.voiceEarnPerMin = rates.voiceEarnPerMin;
+      payload.videoEarnPerMin = rates.videoEarnPerMin;
+      payload.currentEarnPerMin = currentEarnPerMin;
+      payload.hostEarning = {
         voicePerMin: rates.voiceEarnPerMin,
         videoPerMin: rates.videoEarnPerMin,
         currentPerMin: currentEarnPerMin,
@@ -121,11 +136,10 @@ export class CallService {
         videoCallPrice: rates.videoCallPrice,
         platformFeePercent: rates.platformFeePercent,
         unit: 'beans'
-      },
-      agoraToken: isCaller ? (call.callerAgoraToken || call.agoraToken || null) : (call.receiverAgoraToken || call.agoraToken || null),
-      callerAgoraToken: call.callerAgoraToken || null,
-      receiverAgoraToken: call.receiverAgoraToken || null
-    };
+      };
+    }
+
+    return payload;
   }
 
   public async buildAfterCallSummary(call: any, viewerUserId: string) {
@@ -140,25 +154,28 @@ export class CallService {
     ]);
 
     const other = isCaller ? host : caller;
+    const endedAt = call.endedAt || null;
     const summary: any = {
       role,
+      viewerWallet: isCaller ? 'coins' : 'beans',
       callId: call._id,
       displayCallId: this.formatDisplayCallId(call._id.toString()),
-      roomId: call.roomId || null,
       callType: call.callType,
       status: call.status,
       duration: call.duration || 0,
       durationFormatted: this.formatDuration(call.duration || 0),
-      endedAt: call.endedAt || null,
-      otherUser: other
-        ? {
-            id: other._id,
-            userId: other.userId ?? null,
-            name: other.name ?? null,
-            profileImage: other.profileImage ?? null
-          }
-        : null
+      endedAt,
+      endedAtFormatted: this.formatEndedAt(endedAt)
     };
+
+    if (other) {
+      summary.otherUser = {
+        id: other._id,
+        userId: other.userId ?? null,
+        name: other.name ?? null,
+        profileImage: other.profileImage ?? null
+      };
+    }
 
     if (isCaller) {
       summary.coinsSpent = call.coinsDeducted || 0;

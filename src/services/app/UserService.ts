@@ -15,6 +15,8 @@ import { ensureUserReferralCode } from '../../utils/referral';
 import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
 
 import { LevelService } from './LevelService';
+import { withDefaultAlbum } from './profileDefaults';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
 
 @Service()
 export class UserService {
@@ -126,17 +128,17 @@ export class UserService {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const formattedUsers = userDocs.map((u: any) => {
+    const formattedUsers = await Promise.all(userDocs.map(async (u: any) => {
       const uObj = u.toObject ? u.toObject() : u;
       const isOnline = uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
       const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
-      return {
+      return attachUserCountryAndAge({
         ...uObj,
         isOnline,
         referralCode: refCode,
         referCode: refCode
-      };
-    });
+      });
+    }));
 
     return {
       users: formattedUsers,
@@ -150,35 +152,25 @@ export class UserService {
   }
 
   public async getUserDetail(userId: string, currentUserId?: string, followersPage: number = 1, followingPage: number = 1, limit: number = 10) {
-    const isObjectId = mongoose.Types.ObjectId.isValid(userId);
-    const is10DigitNum = /^\d{10}$/.test(userId);
+    const isNumericPublicId = /^\d{8,10}$/.test(userId);
+    const isObjectId = mongoose.Types.ObjectId.isValid(userId) && String(userId).length === 24;
 
-    if (!isObjectId && !is10DigitNum) {
+    if (!isObjectId && !isNumericPublicId) {
       throw new Error('Invalid user ID');
     }
 
-    let user;
-    if (isObjectId) {
-      user = await User.findById(userId)
-        .select('-password -otp -otpExpires -fcmTokens')
-        .populate('profileImage')
-        .populate('album')
-        .populate({
-          path: 'careerId',
-          populate: { path: 'image' }
-        })
-        .populate([...ACTIVE_STORE_POPULATE] as any);
-    } else {
-      user = await User.findOne({ userId: parseInt(userId) })
-        .select('-password -otp -otpExpires -fcmTokens')
-        .populate('profileImage')
-        .populate('album')
-        .populate({
-          path: 'careerId',
-          populate: { path: 'image' }
-        })
-        .populate([...ACTIVE_STORE_POPULATE] as any);
-    }
+    const userQuery = User.findOne(isNumericPublicId ? { userId: parseInt(userId, 10) } : { _id: userId })
+      .select('-password -otp -otpExpires -fcmTokens')
+      .populate('profileImage')
+      .populate('album')
+      .populate({
+        path: 'careerId',
+        populate: { path: 'image' }
+      })
+      .populate('countryId')
+      .populate([...ACTIVE_STORE_POPULATE] as any);
+
+    let user = await userQuery;
 
     if (!user) {
       throw new Error('User not found');
@@ -378,9 +370,12 @@ export class UserService {
     const { referralCode } = await ensureUserReferralCode(user);
     const isOnline = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
 
+    const userObj = await attachUserCountryAndAge(user.toObject());
+    userObj.album = await withDefaultAlbum(userObj.album);
+
     return {
       user: {
-        ...user.toObject(),
+        ...userObj,
         referralCode,
         referCode: referralCode,
         isOnline,

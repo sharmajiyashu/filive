@@ -86,6 +86,30 @@ export class GiftService {
     return await Gift.find(query).populate('media').populate('type').sort({ price: 1 });
   }
 
+  private normalizeGiftContext(
+    contextType?: string
+  ): 'live_stream' | 'party_room' | 'audio_call' | 'video_call' | undefined {
+    const value = (contextType || '').toString().trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (value === 'live_stream' || value === 'livestream' || value === 'live') {
+      return 'live_stream';
+    }
+    if (value === 'party_room' || value === 'party') {
+      return 'party_room';
+    }
+    if (value === 'audio_call' || value === 'voice_call' || value === 'voice') {
+      return 'audio_call';
+    }
+    if (value === 'video_call' || value === 'video') {
+      return 'video_call';
+    }
+    return undefined;
+  }
+
+  private contextFromRoomType(roomType?: string): 'live_stream' | 'party_room' | undefined {
+    if (!roomType) return undefined;
+    return roomType === 'party_room' ? 'party_room' : 'live_stream';
+  }
+
   /**
    * Processes sending a gift in a room/livestream
    */
@@ -111,16 +135,14 @@ export class GiftService {
       throw new Error('Self-gifting is not allowed');
     }
 
-    // 1. Determine room & context
+    // 1. Determine room & context (live room for rules; any room for persisted context)
     let liveStream = null;
-    let resolvedContext = contextType;
+    let resolvedContext = this.normalizeGiftContext(contextType);
 
     if (channelName) {
       liveStream = await Room.findOne({ channelName, status: 'live' });
-      if (liveStream) {
-        if (!resolvedContext) {
-          resolvedContext = liveStream.roomType === 'party_room' ? 'party_room' : 'live_stream';
-        }
+      if (liveStream && !resolvedContext) {
+        resolvedContext = this.contextFromRoomType(liveStream.roomType);
       }
     }
 
@@ -224,13 +246,20 @@ export class GiftService {
       );
     }
 
+    if (!resolvedContext && channelName) {
+      const anyRoom = await Room.findOne({ channelName }).sort({ startedAt: -1, createdAt: -1 });
+      resolvedContext = this.contextFromRoomType(anyRoom?.roomType);
+    }
+
+    const duringLabel = resolvedContext ? ` during ${resolvedContext}` : '';
+
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
       relatedUserId: new mongoose.Types.ObjectId(receiverId),
       amount: -totalPrice,
       type: 'gift_sent',
       wallet: 'coins',
-      description: `Sent gift '${gift.name}' x${quantity} during ${resolvedContext || 'live stream'}`,
+      description: `Sent gift '${gift.name}' x${quantity}${duringLabel}`,
       channelName: channelName || undefined,
       contextType: resolvedContext || undefined,
       giftId: gift._id,
@@ -243,7 +272,7 @@ export class GiftService {
       amount: totalPrice,
       type: 'charm_received',
       wallet: 'beans',
-      description: `Received gift '${gift.name}' x${quantity} from viewer`,
+      description: `Received gift '${gift.name}' x${quantity} from viewer${duringLabel}`,
       channelName: channelName || undefined,
       contextType: resolvedContext || undefined,
       giftId: gift._id,
