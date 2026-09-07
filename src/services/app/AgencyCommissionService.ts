@@ -1,13 +1,6 @@
 import { Service, Inject } from 'typedi';
 import mongoose from 'mongoose';
-import {
-  startOfWeek,
-  endOfWeek,
-  nextMonday,
-  isMonday,
-  isBefore,
-  startOfDay,
-} from 'date-fns';
+import { isBefore } from 'date-fns';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
 import AgencyCommission from '../../models/AgencyCommission';
@@ -18,6 +11,16 @@ import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import { AppSettingService } from '../common/AppSettingService';
 import AppLogger from '../../api/loaders/logger';
+import {
+  AGENCY_WEEK_STARTS_ON,
+  endOfIstWeek,
+  getIstDayOfWeek,
+  last7IstDays,
+  lastCompletedAgencyWeek,
+  nextIstWeekday,
+  startOfIstDay,
+  startOfIstWeek,
+} from '../../utils/istTime';
 
 export interface GiftEarningInput {
   hostUserId: string;
@@ -42,35 +45,54 @@ export interface AgencyDashboardStats {
   nextSettlementDate: Date | null;
   isFrozen: boolean;
   isCommissionHeld: boolean;
+  slabProgress?: {
+    currentCommissionRate: number;
+    weeklyEligibleBeans: number;
+    nextSlabMinEarnings: number | null;
+    nextSlabRate: number | null;
+    remainingBeans: number;
+  };
 }
 
 @Service()
 export class AgencyCommissionService {
   constructor(@Inject() private appSettingService: AppSettingService) {}
 
+  public async getSettlementWeekday(): Promise<number> {
+    const day = Number(await this.appSettingService.getSettingValue('agency_settlement_day'));
+    return Number.isFinite(day) ? day : AGENCY_WEEK_STARTS_ON;
+  }
+
   public getCycleStart(date: Date = new Date()): Date {
-    return startOfWeek(date, { weekStartsOn: 1 });
+    return startOfIstWeek(date, AGENCY_WEEK_STARTS_ON);
   }
 
   public getCycleEnd(date: Date = new Date()): Date {
-    return endOfWeek(date, { weekStartsOn: 1 });
+    return endOfIstWeek(date, AGENCY_WEEK_STARTS_ON);
   }
 
-  public getNextSettlementDate(from: Date = new Date()): Date {
-    const today = startOfDay(from);
-    if (isMonday(today)) return today;
-    return startOfDay(nextMonday(today));
+  public getNextSettlementDate(from: Date = new Date(), weekday: number = AGENCY_WEEK_STARTS_ON): Date {
+    const today = startOfIstDay(from);
+    const next = nextIstWeekday(from, weekday);
+    if (getIstDayOfWeek(from) === weekday) return today;
+    return next;
   }
 
   private async ensureAgencyCycle(agency: InstanceType<typeof Agency>) {
     const cycleStart = this.getCycleStart();
-    if (!agency.currentCycleStart || agency.currentCycleStart < cycleStart) {
+    const currentStart = agency.currentCycleStart ? new Date(agency.currentCycleStart) : null;
+    if (!currentStart || currentStart.getTime() < cycleStart.getTime()) {
+      if (currentStart && (agency.thisWeekHostEarnings > 0 || agency.pendingCommission > 0)) {
+        agency.frozenWeekHostEarnings = agency.thisWeekHostEarnings;
+        agency.lastCompletedCycleStart = currentStart;
+      }
       agency.currentCycleStart = cycleStart;
       agency.thisWeekHostEarnings = 0;
       agency.thisWeekCommission = 0;
     }
+    const weekday = await this.getSettlementWeekday();
     if (!agency.nextSettlementDate) {
-      agency.nextSettlementDate = this.getNextSettlementDate();
+      agency.nextSettlementDate = this.getNextSettlementDate(new Date(), weekday);
     }
     await agency.save();
   }
@@ -147,13 +169,24 @@ export class AgencyCommissionService {
     return { rate, commission };
   }
 
+  public async tryRecordVerifiedHostEarning(input: GiftEarningInput) {
+    try {
+      return await this.recordVerifiedHostEarning(input);
+    } catch (err) {
+      AppLogger.warn(
+        `[AgencyCommission] Skip host earning for ${input.hostUserId}: ${(err as Error).message}`
+      );
+      return null;
+    }
+  }
+
   public async recordVerifiedHostEarning(input: GiftEarningInput) {
     const hostMembership = await AgencyHost.findOne({
       userId: input.hostUserId,
       status: 'ACCEPTED',
     });
     if (!hostMembership) {
-      throw new Error('Host is not registered under any agency');
+      return null;
     }
 
     const agency = await Agency.findById(hostMembership.agencyId);
@@ -228,6 +261,8 @@ export class AgencyCommissionService {
       this.resolveCommissionRate(agency.thisWeekHostEarnings, agency),
     ]);
 
+    const slabProgress = await this.getSlabProgress(agency.thisWeekHostEarnings, agency);
+
     return {
       totalHosts,
       activeHosts,
@@ -239,6 +274,25 @@ export class AgencyCommissionService {
       nextSettlementDate: agency.nextSettlementDate ?? this.getNextSettlementDate(),
       isFrozen: agency.isFrozen,
       isCommissionHeld: agency.isCommissionHeld,
+      slabProgress,
+    };
+  }
+
+  public async getSlabProgress(
+    weekEarnings: number,
+    agency?: InstanceType<typeof Agency> | null
+  ) {
+    const currentCommissionRate = await this.resolveCommissionRate(weekEarnings, agency);
+    const slabs = await CommissionSlab.find({ isActive: true }).sort({ sortOrder: 1, minEarnings: 1 });
+    const nextSlab = slabs.find((slab) => weekEarnings < slab.minEarnings);
+    const remainingBeans = nextSlab ? Math.max(0, nextSlab.minEarnings - weekEarnings) : 0;
+
+    return {
+      currentCommissionRate,
+      weeklyEligibleBeans: weekEarnings,
+      nextSlabMinEarnings: nextSlab?.minEarnings ?? null,
+      nextSlabRate: nextSlab?.percentage ?? null,
+      remainingBeans,
     };
   }
 
@@ -257,9 +311,22 @@ export class AgencyCommissionService {
       return { settled: false, amount: 0, message: 'No pending commission to settle' };
     }
 
-    const rate = await this.resolveCommissionRate(agency.thisWeekHostEarnings, agency);
-    const periodStart = agency.currentCycleStart;
-    const periodEnd = new Date();
+    const hostEarnings =
+      (agency.frozenWeekHostEarnings || 0) > 0
+        ? agency.frozenWeekHostEarnings
+        : agency.thisWeekHostEarnings;
+    const rate = await this.resolveCommissionRate(hostEarnings, agency);
+    const periodStart = agency.lastCompletedCycleStart || agency.currentCycleStart;
+    const periodEnd = this.getCycleEnd(periodStart);
+
+    const existing = await AgencySettlement.findOne({
+      agencyId: agency._id,
+      periodStart,
+      status: 'completed',
+    });
+    if (existing) {
+      return { settled: false, amount: 0, message: 'This week has already been settled' };
+    }
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -270,7 +337,7 @@ export class AgencyCommissionService {
         ownerUserId: agency.creatorId,
         amount,
         commissionRate: rate,
-        hostEarningsTotal: agency.thisWeekHostEarnings,
+        hostEarningsTotal: hostEarnings,
         periodStart,
         periodEnd,
         type,
@@ -288,6 +355,7 @@ export class AgencyCommissionService {
         userId: agency.creatorId,
         amount,
         type: 'agency_commission',
+        wallet: 'beans',
         description: `Agency commission settlement (${type})`,
         transactionId: settlement[0]._id.toString(),
       }], { session });
@@ -296,7 +364,7 @@ export class AgencyCommissionService {
         agencyId: agency._id,
         amount,
         commissionRate: rate,
-        hostEarningsAmount: agency.thisWeekHostEarnings,
+        hostEarningsAmount: hostEarnings,
         type: 'settlement',
         status: 'settled',
         cycleStart: periodStart,
@@ -311,13 +379,16 @@ export class AgencyCommissionService {
         { session }
       );
 
+      const weekday = await this.getSettlementWeekday();
       const nextCycleStart = this.getCycleStart();
       agency.pendingCommission = 0;
       agency.thisWeekHostEarnings = 0;
       agency.thisWeekCommission = 0;
+      agency.frozenWeekHostEarnings = 0;
+      agency.lastCompletedCycleStart = undefined;
       agency.currentCycleStart = nextCycleStart;
-      agency.lastSettlementDate = periodEnd;
-      agency.nextSettlementDate = this.getNextSettlementDate(periodEnd);
+      agency.lastSettlementDate = new Date();
+      agency.nextSettlementDate = this.getNextSettlementDate(new Date(), weekday);
       await agency.save({ session });
 
       await session.commitTransaction();
@@ -330,8 +401,11 @@ export class AgencyCommissionService {
         settlement: settlement[0],
         message: `${amount} beans transferred to agency owner balance`,
       };
-    } catch (error) {
+    } catch (error: any) {
       await session.abortTransaction();
+      if (error?.code === 11000) {
+        return { settled: false, amount: 0, message: 'This week has already been settled' };
+      }
       throw error;
     } finally {
       session.endSession();
@@ -342,11 +416,13 @@ export class AgencyCommissionService {
     const enabled = await this.appSettingService.getSettingValue('agency_auto_settlement_enabled');
     if (!enabled) return { processed: 0, message: 'Auto settlement disabled' };
 
-    const today = startOfDay(new Date());
-    if (!isMonday(today)) {
-      return { processed: 0, message: 'Settlement runs on Mondays only' };
+    const weekday = await this.getSettlementWeekday();
+    const todayIst = getIstDayOfWeek();
+    if (todayIst !== weekday) {
+      return { processed: 0, message: `Settlement runs on weekday ${weekday} (IST) only` };
     }
 
+    const today = startOfIstDay();
     const agencies = await Agency.find({
       status: 'approved',
       isFrozen: false,
@@ -356,10 +432,11 @@ export class AgencyCommissionService {
 
     let processed = 0;
     for (const agency of agencies) {
-      if (agency.nextSettlementDate && isBefore(today, startOfDay(agency.nextSettlementDate))) {
+      if (agency.nextSettlementDate && isBefore(today, startOfIstDay(agency.nextSettlementDate))) {
         continue;
       }
       try {
+        await this.ensureAgencyCycle(agency);
         const result = await this.settleAgency(agency._id.toString(), 'auto');
         if (result.settled) processed += 1;
       } catch (err) {
@@ -416,6 +493,61 @@ export class AgencyCommissionService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  public async getCompletedPeriodMetrics(agencyId: mongoose.Types.ObjectId) {
+    const { start, end } = lastCompletedAgencyWeek();
+    const seven = last7IstDays();
+
+    const [weekAgg, earningHosts, settledAgg] = await Promise.all([
+      HostVerifiedEarning.aggregate([
+        {
+          $match: {
+            agencyId,
+            isValid: true,
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$beansAmount' } } },
+      ]),
+      HostVerifiedEarning.distinct('hostUserId', {
+        agencyId,
+        isValid: true,
+        beansAmount: { $gt: 0 },
+        createdAt: { $gte: start, $lte: end },
+      }),
+      AgencyCommission.aggregate([
+        {
+          $match: {
+            agencyId,
+            type: 'settlement',
+            status: 'settled',
+            createdAt: { $gte: seven.start, $lte: seven.end },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+    ]);
+
+    const last7DaysEarnings = weekAgg[0]?.total || 0;
+    const last7DaysCommission = settledAgg[0]?.total || 0;
+    const commissionRate = await this.resolveCommissionRate(last7DaysEarnings);
+    const myCommission = Number(((last7DaysEarnings * commissionRate) / 100).toFixed(2));
+    const slabProgress = await this.getSlabProgress(last7DaysEarnings);
+
+    return {
+      periodStart: start,
+      periodEnd: end,
+      last7DaysEarnings,
+      last7DaysCommission,
+      commissionRate,
+      myCommission,
+      earningHostNo: earningHosts.length,
+      slabProgress,
+      inviteAgencyEarning: 0,
+      inviteAgencyWithEarning: 0,
+      inviteCommission: 0,
     };
   }
 }

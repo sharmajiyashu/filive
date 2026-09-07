@@ -14,7 +14,7 @@ import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
 import { applyProfileDefaultsWithAlbum, withDefaultAlbum } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
-import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
 
@@ -43,6 +43,8 @@ export class ProfileService {
     if (!profile) {
       throw new Error('USER_NOT_FOUND');
     }
+
+    await stripExpiredActiveStoreOnUser(profile);
 
     const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
     const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
@@ -256,6 +258,8 @@ export class ProfileService {
     if (!updatedUser) {
       throw new Error('USER_NOT_FOUND');
     }
+
+    await stripExpiredActiveStoreOnUser(updatedUser);
 
     const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
     const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });

@@ -12,7 +12,7 @@ import FamilyMember from '../../models/FamilyMember';
 import Country from '../../models/Country';
 import mongoose from 'mongoose';
 import { ensureUserReferralCode } from '../../utils/referral';
-import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
 
 import { LevelService } from './LevelService';
 import { withDefaultAlbum } from './profileDefaults';
@@ -175,6 +175,8 @@ export class UserService {
     if (!user) {
       throw new Error('User not found');
     }
+
+    await stripExpiredActiveStoreOnUser(user);
 
     const userObjectIdStr = user._id.toString();
 

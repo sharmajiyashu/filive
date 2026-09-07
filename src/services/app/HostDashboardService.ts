@@ -1,6 +1,5 @@
 import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
-import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
 import AgencyCommission from '../../models/AgencyCommission';
@@ -10,6 +9,16 @@ import Call from '../../models/Call';
 import CoinHistory from '../../models/CoinHistory';
 import { LevelService } from './LevelService';
 import { getUserCountryAndLevels } from '../../utils/userLookup';
+import {
+  endOfIstDay,
+  endOfIstMonth,
+  last7IstDays,
+  parseIstYmd,
+  startOfIstDay,
+  startOfIstMonth,
+  istYmd,
+} from '../../utils/istTime';
+import { subDays } from 'date-fns';
 
 export type HostDateRange =
   | 'last_7_days'
@@ -70,9 +79,7 @@ export class HostDashboardService {
   }
 
   private parseYmd(value?: string): Date | null {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
+    return parseIstYmd(value);
   }
 
   public resolveDateRange(filters: HostDashboardFilters): ResolvedRange {
@@ -86,36 +93,39 @@ export class HostDashboardService {
       }
       return {
         range: 'custom',
-        startDate: startOfDay(customStart),
-        endDate: endOfDay(customEnd),
-        start_date: this.localDateStr(customStart),
-        end_date: this.localDateStr(customEnd),
+        startDate: startOfIstDay(customStart),
+        endDate: endOfIstDay(customEnd),
+        start_date: istYmd(customStart),
+        end_date: istYmd(customEnd),
       };
     }
 
     const allowed: HostDateRange[] = ['last_7_days', 'last_30_days', 'last_90_days', 'this_month', 'custom'];
     const range = allowed.includes(filters.range as HostDateRange)
       ? (filters.range as HostDateRange)
-      : 'last_30_days';
+      : 'last_7_days';
 
-    let start = startOfDay(subDays(now, 29));
-    let end = endOfDay(now);
+    const seven = last7IstDays(now);
+    let start = seven.start;
+    let end = seven.end;
 
-    if (range === 'last_7_days') {
-      start = startOfDay(subDays(now, 6));
+    if (range === 'last_30_days') {
+      start = startOfIstDay(subDays(now, 29));
+      end = endOfIstDay(now);
     } else if (range === 'last_90_days') {
-      start = startOfDay(subDays(now, 89));
+      start = startOfIstDay(subDays(now, 89));
+      end = endOfIstDay(now);
     } else if (range === 'this_month') {
-      start = startOfMonth(now);
-      end = endOfMonth(now);
+      start = startOfIstMonth(now);
+      end = endOfIstMonth(now);
     }
 
     return {
       range,
       startDate: start,
       endDate: end,
-      start_date: this.localDateStr(start),
-      end_date: this.localDateStr(end),
+      start_date: istYmd(start),
+      end_date: istYmd(end),
     };
   }
 

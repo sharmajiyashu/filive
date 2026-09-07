@@ -31,7 +31,15 @@ export class ReactionService {
       }
     }
 
+    if (!String(gifUrl || "").trim()) {
+      throw new Error('GIF file or gif URL is required');
+    }
+
     const code = (data.code || data.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const existing = await Reaction.findOne({ code });
+    if (existing) {
+      throw new Error('A reaction with this code already exists');
+    }
 
     const reaction = await Reaction.create({
       name: data.name,

@@ -59,15 +59,20 @@ export class CoinSellerService {
         relatedUserId: target._id,
         amount: -amount,
         type: 'transfer',
+        wallet: 'coins',
+        transferTarget: 'user',
+        paymentGateway: 'CoinSeller',
         description: `Transferred to ${target.name || 'User'} (ID: ${target.userId})`
       }], { session });
 
-      // Add history record for receiver
       await CoinHistory.create([{
         userId: target._id,
         relatedUserId: sender._id,
         amount: amount,
         type: 'transfer',
+        wallet: 'coins',
+        transferTarget: 'coinseller',
+        paymentGateway: 'CoinSeller',
         description: `Received from ${sender.name || 'User'} (ID: ${sender.userId})`
       }], { session });
 
@@ -205,8 +210,9 @@ export class CoinSellerService {
       mobile: seller.mobile,
       whatsapp: seller.whatsapp,
       profileImage: seller.profileImage,
-      availableBalance: seller.coins || 0,
+      availableBalance: seller.coinSellerCoins || 0,
       coinSellerBalance: seller.coinSellerCoins || 0,
+      userCoinsBalance: seller.coins || 0,
       beansBalance: seller.beans || 0,
       totalCoinsSold,
       customerNumbers,
@@ -569,5 +575,40 @@ export class CoinSellerService {
     }).sort({ coins: 1 });
   }
 
+  async updateWhatsapp(
+    sellerId: string,
+    payload: { whatsapp?: string; countryCode?: string; phoneCode?: string | number }
+  ) {
+    const seller = await User.findById(sellerId).populate('profileImage').populate('countryId');
+    if (!seller) throw new Error('Seller not found');
+    if (!seller.isCoinseller) {
+      throw new Error('You are not authorized as a coin seller');
+    }
+
+    const digits = String(payload.whatsapp || '').replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) {
+      throw new Error('Enter a valid WhatsApp number');
+    }
+
+    let prefix = String(payload.phoneCode || payload.countryCode || '').replace(/\D/g, '');
+    if (!prefix && payload.countryCode) {
+      const iso = String(payload.countryCode).trim().toUpperCase();
+      const country = await Country.findOne({ code: { $regex: new RegExp(`^${iso}$`, 'i') } });
+      prefix = String((country as any)?.phoneCode || (country as any)?.dialCode || '').replace(/\D/g, '');
+    }
+
+    const stored = prefix && !digits.startsWith(prefix) ? `+${prefix}${digits}` : (digits.startsWith('+') ? digits : `+${digits}`);
+    seller.whatsapp = stored;
+    await seller.save();
+
+    return {
+      userId: seller.userId,
+      name: seller.name,
+      whatsapp: seller.whatsapp,
+      mobile: seller.mobile,
+      countryCode: payload.countryCode || null,
+      profileImage: seller.profileImage,
+    };
+  }
 }
 

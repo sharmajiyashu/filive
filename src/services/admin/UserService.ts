@@ -382,26 +382,57 @@ export class UserService {
     if (updateData.email !== undefined) user.email = updateData.email;
     if (updateData.mobile !== undefined) user.mobile = updateData.mobile;
     if (updateData.whatsapp !== undefined) user.whatsapp = updateData.whatsapp;
-    if (updateData.gender !== undefined) user.gender = updateData.gender;
+    if (updateData.gender !== undefined) {
+      const raw = String(updateData.gender).trim();
+      const genderMap: Record<string, 'Male' | 'Female' | 'Other'> = {
+        male: 'Male',
+        female: 'Female',
+        other: 'Other',
+        Male: 'Male',
+        Female: 'Female',
+        Other: 'Other',
+      };
+      if (genderMap[raw]) user.gender = genderMap[raw];
+    }
     if (updateData.country !== undefined || updateData.countryId !== undefined || updateData.countryCode !== undefined) {
-      const resolved = await resolveCountryFromSignals({
-        countryId: updateData.countryId,
-        countryCode: updateData.countryCode || updateData.country,
-      });
-      if (resolved?.countryId) {
+      const hasValue = Boolean(
+        (updateData.countryId && String(updateData.countryId).trim()) ||
+        (updateData.countryCode && String(updateData.countryCode).trim()) ||
+        (updateData.country && String(updateData.country).trim())
+      );
+      if (hasValue) {
+        const resolved = await resolveCountryFromSignals({
+          countryId: updateData.countryId,
+          countryCode: updateData.countryCode || updateData.country,
+        });
+        if (!resolved?.countryId) {
+          throw new Error('Invalid country. Please select a valid country.');
+        }
         user.countryId = resolved.countryId;
         user.country = resolved.country;
       }
     }
     if (updateData.dob !== undefined) user.dob = new Date(updateData.dob);
     if (updateData.bio !== undefined) user.bio = updateData.bio;
-    if (updateData.coins !== undefined) user.coins = Number(updateData.coins);
-    if (updateData.coinSellerCoins !== undefined) user.coinSellerCoins = Number(updateData.coinSellerCoins);
-    if (updateData.isCoinseller !== undefined) user.isCoinseller = Boolean(updateData.isCoinseller);
-    if (updateData.isPremium !== undefined) user.isPremium = Boolean(updateData.isPremium);
-    if (updateData.isVerified !== undefined) user.isVerified = Boolean(updateData.isVerified);
-    if (updateData.voiceCallPrice !== undefined) user.voiceCallPrice = Number(updateData.voiceCallPrice);
-    if (updateData.videoCallPrice !== undefined) user.videoCallPrice = Number(updateData.videoCallPrice);
+    if (updateData.coins !== undefined && !Number.isNaN(Number(updateData.coins))) user.coins = Number(updateData.coins);
+    if (updateData.coinSellerCoins !== undefined && !Number.isNaN(Number(updateData.coinSellerCoins))) {
+      user.coinSellerCoins = Number(updateData.coinSellerCoins);
+    }
+    if (updateData.isCoinseller !== undefined) {
+      user.isCoinseller = updateData.isCoinseller === true || updateData.isCoinseller === 'true';
+    }
+    if (updateData.isPremium !== undefined) {
+      user.isPremium = updateData.isPremium === true || updateData.isPremium === 'true';
+    }
+    if (updateData.isVerified !== undefined) {
+      user.isVerified = updateData.isVerified === true || updateData.isVerified === 'true';
+    }
+    if (updateData.voiceCallPrice !== undefined && !Number.isNaN(Number(updateData.voiceCallPrice))) {
+      user.voiceCallPrice = Number(updateData.voiceCallPrice);
+    }
+    if (updateData.videoCallPrice !== undefined && !Number.isNaN(Number(updateData.videoCallPrice))) {
+      user.videoCallPrice = Number(updateData.videoCallPrice);
+    }
     if (updateData.userRole !== undefined) user.userRole = updateData.userRole;
     if (updateData.profileImage !== undefined) user.profileImage = updateData.profileImage;
 
@@ -530,7 +561,9 @@ export class UserService {
     await CoinHistory.create({
       userId: user._id,
       amount: amount,
-      type: 'other',
+      type: amount >= 0 ? 'recharge' : 'other',
+      wallet: 'coins',
+      paymentGateway: 'Admin',
       description: description || (amount >= 0 ? 'Coins Added by Admin' : 'Coins Deducted by Admin'),
     });
 

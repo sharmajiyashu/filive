@@ -21,8 +21,13 @@ export async function seedCommissionSlabs() {
       { key: 'agency_global_commission_rate', value: 10, description: 'Global flat commission rate (%) when slabs disabled' },
       { key: 'agency_use_commission_slabs', value: true, description: 'Use tiered commission slabs based on host earnings' },
       { key: 'agency_auto_settlement_enabled', value: true, description: 'Enable automatic weekly commission settlement' },
-      { key: 'agency_settlement_day', value: 1, description: 'Settlement day (0=Sunday, 1=Monday, ...)' },
+      { key: 'agency_settlement_day', value: 3, description: 'Settlement day (0=Sunday, 3=Wednesday IST)' },
       { key: 'e_day_min_hours', value: 1, description: 'Minimum party room owner hours required to count as 1 E-Day' },
+      { key: 'agency_data_enabled', value: false, description: 'Enable Agency Data in the app' },
+      { key: 'host_application_enabled', value: false, description: 'Enable Host Application in the app' },
+      { key: 'agent_ranking_enabled', value: false, description: 'Enable Agent Ranking in the app' },
+      { key: 'activity_center_enabled', value: false, description: 'Enable Activity Center in the app' },
+      { key: 'agency_invite_enabled', value: false, description: 'Enable Agency Invite in the app' },
     ];
 
     for (const setting of commissionSettings) {

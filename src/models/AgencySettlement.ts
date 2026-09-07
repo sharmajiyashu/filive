@@ -32,5 +32,6 @@ const AgencySettlementSchema: Schema = new Schema(
 );
 
 AgencySettlementSchema.index({ agencyId: 1, createdAt: -1 });
+AgencySettlementSchema.index({ agencyId: 1, periodStart: 1 }, { unique: true });
 
 export default mongoose.model<IAgencySettlement>('AgencySettlement', AgencySettlementSchema);

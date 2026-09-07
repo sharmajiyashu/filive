@@ -7,6 +7,7 @@ import config from '../../config';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import AppLogger from '../../api/loaders/logger';
 import { AppSettingService } from '../common/AppSettingService';
+import { AgencyCommissionService } from './AgencyCommissionService';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import { resolveCountryUserFilter } from '../../utils/countryFilter';
 
@@ -586,6 +587,17 @@ export class CallService {
         });
       } catch (error: any) {
         if (!this.isDuplicateKeyError(error)) throw error;
+      }
+
+      try {
+        const agencyCommissionService = Container.get(AgencyCommissionService);
+        await agencyCommissionService.tryRecordVerifiedHostEarning({
+          hostUserId: receiver._id.toString(),
+          senderUserId: caller._id.toString(),
+          beansAmount: coinsEarned,
+        });
+      } catch (err) {
+        AppLogger.warn(`[CallService] Agency commission skip: ${(err as Error).message}`);
       }
     }
 

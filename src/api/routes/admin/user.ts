@@ -352,8 +352,13 @@ export default (router: Router) => {
         .populate('mentions', 'name email profileImage');
 
       // 9. Recharge History
-      const rechargeHistory = await CoinHistory.find({ userId, type: 'recharge' })
-        .sort({ createdAt: -1 });
+      const rechargeHistory = await CoinHistory.find({
+        userId,
+        $or: [
+          { type: 'recharge' },
+          { paymentGateway: 'Admin', wallet: 'coins' },
+        ],
+      }).sort({ createdAt: -1 });
 
       const levelService = Container.get(LevelService);
       const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);

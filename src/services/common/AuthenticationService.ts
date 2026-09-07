@@ -24,7 +24,7 @@ export class AuthenticationService {
         const payload = { userId, role };
         const secret = config.auth.secret;
         const options: jwt.SignOptions = {
-            expiresIn: CONSTANTS.JWT_ACCESS_EXPIRY
+            expiresIn: role === 'admin' ? CONSTANTS.JWT_ADMIN_ACCESS_EXPIRY : CONSTANTS.JWT_ACCESS_EXPIRY
         };
         return jwt.sign(payload, secret, options) as string;
     }

@@ -18,6 +18,8 @@ export interface IAgency extends Document {
   pendingCommission: number;
   thisWeekHostEarnings: number;
   thisWeekCommission: number;
+  frozenWeekHostEarnings: number;
+  lastCompletedCycleStart?: Date;
   currentCycleStart: Date;
   lastSettlementDate?: Date;
   nextSettlementDate?: Date;
@@ -48,6 +50,8 @@ const AgencySchema: Schema = new Schema(
     pendingCommission: { type: Number, default: 0 },
     thisWeekHostEarnings: { type: Number, default: 0 },
     thisWeekCommission: { type: Number, default: 0 },
+    frozenWeekHostEarnings: { type: Number, default: 0 },
+    lastCompletedCycleStart: { type: Date },
     currentCycleStart: { type: Date, default: () => new Date() },
     lastSettlementDate: { type: Date },
     nextSettlementDate: { type: Date },

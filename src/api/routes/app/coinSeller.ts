@@ -2,12 +2,13 @@ import { Router, Response } from 'express';
 import Container from 'typedi';
 import { CoinSellerService } from '../../../services/app/CoinSellerService';
 import { ResponseWrapper } from '../../responseWrapper';
+import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 
 export default (router: Router) => {
   const coinSellerService = Container.get(CoinSellerService);
   const sellerRouter = Router();
 
-  router.use('/coin-seller', sellerRouter);
+  router.use('/coin-seller', appAuthMiddleware, sellerRouter);
 
   /**
    * @swagger
@@ -270,6 +271,19 @@ export default (router: Router) => {
    *       200:
    *         description: List of active coin seller packages fetched successfully
    */
+  sellerRouter.put('/whatsapp', async (req: any, res: Response) => {
+    try {
+      const result = await coinSellerService.updateWhatsapp(req.user.id, {
+        whatsapp: req.body.whatsapp || req.body.number || req.body.phone,
+        countryCode: req.body.countryCode,
+        phoneCode: req.body.phoneCode,
+      });
+      return ResponseWrapper.success(res, result, 'WhatsApp number updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   sellerRouter.get('/packages', async (req: any, res: Response) => {
     try {
       const result = await coinSellerService.getCoinSellerPackages();

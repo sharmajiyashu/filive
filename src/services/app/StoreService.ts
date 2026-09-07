@@ -4,6 +4,7 @@ import UserStoreItem from '../../models/UserStoreItem';
 import User from '../../models/User';
 import mongoose from 'mongoose';
 import { addDays, addMonths, addYears } from 'date-fns';
+import { clearExpiredActiveStoreItems } from '../../utils/activeStorePopulate';
 
 @Service()
 export class StoreService {
@@ -199,6 +200,7 @@ export class StoreService {
   }
 
   public async getUserPurchasedItems(userId: string, type?: string, page: number = 1, limit: number = 20) {
+    await clearExpiredActiveStoreItems(userId);
     const query: any = { 
       userId: new mongoose.Types.ObjectId(userId),
       expiresAt: { $gt: new Date() } // Only active ones
@@ -242,6 +244,7 @@ export class StoreService {
   }
 
   public async toggleItemInUse(userId: string, userStoreItemId: string, useStatus: boolean) {
+    await clearExpiredActiveStoreItems(userId);
     const userStoreItem = await UserStoreItem.findOne({
       _id: userStoreItemId,
       userId,

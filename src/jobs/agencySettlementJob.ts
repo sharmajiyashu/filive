@@ -20,5 +20,5 @@ export function startAgencySettlementJob() {
 
   run();
   setInterval(run, CHECK_INTERVAL_MS);
-  AppLogger.info('Agency settlement job started (checks hourly, settles on Mondays)');
+  AppLogger.info('Agency settlement job started (checks hourly, settles on Wednesday IST)');
 }

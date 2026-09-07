@@ -1,12 +1,11 @@
 import { Service, Inject, Container } from 'typedi';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
-import AgencyCommission from '../../models/AgencyCommission';
-import HostVerifiedEarning from '../../models/HostVerifiedEarning';
+import Room from '../../models/Room';
 import Message from '../../models/Message';
 import User from '../../models/User';
 import { getUserCountryAndLevels, toPlainObject } from '../../utils/userLookup';
-import { subDays } from 'date-fns';
+import { lastCompletedAgencyWeek } from '../../utils/istTime';
 import { addMinutes } from 'date-fns';
 import { CONSTANTS } from '../../config/constants';
 import AppLogger from '../../api/loaders/logger';
@@ -87,42 +86,50 @@ export class AgencyService {
       ownerId
     );
 
-    const thirtyDaysAgo = subDays(new Date(), 30);
-    const [last30EarningsAgg, settledCommissionAgg] = await Promise.all([
-      HostVerifiedEarning.aggregate([
-        {
-          $match: {
-            agencyId: agency._id,
-            isValid: true,
-            createdAt: { $gte: thirtyDaysAgo },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$beansAmount' } } },
-      ]),
-      AgencyCommission.aggregate([
-        {
-          $match: {
-            agencyId: agency._id,
-            type: 'settlement',
-            status: 'settled',
-            createdAt: { $gte: thirtyDaysAgo },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]),
-    ]);
+    const period = await this.agencyCommissionService.getCompletedPeriodMetrics(agency._id);
+    const { start, end } = lastCompletedAgencyWeek();
+    const hostIds = await AgencyHost.find({
+      agencyId: agency._id,
+      status: 'ACCEPTED',
+    }).distinct('userId');
 
-    const last30DaysEarnings = last30EarningsAgg[0]?.total || 0;
-    const last30DaysCommission = settledCommissionAgg[0]?.total || 0;
-    const myCommission = dashboard.thisWeekCommission;
+    const rooms = await Room.find({
+      hostId: { $in: hostIds },
+      startedAt: { $lte: end },
+    }).select('startedAt endedAt status');
+
+    let totalLiveDurationSeconds = 0;
+    rooms.forEach((room) => {
+      const sessionStart = room.startedAt.getTime();
+      const sessionEnd = (room.status === 'live' ? new Date() : room.endedAt || room.startedAt).getTime();
+      const clippedStart = Math.max(sessionStart, start.getTime());
+      const clippedEnd = Math.min(sessionEnd, end.getTime());
+      totalLiveDurationSeconds += Math.max(0, Math.round((clippedEnd - clippedStart) / 1000));
+    });
+
+    const hours = Math.floor(totalLiveDurationSeconds / 3600);
+    const minutes = Math.floor((totalLiveDurationSeconds % 3600) / 60);
+    const secs = totalLiveDurationSeconds % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
 
     return {
       ...dashboard,
-      commissionRate: dashboard.currentCommissionRate,
-      last30DaysCommission,
-      totalEarnings: dashboard.totalHostEarnings,
-      myCommission,
-      last30DaysEarnings,
+      commissionRate: period.commissionRate,
+      last7DaysCommission: period.last7DaysCommission,
+      last30DaysCommission: period.last7DaysCommission,
+      totalEarnings: period.last7DaysEarnings,
+      hostEarnings: period.last7DaysEarnings,
+      myCommission: period.myCommission,
+      last7DaysEarnings: period.last7DaysEarnings,
+      last30DaysEarnings: period.last7DaysEarnings,
+      earningHostNo: period.earningHostNo,
+      activeHosts: dashboard.activeHosts,
+      inviteAgencyEarning: 0,
+      inviteAgencyWithEarning: 0,
+      inviteCommission: 0,
+      totalLiveDurationSeconds,
+      totalLiveDuration: `${pad(hours)}:${pad(minutes)}:${pad(secs)}`,
+      slabProgress: period.slabProgress,
     };
   }
 

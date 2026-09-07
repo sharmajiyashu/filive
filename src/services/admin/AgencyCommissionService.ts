@@ -65,8 +65,13 @@ export class AdminAgencyCommissionService {
       globalCommissionRate: settings.agency_global_commission_rate ?? 10,
       useCommissionSlabs: settings.agency_use_commission_slabs !== false,
       autoSettlementEnabled: settings.agency_auto_settlement_enabled ?? true,
-      settlementDay: settings.agency_settlement_day ?? 1,
+      settlementDay: settings.agency_settlement_day ?? 3,
       eDayMinHours: settings.e_day_min_hours ?? 1,
+      agencyDataEnabled: settings.agency_data_enabled === true,
+      hostApplicationEnabled: settings.host_application_enabled === true,
+      agentRankingEnabled: settings.agent_ranking_enabled === true,
+      activityCenterEnabled: settings.activity_center_enabled === true,
+      agencyInviteEnabled: settings.agency_invite_enabled === true,
     };
   }
 
@@ -76,6 +81,11 @@ export class AdminAgencyCommissionService {
     autoSettlementEnabled?: boolean;
     settlementDay?: number;
     eDayMinHours?: number;
+    agencyDataEnabled?: boolean;
+    hostApplicationEnabled?: boolean;
+    agentRankingEnabled?: boolean;
+    activityCenterEnabled?: boolean;
+    agencyInviteEnabled?: boolean;
   }) {
     const updates: Record<string, unknown> = {};
     if (data.globalCommissionRate != null) {
@@ -96,6 +106,11 @@ export class AdminAgencyCommissionService {
       }
       updates.e_day_min_hours = Number(data.eDayMinHours);
     }
+    if (data.agencyDataEnabled != null) updates.agency_data_enabled = data.agencyDataEnabled;
+    if (data.hostApplicationEnabled != null) updates.host_application_enabled = data.hostApplicationEnabled;
+    if (data.agentRankingEnabled != null) updates.agent_ranking_enabled = data.agentRankingEnabled;
+    if (data.activityCenterEnabled != null) updates.activity_center_enabled = data.activityCenterEnabled;
+    if (data.agencyInviteEnabled != null) updates.agency_invite_enabled = data.agencyInviteEnabled;
     await this.appSettingService.updateSettings(updates);
     return this.getCommissionSettings();
   }

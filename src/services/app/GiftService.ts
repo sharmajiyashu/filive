@@ -1,4 +1,4 @@
-import { Service } from 'typedi';
+import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Gift from '../../models/Gift';
 import GiftType from '../../models/GiftType';
@@ -6,6 +6,7 @@ import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import Room from '../../models/Room';
 import AppLogger from '../../api/loaders/logger';
+import { AgencyCommissionService } from './AgencyCommissionService';
 
 @Service()
 export class GiftService {
@@ -280,6 +281,17 @@ export class GiftService {
     });
 
     AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);
+
+    try {
+      const agencyCommissionService = Container.get(AgencyCommissionService);
+      await agencyCommissionService.tryRecordVerifiedHostEarning({
+        hostUserId: receiverId,
+        senderUserId: senderId,
+        beansAmount: totalPrice,
+      });
+    } catch (err) {
+      AppLogger.warn(`[GiftService: sendGift] Agency commission skip: ${(err as Error).message}`);
+    }
 
     await updatedSender.populate('profileImage');
     await updatedReceiver.populate('profileImage');
