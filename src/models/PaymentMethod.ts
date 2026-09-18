@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type PaymentGatewayKey = 'razorpay' | 'pandapay';
+export type PaymentGatewayKey = 'razorpay' | 'cashfree' | 'pandapay';
 export type PaymentTargetAudience = 'all' | 'user' | 'seller';
 
 export interface IPaymentMethod extends Document {
@@ -17,7 +17,7 @@ const PaymentMethodSchema: Schema = new Schema(
   {
     gateway: {
       type: String,
-      enum: ['razorpay', 'pandapay'],
+      enum: ['razorpay', 'cashfree', 'pandapay'],
       required: true,
       unique: true,
     },

@@ -824,4 +824,313 @@ export class CoinService {
     }
     return { success: true, message: 'Callback received' };
   }
+
+  private async getCashfreeConfig() {
+    const appId =
+      (await this.appSettingService.getSettingValue('payment_gateway_cashfree_app_id')) ||
+      config.cashfree.appId ||
+      process.env.CASHFREE_APP_ID ||
+      '';
+    const secretKey =
+      (await this.appSettingService.getSettingValue('payment_gateway_cashfree_secret_key')) ||
+      config.cashfree.secretKey ||
+      process.env.CASHFREE_SECRET_KEY ||
+      '';
+    const mode =
+      (await this.appSettingService.getSettingValue('payment_gateway_cashfree_mode')) ||
+      config.cashfree.mode ||
+      'production';
+    const apiVersion =
+      (await this.appSettingService.getSettingValue('payment_gateway_cashfree_api_version')) ||
+      config.cashfree.apiVersion ||
+      '2023-08-01';
+    const notifyUrl =
+      (await this.appSettingService.getSettingValue('payment_gateway_cashfree_notify_url')) ||
+      'https://filiva-node.creatamax.in/v1/api/app/coins/cashfree/callback';
+
+    const baseUrl =
+      String(mode).toLowerCase() === 'sandbox'
+        ? 'https://sandbox.cashfree.com/pg'
+        : 'https://api.cashfree.com/pg';
+
+    return { appId, secretKey, mode, apiVersion, notifyUrl, baseUrl };
+  }
+
+  async createCashfreeOrder(userId: string, packageId: string, audienceRaw?: string) {
+    const { audience, pkg } = await this.prepareRechargeContext(
+      userId,
+      packageId,
+      'cashfree',
+      audienceRaw
+    );
+
+    const { appId, secretKey, mode, apiVersion, notifyUrl, baseUrl } =
+      await this.getCashfreeConfig();
+
+    if (!appId || !secretKey) {
+      throw new Error('Cashfree credentials are not configured on server');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    const cleanUserPhone = (user.mobile || '').replace(/\D/g, '').slice(-10);
+    const customerPhone = cleanUserPhone.length === 10 ? cleanUserPhone : '9999999999';
+    const customerName = (user.name || 'Filive User').trim().replace(/[^a-zA-Z0-9\s]/g, '') || 'Filive User';
+    const customerEmail =
+      user.email && user.email.includes('@')
+        ? user.email
+        : `user_${user.userId || userId.slice(-6)}@filive.app`;
+
+    // Order ID format: CF_{audience}_{packageId}_{timestamp}_{numericUserId}
+    const orderId = `CF_${audience.slice(0, 1).toUpperCase()}_${packageId.toString().slice(-6)}_${Date.now()}_${user.userId || userId.slice(-4)}`;
+    const orderAmount = Number(pkg.price.toFixed(2));
+
+    const payload = {
+      order_id: orderId,
+      order_amount: orderAmount,
+      order_currency: 'INR',
+      customer_details: {
+        customer_id: String(user.userId || userId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 45) || `u_${userId.slice(-8)}`,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
+      },
+      order_meta: {
+        notify_url: notifyUrl,
+        return_url: `https://filive.app/payment-return?order_id={order_id}`,
+      },
+      order_note: `Recharge ${pkg.coins} coins (${audience})`,
+      order_tags: {
+        userId: userId.toString(),
+        packageId: packageId.toString(),
+        audience,
+      },
+    };
+
+    const headers = {
+      'x-client-id': appId,
+      'x-client-secret': secretKey,
+      'x-api-version': apiVersion,
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      const response = await axios.post(`${baseUrl}/orders`, payload, { headers });
+      const data = response.data;
+
+      return {
+        success: true,
+        orderId: data.order_id || orderId,
+        cfOrderId: data.cf_order_id,
+        paymentSessionId: data.payment_session_id,
+        orderAmount: data.order_amount || orderAmount,
+        orderCurrency: data.order_currency || 'INR',
+        environment: String(mode).toUpperCase() === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION',
+        audience,
+        package: {
+          id: pkg._id,
+          name: pkg.name,
+          coins: pkg.coins,
+          price: pkg.price,
+          targetAudience: pkg.targetAudience,
+        },
+        customerDetails: {
+          customerId: payload.customer_details.customer_id,
+          customerName,
+          customerEmail,
+          customerPhone,
+        },
+      };
+    } catch (err: any) {
+      const errMsg =
+        err.response?.data?.message ||
+        err.response?.data?.msg ||
+        err.message ||
+        'Failed to create Cashfree order';
+      throw new Error(`Cashfree error: ${errMsg}`);
+    }
+  }
+
+  async verifyCashfreePayment(
+    userId: string,
+    orderId: string,
+    packageId?: string,
+    audienceRaw?: string
+  ) {
+    const { appId, secretKey, apiVersion, baseUrl } = await this.getCashfreeConfig();
+
+    if (!appId || !secretKey) {
+      throw new Error('Cashfree credentials are not configured on server');
+    }
+
+    // Check if already processed
+    const existingHistory = await CoinHistory.findOne({
+      transactionId: orderId,
+      type: 'recharge',
+    });
+
+    if (existingHistory) {
+      const user = await User.findById(userId).select('coins beans coinSellerCoins');
+      return {
+        success: true,
+        message: 'Payment already processed',
+        transactionId: existingHistory.transactionId,
+        addedCoins: existingHistory.amount,
+        currentCoins: user?.coins || 0,
+        currentCoinSellerCoins: user?.coinSellerCoins || 0,
+        alreadyProcessed: true,
+      };
+    }
+
+    // Fetch order from Cashfree
+    let cfOrder: any = null;
+    try {
+      const response = await axios.get(`${baseUrl}/orders/${orderId}`, {
+        headers: {
+          'x-client-id': appId,
+          'x-client-secret': secretKey,
+          'x-api-version': apiVersion,
+        },
+      });
+      cfOrder = response.data;
+    } catch (err: any) {
+      const errMsg =
+        err.response?.data?.message ||
+        err.response?.data?.msg ||
+        err.message ||
+        'Unable to verify order with Cashfree';
+      throw new Error(`Cashfree order lookup failed: ${errMsg}`);
+    }
+
+    if (cfOrder.order_status !== 'PAID') {
+      throw new Error(
+        `Order is not paid yet. Current status: ${cfOrder.order_status || 'UNKNOWN'}`
+      );
+    }
+
+    // Resolve audience and package
+    let audience = this.normalizeAudience(audienceRaw);
+    let resolvedPackageId = packageId;
+
+    if (cfOrder.order_tags?.audience) {
+      audience = this.normalizeAudience(cfOrder.order_tags.audience);
+    }
+    if (cfOrder.order_tags?.packageId && !resolvedPackageId) {
+      resolvedPackageId = cfOrder.order_tags.packageId;
+    }
+
+    let pkg = resolvedPackageId ? await CoinPackage.findById(resolvedPackageId) : null;
+    if (!pkg) {
+      pkg = await CoinPackage.findOne({ price: cfOrder.order_amount, isActive: true });
+    }
+    if (!pkg) {
+      throw new Error('Corresponding coin package not found for this order');
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
+
+      const historyRecord = await CoinHistory.create(
+        [
+          {
+            userId,
+            packageId: pkg._id,
+            amount: pkg.coins,
+            type: 'recharge',
+            paymentGateway: 'Cashfree',
+            description: `Recharged with ${pkg.name} via Cashfree (${audience})`,
+            transactionId: orderId,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
+
+      return {
+        success: true,
+        message: 'Cashfree payment verified and coins added successfully',
+        transactionId: orderId,
+        cfOrderId: cfOrder.cf_order_id,
+        orderId,
+        addedCoins: pkg.coins,
+        audience,
+        wallet: credit.wallet,
+        currentCoins: updatedUser?.coins || 0,
+        currentCoinSellerCoins: updatedUser?.coinSellerCoins || 0,
+        history: historyRecord[0],
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async processCashfreeCallback(payload: Record<string, any>) {
+    const orderData = payload?.data?.order || payload?.order || payload;
+    const paymentData = payload?.data?.payment || payload?.payment || {};
+    const customerData = payload?.data?.customer_details || payload?.customer_details || {};
+
+    const orderId = orderData?.order_id || payload?.orderId;
+    if (!orderId) {
+      return { success: false, message: 'No order_id in webhook payload' };
+    }
+
+    const isPaid =
+      orderData?.order_status === 'PAID' ||
+      paymentData?.payment_status === 'SUCCESS' ||
+      payload?.type === 'PAYMENT_SUCCESS_WEBHOOK';
+
+    if (!isPaid) {
+      return {
+        success: true,
+        message: `Webhook received for non-paid event: ${payload?.type || orderData?.order_status}`,
+      };
+    }
+
+    const existingHistory = await CoinHistory.findOne({ transactionId: orderId });
+    if (existingHistory) {
+      return { success: true, message: 'Order already processed' };
+    }
+
+    let targetUserId: string | null = null;
+    if (orderData?.order_tags?.userId) {
+      targetUserId = orderData.order_tags.userId;
+    } else if (customerData?.customer_id) {
+      const custId = customerData.customer_id;
+      const user = /^[0-9a-fA-F]{24}$/.test(custId)
+        ? await User.findById(custId)
+        : await User.findOne({ userId: Number(custId) });
+      if (user) targetUserId = user._id.toString();
+    }
+
+    if (!targetUserId) {
+      const parts = String(orderId).split('_');
+      const lastPart = parts[parts.length - 1];
+      const numericUserId = Number(lastPart);
+      if (Number.isFinite(numericUserId)) {
+        const user = await User.findOne({ userId: numericUserId });
+        if (user) targetUserId = user._id.toString();
+      }
+    }
+
+    if (!targetUserId) {
+      return { success: false, message: 'Could not resolve user for Cashfree order' };
+    }
+
+    return this.verifyCashfreePayment(
+      targetUserId,
+      orderId,
+      orderData?.order_tags?.packageId,
+      orderData?.order_tags?.audience
+    );
+  }
 }

@@ -35,8 +35,16 @@ export class AppSettingService {
     social_telegram_url: '',
     social_whatsapp_url: '',
     social_tiktok_url: '',
+    // Payment Gateway Settings (Cashfree)
+    payment_gateway_cashfree_enabled: true,
+    payment_gateway_cashfree_mode: process.env.CASHFREE_MODE || 'production',
+    payment_gateway_cashfree_app_id: process.env.CASHFREE_APP_ID || '',
+    payment_gateway_cashfree_secret_key: process.env.CASHFREE_SECRET_KEY || '',
+    payment_gateway_cashfree_api_version: process.env.CASHFREE_API_VERSION || '2023-08-01',
+    payment_gateway_cashfree_notify_url: 'https://filiva-node.creatamax.in/v1/api/app/coins/cashfree/callback',
+
     // Payment Gateway Settings (PandaPay)
-    payment_gateway_pandapay_enabled: true,
+    payment_gateway_pandapay_enabled: false,
     payment_gateway_pandapay_gateway_url: 'https://pandaxpay.sbs',
     payment_gateway_pandapay_merchant_id: 'm_6ae9d055c1172ea450cd1507',
     payment_gateway_pandapay_secret_key: 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913',

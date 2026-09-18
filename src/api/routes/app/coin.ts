@@ -476,4 +476,107 @@ export default (router: Router) => {
       return res.status(400).send('FAIL');
     }
   });
+
+  /**
+   * @swagger
+   * /app/coins/cashfree/create-order:
+   *   post:
+   *     summary: Create Cashfree Order for Coin Recharge (returns payment_session_id for Android/iOS SDK)
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - packageId
+   *             properties:
+   *               packageId:
+   *                 type: string
+   *                 description: Coin package ID
+   *               audience:
+   *                 type: string
+   *                 enum: [user, seller]
+   *     responses:
+   *       200:
+   *         description: Cashfree order created successfully with paymentSessionId
+   */
+  coinRouter.post('/cashfree/create-order', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId, audience } = req.body;
+      if (!packageId) {
+        return ResponseWrapper.error(res, new Error('packageId is required'), 400);
+      }
+      const result = await coinService.createCashfreeOrder(req.user.id, packageId, audience);
+      return ResponseWrapper.success(res, result, 'Cashfree order created successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/cashfree/verify-payment:
+   *   post:
+   *     summary: Verify Cashfree Payment and credit coins
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - orderId
+   *             properties:
+   *               orderId:
+   *                 type: string
+   *                 description: Order ID returned during create-order
+   *               packageId:
+   *                 type: string
+   *               audience:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Payment verified and coins credited
+   */
+  coinRouter.post('/cashfree/verify-payment', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { orderId, packageId, audience } = req.body;
+      if (!orderId) {
+        return ResponseWrapper.error(res, new Error('orderId is required'), 400);
+      }
+      const result = await coinService.verifyCashfreePayment(
+        req.user.id,
+        orderId,
+        packageId,
+        audience
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Payment verified successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/cashfree/callback:
+   *   post:
+   *     summary: Webhook Callback for Cashfree Payment Notifications
+   *     tags: [Coins]
+   */
+  coinRouter.post('/cashfree/callback', async (req: Request, res: Response) => {
+    try {
+      const payload = req.body;
+      const result = await coinService.processCashfreeCallback(payload);
+      return res.status(200).json({ status: 'OK', result });
+    } catch (error: any) {
+      return res.status(400).json({ status: 'ERROR', error: error.message });
+    }
+  });
 };

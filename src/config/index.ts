@@ -58,6 +58,12 @@ export default {
         keySecret: process.env.RAZORPAY_KEY_SECRET || '',
         webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
     },
+    cashfree: {
+        appId: process.env.CASHFREE_APP_ID || '',
+        secretKey: process.env.CASHFREE_SECRET_KEY || '',
+        mode: process.env.CASHFREE_MODE || 'production',
+        apiVersion: process.env.CASHFREE_API_VERSION || '2023-08-01',
+    },
     firebase: {
         /** Absolute or relative path to Firebase service account JSON file */
         serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',

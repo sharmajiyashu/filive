@@ -10,11 +10,18 @@ const DEFAULT_METHODS = [
     isActive: true,
   },
   {
+    gateway: 'cashfree' as const,
+    displayName: 'Cashfree Payments',
+    countries: ['IN'],
+    targetAudience: 'all' as const,
+    isActive: true,
+  },
+  {
     gateway: 'pandapay' as const,
     displayName: 'PandaPay',
     countries: ['IN'],
     targetAudience: 'all' as const,
-    isActive: true,
+    isActive: false,
   },
 ];
 

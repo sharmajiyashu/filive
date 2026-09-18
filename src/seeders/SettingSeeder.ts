@@ -71,8 +71,16 @@ export async function seedSettings() {
       { key: 'social_whatsapp_url', value: '', description: 'WhatsApp contact link (e.g. https://wa.me/...)' },
       { key: 'social_tiktok_url', value: '', description: 'TikTok profile URL' },
 
+      // Cashfree Gateway Seed
+      { key: 'payment_gateway_cashfree_enabled', value: true, description: 'Cashfree gateway toggle status' },
+      { key: 'payment_gateway_cashfree_mode', value: process.env.CASHFREE_MODE || 'production', description: 'Cashfree environment mode (production or sandbox)' },
+      { key: 'payment_gateway_cashfree_app_id', value: process.env.CASHFREE_APP_ID || '', description: 'Cashfree App / Client ID' },
+      { key: 'payment_gateway_cashfree_secret_key', value: process.env.CASHFREE_SECRET_KEY || '', description: 'Cashfree Secret Key' },
+      { key: 'payment_gateway_cashfree_api_version', value: process.env.CASHFREE_API_VERSION || '2023-08-01', description: 'Cashfree PG API Version' },
+      { key: 'payment_gateway_cashfree_notify_url', value: 'https://filiva-node.creatamax.in/v1/api/app/coins/cashfree/callback', description: 'Cashfree Webhook Notification Callback URL' },
+
       // PandaPay Gateway Seed
-      { key: 'payment_gateway_pandapay_enabled', value: true, description: 'PandaPay gateway toggle status' },
+      { key: 'payment_gateway_pandapay_enabled', value: false, description: 'PandaPay gateway toggle status' },
       { key: 'payment_gateway_pandapay_gateway_url', value: 'https://pandaxpay.sbs', description: 'PandaPay gateway base URL' },
       { key: 'payment_gateway_pandapay_merchant_id', value: 'm_6ae9d055c1172ea450cd1507', description: 'PandaPay Merchant ID' },
       { key: 'payment_gateway_pandapay_secret_key', value: 'sk_3235a3fe02192c28a4fb9c5bfdc75dd0bb9a26c2b02a16e4113038f9da5f7913', description: 'PandaPay Pay-in Secret Key' },

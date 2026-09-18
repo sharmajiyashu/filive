@@ -9,6 +9,7 @@ import { AppSettingService } from '../common/AppSettingService';
 
 const GATEWAY_SETTING_KEYS: Record<PaymentGatewayKey, string> = {
   razorpay: 'payment_gateway_razorpay_enabled',
+  cashfree: 'payment_gateway_cashfree_enabled',
   pandapay: 'payment_gateway_pandapay_enabled',
 };
 
@@ -41,11 +42,18 @@ export class PaymentMethodService {
         isActive: true,
       },
       {
+        gateway: 'cashfree' as const,
+        displayName: 'Cashfree Payments',
+        countries: ['IN'],
+        targetAudience: 'all' as const,
+        isActive: true,
+      },
+      {
         gateway: 'pandapay' as const,
         displayName: 'PandaPay',
         countries: ['IN'],
         targetAudience: 'all' as const,
-        isActive: true,
+        isActive: false,
       },
     ];
     for (const method of defaults) {
@@ -110,10 +118,8 @@ export class PaymentMethodService {
       throw new Error(`${gateway} payment gateway is currently disabled by administrator`);
     }
 
-    const countryCode = await this.resolveUserCountryCode(userId);
-    if (!countryCode) {
-      throw new Error('User country is required to use payment gateways. Please set your country first.');
-    }
+    const userCountry = await this.resolveUserCountryCode(userId);
+    const countryCode = userCountry || 'IN';
 
     const method = await PaymentMethod.findOne({ gateway, isActive: true });
     if (!method) {
@@ -129,11 +135,8 @@ export class PaymentMethodService {
     }
 
     const countries = (method.countries || []).map((c) => c.toUpperCase());
-    const countryOk =
-      countries.includes('ALL') ||
-      countries.includes('*') ||
-      countries.includes(countryCode);
-    if (!countryOk) {
+    const isAll = countries.includes('ALL') || countries.includes('*');
+    if (!isAll && !countries.includes(countryCode)) {
       throw new Error(
         `${method.displayName} is not available in country ${countryCode}`
       );

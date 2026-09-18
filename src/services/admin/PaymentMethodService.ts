@@ -14,11 +14,18 @@ const DEFAULT_METHODS = [
     isActive: true,
   },
   {
+    gateway: 'cashfree' as const,
+    displayName: 'Cashfree Payments',
+    countries: ['IN'],
+    targetAudience: 'all' as const,
+    isActive: true,
+  },
+  {
     gateway: 'pandapay' as const,
     displayName: 'PandaPay',
     countries: ['IN'],
     targetAudience: 'all' as const,
-    isActive: true,
+    isActive: false,
   },
 ];
 
@@ -54,9 +61,9 @@ export class PaymentMethodService {
       displayName?: string;
     }
   ) {
-    const allowed: PaymentGatewayKey[] = ['razorpay', 'pandapay'];
+    const allowed: PaymentGatewayKey[] = ['razorpay', 'cashfree', 'pandapay'];
     if (!allowed.includes(gateway as PaymentGatewayKey)) {
-      throw new Error('Invalid payment gateway. Allowed: razorpay, pandapay');
+      throw new Error('Invalid payment gateway. Allowed: razorpay, cashfree, pandapay');
     }
 
     AppLogger.info(`[PaymentMethodService: updatePaymentMethod] Updating ${gateway}`);
@@ -113,7 +120,12 @@ export class PaymentMethodService {
     );
 
     if (!method.displayName) {
-      method.displayName = gateway === 'razorpay' ? 'Razorpay' : 'PandaPay';
+      method.displayName =
+        gateway === 'razorpay'
+          ? 'Razorpay'
+          : gateway === 'cashfree'
+          ? 'Cashfree Payments'
+          : 'PandaPay';
       await method.save();
     }
 
