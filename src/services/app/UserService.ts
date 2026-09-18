@@ -232,10 +232,11 @@ export class UserService {
       status: 'accepted'
     });
 
-    // Fetch active live streams/rooms of users that this user follows
+    // Fetch active live streams of users that this user follows (strictly livestream)
     const followedLiveRoomsDocs = await Room.find({
       hostId: { $in: myFollowingIds },
-      status: 'live'
+      status: 'live',
+      roomType: 'livestream'
     })
       .populate({
         path: 'hostId',
@@ -347,8 +348,9 @@ export class UserService {
       }
     }
 
-    // Check if the user has an active livestream
-    const activeLive = await Room.findOne({ hostId: user._id, status: 'live' });
+    // Check if the user has an active livestream or party room
+    const activeLive = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'livestream' });
+    const activeParty = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'party_room' });
 
     // Fetch user's family membership details
     const familyMemberDoc = await FamilyMember.findOne({ userId: user._id })
@@ -393,6 +395,8 @@ export class UserService {
         isPinned,
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null,
+        partyRoom: activeParty ? activeParty.toObject() : null,
+        activePartyRoom: activeParty ? activeParty.toObject() : null,
         followedLiveStreams,
         followedLiveRooms: followedLiveStreams,
         isBlock

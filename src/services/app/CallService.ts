@@ -299,7 +299,8 @@ export class CallService {
     const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
     const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
 
-    if (!isCallEnabled) {
+    // If receiver charges a rate, they must have calling enabled; if rate is 0 (mutual random match), allow connection
+    if (rate > 0 && !isCallEnabled) {
       throw new Error(`Receiver does not have ${callType} calling enabled`);
     }
 

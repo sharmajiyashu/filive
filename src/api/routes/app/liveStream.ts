@@ -498,13 +498,15 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      const roomTypeParam = req.query.roomType?.toString();
-      const roomType =
-        roomTypeParam === 'livestream' || roomTypeParam === 'party_room'
-          ? roomTypeParam
-          : undefined;
+      const roomTypeParam = req.query.roomType?.toString()?.trim()?.toLowerCase();
+      const roomType: 'livestream' | 'party_room' | 'all' =
+        roomTypeParam === 'party_room'
+          ? 'party_room'
+          : roomTypeParam === 'all'
+          ? 'all'
+          : 'livestream'; // Default strictly to livestream: party rooms will never mix into live stream list!
       const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType);
-      AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams.`);
+      AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams for roomType=${roomType}.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/list] Failed for userId=${userId}: ${error.message}`, error);
@@ -526,9 +528,14 @@ export default (router: Router) => {
    */
   liveRouter.get('/active', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP GET /app/room/active] Request received. userId=${userId}`);
+    AppLogger.info(`[HTTP GET /app/room/active] Request received. userId=${userId}, query=${JSON.stringify(req.query)}`);
     try {
-      const result = await liveStreamService.getActiveRoomForHost(userId);
+      const roomTypeParam = req.query.roomType?.toString()?.trim()?.toLowerCase();
+      const roomType =
+        roomTypeParam === 'party_room' || roomTypeParam === 'livestream'
+          ? roomTypeParam
+          : undefined;
+      const result = await liveStreamService.getActiveRoomForHost(userId, roomType);
       AppLogger.info(`[HTTP GET /app/room/active] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Active room details fetched successfully');
     } catch (error: any) {
@@ -685,9 +692,14 @@ export default (router: Router) => {
     const userId = req.user?.id;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    AppLogger.info(`[HTTP GET /app/room/followed-list] Request received. userId=${userId}, page=${page}, limit=${limit}`);
+    const roomTypeParam = req.query.roomType?.toString()?.trim()?.toLowerCase();
+    const roomType: 'livestream' | 'party_room' | 'all' | undefined =
+      roomTypeParam === 'party_room' || roomTypeParam === 'livestream' || roomTypeParam === 'all'
+        ? roomTypeParam
+        : undefined;
+    AppLogger.info(`[HTTP GET /app/room/followed-list] Request received. userId=${userId}, page=${page}, limit=${limit}, roomType=${roomType}`);
     try {
-      const result = await roomFollowService.getFollowedRooms(userId, page, limit);
+      const result = await roomFollowService.getFollowedRooms(userId, page, limit, roomType);
       return ResponseWrapper.success(res, result, 'Followed rooms fetched successfully');
     } catch (error: any) {
       AppLogger.error(`[HTTP GET /app/room/followed-list] Failed for userId=${userId}: ${error.message}`, error);

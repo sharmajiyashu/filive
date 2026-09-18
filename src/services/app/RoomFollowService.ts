@@ -90,8 +90,13 @@ export class RoomFollowService {
   /**
    * Get the list of rooms followed by a user
    */
-  public async getFollowedRooms(userId: string, page: number = 1, limit: number = 20) {
-    AppLogger.info(`[RoomFollowService: getFollowedRooms] Fetching followed rooms for user ${userId}, page=${page}, limit=${limit}`);
+  public async getFollowedRooms(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+    roomType?: 'livestream' | 'party_room' | 'all'
+  ) {
+    AppLogger.info(`[RoomFollowService: getFollowedRooms] userId=${userId}, page=${page}, limit=${limit}, roomType=${roomType}`);
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error('Invalid user ID');
@@ -108,7 +113,11 @@ export class RoomFollowService {
 
     // Extract room details
     const roomIds = followDocs.map(doc => doc.roomId);
-    const rooms = await Room.find({ _id: { $in: roomIds } })
+    const roomQuery: any = { _id: { $in: roomIds } };
+    if (roomType === 'livestream' || roomType === 'party_room') {
+      roomQuery.roomType = roomType;
+    }
+    const rooms = await Room.find(roomQuery)
       .populate({
         path: 'hostId',
         select: 'name profileImage bio location isPremium gender country',

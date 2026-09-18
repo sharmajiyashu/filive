@@ -97,6 +97,8 @@ export class RandomMatchService {
     io.to(`user_${callerId}`).emit('random_match_searching', {
       callType,
       timeoutMs: SEARCH_TIMEOUT_MS,
+      success: true,
+      type: 'random_match_searching'
     });
 
     const matched = await this.tryMatchCaller(queued, io);
@@ -115,7 +117,11 @@ export class RandomMatchService {
     this.removeCallerFromQueue(callerId, callType);
 
     if (io) {
-      io.to(`user_${callerId}`).emit('random_match_left', { callType });
+      io.to(`user_${callerId}`).emit('random_match_left', {
+        callType,
+        success: true,
+        type: 'random_match_left'
+      });
     }
 
     AppLogger.info(`[RandomMatchService: leaveRandomMatch] callerId=${callerId}, callType=${callType}`);
@@ -271,6 +277,8 @@ export class RandomMatchService {
     io.to(`user_${callerId}`).emit('random_match_timeout', {
       callType,
       reason: 'no_host_found',
+      success: false,
+      type: 'random_match_timeout'
     });
 
     AppLogger.info(`[RandomMatchService: handleSearchTimeout] callerId=${callerId}, callType=${callType}`);
@@ -291,8 +299,8 @@ export class RandomMatchService {
   private async tryMatchCaller(caller: QueuedCaller, io: Server): Promise<boolean> {
     if (this.callerIndex.get(caller.userId) !== caller.callType) return false;
 
+    // 1. First priority: Check explicitly available hosts
     const hostIds = [...this.availableHosts.keys()];
-    // Shuffle for random pick
     for (let i = hostIds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [hostIds[i], hostIds[j]] = [hostIds[j], hostIds[i]];
@@ -307,13 +315,40 @@ export class RandomMatchService {
       if (!eligible) continue;
 
       try {
-        await this.finalizeMatch(caller.userId, hostId, caller.callType, io);
+        await this.finalizeMatch(caller.userId, hostId, caller.callType, io, true);
         return true;
       } catch (err: any) {
         AppLogger.warn(
-          `[RandomMatchService: tryMatchCaller] Match failed caller=${caller.userId} host=${hostId}: ${err.message}`
+          `[RandomMatchService: tryMatchCaller] Available host match failed caller=${caller.userId} host=${hostId}: ${err.message}`
         );
-        // Try next host
+      }
+    }
+
+    // 2. Second priority: Match with another user waiting in the random match queue!
+    const queue = this.callerQueues[caller.callType] || [];
+    const otherWaiting = queue.filter((c) => c.userId !== caller.userId);
+    for (const other of otherWaiting) {
+      if (!this.callerIndex.has(caller.userId) || !this.callerIndex.has(other.userId)) continue;
+      const matched = await this.tryMatchTwoQueuedUsers(caller.userId, other.userId, caller.callType, io);
+      if (matched) {
+        return true;
+      }
+    }
+
+    // 3. Third priority: Find online female hosts with active socket connection in the app
+    const onlineHosts = await this.findOnlineHostCandidates(caller.userId, caller.callType, io);
+    for (const hostId of onlineHosts) {
+      if (!this.callerIndex.has(caller.userId)) return false;
+      const eligible = await this.isHostEligibleForCaller(caller.userId, hostId, caller.callType);
+      if (!eligible) continue;
+
+      try {
+        await this.finalizeMatch(caller.userId, hostId, caller.callType, io, false);
+        return true;
+      } catch (err: any) {
+        AppLogger.warn(
+          `[RandomMatchService: tryMatchCaller] Online candidate match failed caller=${caller.userId} host=${hostId}: ${err.message}`
+        );
       }
     }
 
@@ -326,7 +361,6 @@ export class RandomMatchService {
     io: Server
   ): Promise<boolean> {
     const queue = this.callerQueues[callType];
-    // FIFO copy of ids (queue mutates on success)
     const waitingIds = queue.map((c) => c.userId);
 
     for (const callerId of waitingIds) {
@@ -337,7 +371,7 @@ export class RandomMatchService {
       if (!eligible) continue;
 
       try {
-        await this.finalizeMatch(callerId, hostId, callType, io);
+        await this.finalizeMatch(callerId, hostId, callType, io, true);
         return true;
       } catch (err: any) {
         AppLogger.warn(
@@ -347,6 +381,101 @@ export class RandomMatchService {
     }
 
     return false;
+  }
+
+  private async tryMatchTwoQueuedUsers(
+    userAId: string,
+    userBId: string,
+    callType: RandomCallType,
+    io: Server
+  ): Promise<boolean> {
+    if (!this.callerIndex.has(userAId) || !this.callerIndex.has(userBId)) return false;
+    if (userAId === userBId) return false;
+
+    if (await this.areUsersBlocked(userAId, userBId)) return false;
+    if (await this.callService.isUserBusy(userAId)) return false;
+    if (await this.callService.isUserBusy(userBId)) return false;
+
+    const [userA, userB] = await Promise.all([
+      User.findById(userAId).select('gender coins enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice'),
+      User.findById(userBId).select('gender coins enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice')
+    ]);
+
+    if (!userA || !userB) return false;
+
+    let callerId = userAId;
+    let hostId = userBId;
+
+    const aCanHost = callType === 'voice' ? !!userA.enableVoiceCall : !!userA.enableVideoCall;
+    const bCanHost = callType === 'voice' ? !!userB.enableVoiceCall : !!userB.enableVideoCall;
+    const aRate = callType === 'voice' ? userA.voiceCallPrice || 0 : userA.videoCallPrice || 0;
+    const bRate = callType === 'voice' ? userB.voiceCallPrice || 0 : userB.videoCallPrice || 0;
+
+    // Prefer female host with calling enabled
+    if (userA.gender === 'Female' && aCanHost && (userB.coins || 0) >= aRate) {
+      callerId = userBId;
+      hostId = userAId;
+    } else if (userB.gender === 'Female' && bCanHost && (userA.coins || 0) >= bRate) {
+      callerId = userAId;
+      hostId = userBId;
+    } else if (aCanHost && (userB.coins || 0) >= aRate) {
+      callerId = userBId;
+      hostId = userAId;
+    } else if (bCanHost && (userA.coins || 0) >= bRate) {
+      callerId = userAId;
+      hostId = userBId;
+    } else {
+      callerId = userAId;
+      hostId = userBId;
+    }
+
+    try {
+      await this.finalizeMatchedQueuedUsers(callerId, hostId, callType, io);
+      return true;
+    } catch (err: any) {
+      AppLogger.warn(`[RandomMatchService: tryMatchTwoQueuedUsers] Failed caller=${callerId} host=${hostId}: ${err.message}`);
+      return false;
+    }
+  }
+
+  private async findOnlineHostCandidates(
+    callerId: string,
+    callType: RandomCallType,
+    io: Server
+  ): Promise<string[]> {
+    try {
+      const query: any = {
+        _id: { $ne: new mongoose.Types.ObjectId(callerId) },
+        gender: 'Female',
+        status: { $ne: 'banned' },
+        isBanned: { $ne: true }
+      };
+      if (callType === 'voice') {
+        query.enableVoiceCall = true;
+      } else {
+        query.enableVideoCall = true;
+      }
+
+      const hosts = await User.find(query)
+        .select('_id')
+        .limit(50);
+
+      const onlineHostIds: string[] = [];
+      for (const host of hosts) {
+        const idStr = host._id.toString();
+        const room = io.sockets.adapter.rooms.get(`user_${idStr}`);
+        if (room && room.size > 0) {
+          const busy = await this.callService.isUserBusy(idStr);
+          if (!busy) {
+            onlineHostIds.push(idStr);
+          }
+        }
+      }
+      return onlineHostIds.sort(() => Math.random() - 0.5);
+    } catch (e: any) {
+      AppLogger.error(`[RandomMatchService: findOnlineHostCandidates] Error: ${e.message}`);
+      return [];
+    }
   }
 
   private async isHostEligibleForCaller(
@@ -394,29 +523,19 @@ export class RandomMatchService {
     }
   }
 
-  private async finalizeMatch(
+  private async finalizeMatchedQueuedUsers(
     callerId: string,
     hostId: string,
     callType: RandomCallType,
     io: Server
   ): Promise<void> {
-    const wasQueued = this.callerIndex.get(callerId) === callType;
-    if (!wasQueued) {
-      throw new Error('Caller is no longer searching');
-    }
-    if (!this.availableHosts.has(hostId)) {
-      throw new Error('Host is no longer available');
-    }
-
-    // Create call first so a failed attempt keeps both parties in queue/availability
     const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType);
     if (!call) {
       throw new Error('Failed to create matched call');
     }
 
     this.removeCallerFromQueue(callerId, callType);
-    this.availableHosts.delete(hostId);
-    // hostPreferences kept so the host re-enters the pool after the call ends
+    this.removeCallerFromQueue(hostId, callType);
 
     const callerPayload = await this.callService.buildCallScreenPayload(call, callerId);
     const hostPayload = await this.callService.buildCallScreenPayload(call, hostId);
@@ -431,12 +550,71 @@ export class RandomMatchService {
       ...callerPayload,
       ...common,
       peer: callerPayload.otherUser,
+      success: true,
+      type: 'random_match_found'
     });
 
     io.to(`user_${hostId}`).emit('random_match_found', {
       ...hostPayload,
       ...common,
       peer: hostPayload.otherUser,
+      success: true,
+      type: 'random_match_found'
+    });
+
+    AppLogger.info(
+      `[RandomMatchService: finalizeMatchedQueuedUsers] Matched queued users caller=${callerId} host=${hostId} callId=${call._id} type=${callType}`
+    );
+  }
+
+  private async finalizeMatch(
+    callerId: string,
+    hostId: string,
+    callType: RandomCallType,
+    io: Server,
+    isAvailableHost: boolean = true
+  ): Promise<void> {
+    const wasQueued = this.callerIndex.get(callerId) === callType;
+    if (!wasQueued) {
+      throw new Error('Caller is no longer searching');
+    }
+    if (isAvailableHost && !this.availableHosts.has(hostId)) {
+      throw new Error('Host is no longer available');
+    }
+
+    const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType);
+    if (!call) {
+      throw new Error('Failed to create matched call');
+    }
+
+    this.removeCallerFromQueue(callerId, callType);
+    if (isAvailableHost) {
+      this.availableHosts.delete(hostId);
+    }
+
+    const callerPayload = await this.callService.buildCallScreenPayload(call, callerId);
+    const hostPayload = await this.callService.buildCallScreenPayload(call, hostId);
+
+    const common = {
+      agoraAppId: config.agora.appId,
+      matchType: 'random' as const,
+      startedAt: call.startedAt,
+    };
+
+    io.to(`user_${callerId}`).emit('random_match_found', {
+      ...callerPayload,
+      ...common,
+      peer: callerPayload.otherUser,
+      success: true,
+      type: 'random_match_found'
+    });
+
+    io.to(`user_${hostId}`).emit('random_match_found', {
+      ...hostPayload,
+      ...common,
+      peer: hostPayload.otherUser,
+      success: true,
+      type: 'random_match_found'
     });
 
     AppLogger.info(

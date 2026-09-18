@@ -1091,13 +1091,18 @@ export class LiveStreamService {
     limit: number = 10,
     userId?: string,
     country?: string,
-    roomType?: 'livestream' | 'party_room'
+    roomType: 'livestream' | 'party_room' | 'all' = 'livestream'
   ) {
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}, roomType=${roomType}`);
 
     let query: any = { status: 'live' };
-    if (roomType === 'livestream' || roomType === 'party_room') {
-      query.roomType = roomType;
+    if (roomType === 'party_room') {
+      query.roomType = 'party_room';
+    } else if (roomType === 'all') {
+      // no roomType filter - return all live rooms
+    } else {
+      // Default: strictly livestream only! Party rooms will never show in live stream feeds.
+      query.roomType = 'livestream';
     }
 
     if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
@@ -1184,28 +1189,32 @@ export class LiveStreamService {
   /**
    * Retrieves the active room for a given host user
    */
-  public async getActiveRoomForHost(hostId: string) {
+  public async getActiveRoomForHost(hostId: string, roomType?: 'livestream' | 'party_room') {
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       throw new Error('Invalid host ID');
     }
-    let activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId), status: 'live' })
+    const liveQuery: any = { hostId: new mongoose.Types.ObjectId(hostId), status: 'live' };
+    if (roomType === 'livestream' || roomType === 'party_room') {
+      liveQuery.roomType = roomType;
+    }
+    let activeStream = await Room.findOne(liveQuery)
       .populate({
         path: 'hostId',
         populate: { path: 'profileImage' }
-      })
-
-      ;
+      });
 
     if (!activeStream) {
-      activeStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) })
+      const fallbackQuery: any = { hostId: new mongoose.Types.ObjectId(hostId) };
+      if (roomType === 'livestream' || roomType === 'party_room') {
+        fallbackQuery.roomType = roomType;
+      }
+      activeStream = await Room.findOne(fallbackQuery)
         .sort({ createdAt: -1 })
         .populate({
           path: 'hostId',
           select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
           populate: { path: 'profileImage' }
-        })
-
-        ;
+        });
     }
     return await this.populateRoomWithDailyRank(activeStream, hostId);
   }
