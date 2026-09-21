@@ -503,9 +503,24 @@ export default (router: Router) => {
         roomTypeParam === 'party_room'
           ? 'party_room'
           : roomTypeParam === 'all'
-          ? 'all'
-          : 'livestream'; // Default strictly to livestream: party rooms will never mix into live stream list!
-      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType);
+            ? 'all'
+            : 'livestream'; // Default strictly to livestream: party rooms will never mix into live stream list!
+
+      const isFollowingRoomParam = req.query.isFollowingRoom ?? req.query.following ?? req.query.followed;
+      const isMineParam = req.query.isMine ?? req.query.mine;
+
+      const isFollowingRoom = isFollowingRoomParam !== undefined
+        ? String(isFollowingRoomParam).toLowerCase() === 'true' || isFollowingRoomParam === true
+        : undefined;
+
+      const isMine = isMineParam !== undefined
+        ? String(isMineParam).toLowerCase() === 'true' || isMineParam === true
+        : undefined;
+
+      const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType, {
+        isFollowingRoom,
+        isMine
+      });
       AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams for roomType=${roomType}.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
     } catch (error: any) {

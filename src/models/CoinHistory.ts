@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export type TransferTarget = 'self' | 'user' | 'coinseller';
-export type CoinHistoryWallet = 'coins' | 'beans';
+export type CoinHistoryWallet = 'coins' | 'beans' | 'coinSellerCoins';
 export type CoinHistoryContextType = 'live_stream' | 'party_room' | 'audio_call' | 'video_call';
 export type CoinHistoryType =
   | 'recharge'
@@ -51,7 +51,7 @@ const CoinHistorySchema: Schema = new Schema(
       enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'beans_to_coins', 'coins_to_beans', 'agency_commission', 'referral_reward', 'gift_received', 'gift_sent', 'call_income', 'call_spent', 'cash_out', 'exchange', 'other'],
       required: true
     },
-    wallet: { type: String, enum: ['coins', 'beans'] },
+    wallet: { type: String, enum: ['coins', 'beans', 'coinSellerCoins'] },
     callId: { type: Schema.Types.ObjectId, ref: 'Call' },
     description: { type: String },
     transactionId: { type: String },

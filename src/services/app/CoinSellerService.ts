@@ -47,11 +47,15 @@ export class CoinSellerService {
     session.startTransaction();
 
     try {
-      // Deduct from sender
+      const isTargetCoinseller = Boolean(target.isCoinseller);
+      const recipientField = isTargetCoinseller ? 'coinSellerCoins' : 'coins';
+      const recipientWallet = isTargetCoinseller ? 'coinSellerCoins' : 'coins';
+
+      // Deduct from sender's coin seller coins
       await User.findByIdAndUpdate(senderId, { $inc: { coinSellerCoins: -amount } }, { session });
 
-      // Add to receiver
-      await User.findByIdAndUpdate(target._id, { $inc: { coins: amount } }, { session });
+      // Add to receiver: coinSellerCoins if receiver is coinseller, else coins
+      await User.findByIdAndUpdate(target._id, { $inc: { [recipientField]: amount } }, { session });
 
       // Add history record for sender
       await CoinHistory.create([{
@@ -59,21 +63,22 @@ export class CoinSellerService {
         relatedUserId: target._id,
         amount: -amount,
         type: 'transfer',
-        wallet: 'coins',
-        transferTarget: 'user',
+        wallet: 'coinSellerCoins',
+        transferTarget: isTargetCoinseller ? 'coinseller' : 'user',
         paymentGateway: 'CoinSeller',
-        description: `Transferred to ${target.name || 'User'} (ID: ${target.userId})`
+        description: `Transferred to ${isTargetCoinseller ? 'Coin Seller ' : ''}${target.name || 'User'} (ID: ${target.userId})`
       }], { session });
 
+      // Add history record for receiver
       await CoinHistory.create([{
         userId: target._id,
         relatedUserId: sender._id,
         amount: amount,
         type: 'transfer',
-        wallet: 'coins',
+        wallet: recipientWallet,
         transferTarget: 'coinseller',
         paymentGateway: 'CoinSeller',
-        description: `Received from ${sender.name || 'User'} (ID: ${sender.userId})`
+        description: `Received from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
       }], { session });
 
       await session.commitTransaction();
@@ -258,11 +263,13 @@ export class CoinSellerService {
     }
 
     const isTransfer = sender._id.toString() !== recipient._id.toString();
+    const isRecipientCoinseller = Boolean(recipient.isCoinseller);
     const transferTarget = !isTransfer
       ? 'self'
-      : (recipient.isCoinseller ? 'coinseller' : 'user');
-    // Credit coinSellerCoins if recipient is a coin seller and converting for self, else credit coins
-    const incField = (recipient.isCoinseller && !isTransfer) ? 'coinSellerCoins' : 'coins';
+      : (isRecipientCoinseller ? 'coinseller' : 'user');
+    // Credit coinSellerCoins if recipient is a coin seller, else credit coins
+    const incField = isRecipientCoinseller ? 'coinSellerCoins' : 'coins';
+    const recipientWallet = isRecipientCoinseller ? 'coinSellerCoins' : 'coins';
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -286,8 +293,9 @@ export class CoinSellerService {
           relatedUserId: recipient._id,
           amount: -coinsToCredit,
           type: 'beans_to_coins',
+          wallet: 'beans',
           transferTarget,
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${isRecipientCoinseller ? 'Coin Seller ' : ''}${recipient.name || 'User'} (ID: ${recipient.userId})`
         }], { session });
 
         // Record for recipient
@@ -296,6 +304,7 @@ export class CoinSellerService {
           relatedUserId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
+          wallet: recipientWallet,
           transferTarget,
           description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
         }], { session });
@@ -304,6 +313,7 @@ export class CoinSellerService {
           userId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
+          wallet: recipientWallet,
           transferTarget,
           description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
         }], { session });

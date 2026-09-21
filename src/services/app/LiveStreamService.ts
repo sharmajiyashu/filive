@@ -17,7 +17,7 @@ const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -ho
 
 @Service()
 export class LiveStreamService {
-  constructor(@Inject() private levelService: LevelService) {}
+  constructor(@Inject() private levelService: LevelService) { }
 
   private hostPopulate() {
     return {
@@ -768,7 +768,7 @@ export class LiveStreamService {
       AppLogger.info(`[Socket] Emitting live_ended and room_ended events to rooms: live_${liveStream.channelName}, room_${liveStream.channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('live_ended', payload);
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_ended', payload);
-      
+
       // Also emit seat_updated with empty seats to clear viewer sockets
       io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('seat_updated', {
         channelName: liveStream.channelName,
@@ -1091,11 +1091,16 @@ export class LiveStreamService {
     limit: number = 10,
     userId?: string,
     country?: string,
-    roomType: 'livestream' | 'party_room' | 'all' = 'livestream'
+    roomType?: 'livestream' | 'party_room' | 'all',
+    filters?: {
+      isFollowingRoom?: boolean;
+      isMine?: boolean;
+    }
   ) {
-    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}, roomType=${roomType}`);
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}, roomType=${roomType}, filters=${JSON.stringify(filters)}`);
 
-    let query: any = { status: 'live' };
+    const query: any = { status: 'live' };
+
     if (roomType === 'party_room') {
       query.roomType = 'party_room';
     } else if (roomType === 'all') {
@@ -1140,12 +1145,54 @@ export class LiveStreamService {
       query.hostId = { $in: hostIds };
     }
 
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      const followedRoomDocs = await RoomFollow.find({ userId: new mongoose.Types.ObjectId(userId) });
-      const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
+    // Filter by isMine
+    if (filters?.isMine === true) {
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        query.hostId = new mongoose.Types.ObjectId(userId);
+      } else {
+        return {
+          streams: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        };
+      }
     }
 
-    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams...`);
+    // Filter by isFollowingRoom
+    if (filters?.isFollowingRoom === true) {
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        const followedRoomDocs = await RoomFollow.find({ userId: new mongoose.Types.ObjectId(userId) });
+        const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
+        if (followedRoomIds.length === 0) {
+          return {
+            streams: [],
+            pagination: {
+              total: 0,
+              page,
+              limit,
+              totalPages: 0
+            }
+          };
+        }
+        query._id = { $in: followedRoomIds };
+      } else {
+        return {
+          streams: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        };
+      }
+    }
+
+    AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams with query=${JSON.stringify(query)}...`);
     const streams = await Room.find(query)
       .populate({
         path: 'hostId',
@@ -1167,10 +1214,12 @@ export class LiveStreamService {
       streams.map(async (stream: any) => {
         const streamObj = await this.populateRoomWithDailyRank(stream, userId);
         const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
-        const isMine = userId && hostIdStr ? (hostIdStr === userId.toString() || !!streamObj.isFollowingRoom) : false;
+        const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
+        const isFollowingRoom = Boolean(streamObj.isFollowingRoom);
         return {
           ...streamObj,
-          isMine
+          isMine,
+          isFollowingRoom
         };
       })
     );
@@ -1350,10 +1399,15 @@ export class LiveStreamService {
       }));
     }
 
+    const hostIdStr = roomObj.hostId
+      ? (roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString())
+      : '';
+    const isMine = currentUserId && hostIdStr ? hostIdStr === currentUserId.toString() : false;
     const isFollowingRoom = currentUserId && roomObj._id
       ? !!(await RoomFollow.exists({ userId: new mongoose.Types.ObjectId(currentUserId), roomId: roomObj._id }))
       : false;
 
+    roomObj.isMine = isMine;
     roomObj.isFollowingRoom = isFollowingRoom;
     roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
     roomObj.totalMember = roomObj.roomFollowerCount || 0;
@@ -1392,13 +1446,13 @@ export class LiveStreamService {
       const meObj = me ? (me.toObject ? me.toObject() : me) : null;
       roomObj.currentUser = meObj
         ? {
-            id: meObj._id,
-            userId: meObj.userId ?? null,
-            name: meObj.name ?? null,
-            profileImage: meObj.profileImage ?? null,
-            isFollowing: roomObj.hostId?.isFollowing ?? false,
-            isFollowingRoom
-          }
+          id: meObj._id,
+          userId: meObj.userId ?? null,
+          name: meObj.name ?? null,
+          profileImage: meObj.profileImage ?? null,
+          isFollowing: roomObj.hostId?.isFollowing ?? false,
+          isFollowingRoom
+        }
         : null;
     } else {
       roomObj.currentUser = null;
@@ -1737,7 +1791,7 @@ export class LiveStreamService {
     if (!isNaN(numId) && targetUserId.toString().length >= 5) {
       targetUser = await User.findOne({ userId: numId });
     }
-    
+
     if (!targetUser && mongoose.Types.ObjectId.isValid(targetUserId.toString())) {
       targetUser = await User.findById(targetUserId);
     }
