@@ -360,7 +360,12 @@ export class CoinService {
   }
 
   private normalizeAudience(audience?: string): RechargeAudience {
-    return audience === 'seller' ? 'seller' : 'user';
+    if (!audience) return 'user';
+    const normalized = String(audience).trim().toLowerCase();
+    if (['seller', 'coinseller', 'coin_seller', 'coin-seller'].includes(normalized)) {
+      return 'seller';
+    }
+    return 'user';
   }
 
   /**
@@ -401,10 +406,18 @@ export class CoinService {
     gateway: PaymentGatewayKey,
     audienceRaw?: string
   ) {
-    const audience = this.normalizeAudience(audienceRaw);
     const pkg = await CoinPackage.findById(packageId);
     if (!pkg) throw new Error('Coin package not found');
     if (!pkg.isActive) throw new Error('Coin package is not active');
+
+    let audience: RechargeAudience;
+    if (audienceRaw) {
+      audience = this.normalizeAudience(audienceRaw);
+    } else if (pkg.targetAudience === 'seller') {
+      audience = 'seller';
+    } else {
+      audience = 'user';
+    }
 
     await this.paymentMethodService.assertPackageAllowedForAudience(
       pkg.targetAudience,
@@ -434,9 +447,17 @@ export class CoinService {
     transactionId: string,
     audienceRaw?: string
   ) {
-    const audience = this.normalizeAudience(audienceRaw);
     const pkg = await CoinPackage.findById(packageId);
     if (!pkg) throw new Error('Package not found');
+
+    let audience: RechargeAudience;
+    if (audienceRaw) {
+      audience = this.normalizeAudience(audienceRaw);
+    } else if (pkg.targetAudience === 'seller') {
+      audience = 'seller';
+    } else {
+      audience = 'user';
+    }
 
     await this.paymentMethodService.assertPackageAllowedForAudience(
       pkg.targetAudience,
@@ -512,7 +533,17 @@ export class CoinService {
       },
     };
 
-    const order = await razorpay.orders.create(options);
+    let order: any;
+    try {
+      order = await razorpay.orders.create(options);
+    } catch (err: any) {
+      const errMsg =
+        err?.error?.description ||
+        err?.description ||
+        err?.message ||
+        (typeof err === 'object' ? JSON.stringify(err) : 'Failed to create Razorpay order');
+      throw new Error(`Razorpay Error: ${errMsg}`);
+    }
 
     return {
       orderId: order.id,
@@ -560,7 +591,7 @@ export class CoinService {
       throw new Error('This payment has already been processed');
     }
 
-    let audience = this.normalizeAudience(audienceRaw);
+    let audience = audienceRaw ? this.normalizeAudience(audienceRaw) : undefined;
     try {
       const razorpayKeyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) || config.razorpay.keyId;
       const razorpayKeySecret = keySecret;
@@ -577,6 +608,10 @@ export class CoinService {
 
     const pkg = await CoinPackage.findById(packageId);
     if (!pkg) throw new Error('Coin package not found');
+
+    if (!audience) {
+      audience = pkg.targetAudience === 'seller' ? 'seller' : 'user';
+    }
 
     await this.paymentMethodService.assertPackageAllowedForAudience(
       pkg.targetAudience,
@@ -1010,7 +1045,7 @@ export class CoinService {
     }
 
     // Resolve audience and package
-    let audience = this.normalizeAudience(audienceRaw);
+    let audience = audienceRaw ? this.normalizeAudience(audienceRaw) : undefined;
     let resolvedPackageId = packageId;
 
     if (cfOrder.order_tags?.audience) {
@@ -1026,6 +1061,10 @@ export class CoinService {
     }
     if (!pkg) {
       throw new Error('Corresponding coin package not found for this order');
+    }
+
+    if (!audience) {
+      audience = pkg.targetAudience === 'seller' ? 'seller' : 'user';
     }
 
     const session = await mongoose.startSession();
