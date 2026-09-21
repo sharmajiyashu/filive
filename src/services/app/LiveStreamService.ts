@@ -1145,8 +1145,40 @@ export class LiveStreamService {
       query.hostId = { $in: hostIds };
     }
 
-    // Filter by isMine
-    if (filters?.isMine === true) {
+    // Filter by isMine and/or isFollowingRoom
+    if (filters?.isMine === true && filters?.isFollowingRoom === true) {
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        const userObjId = new mongoose.Types.ObjectId(userId);
+        const [followedRoomDocs, followedHostDocs] = await Promise.all([
+          RoomFollow.find({ userId: userObjId }).select('roomId'),
+          Follow.find({ followerId: userObjId, status: 'accepted' }).select('followingId')
+        ]);
+        const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
+        const followedHostIds = followedHostDocs.map(doc => doc.followingId);
+
+        const orConditions: any[] = [
+          { hostId: userObjId }
+        ];
+        if (followedRoomIds.length > 0) {
+          orConditions.push({ _id: { $in: followedRoomIds } });
+        }
+        if (followedHostIds.length > 0) {
+          orConditions.push({ hostId: { $in: followedHostIds } });
+        }
+
+        query.$or = orConditions;
+      } else {
+        return {
+          streams: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0
+          }
+        };
+      }
+    } else if (filters?.isMine === true) {
       if (userId && mongoose.Types.ObjectId.isValid(userId)) {
         query.hostId = new mongoose.Types.ObjectId(userId);
       } else {
@@ -1160,14 +1192,25 @@ export class LiveStreamService {
           }
         };
       }
-    }
-
-    // Filter by isFollowingRoom
-    if (filters?.isFollowingRoom === true) {
+    } else if (filters?.isFollowingRoom === true) {
       if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        const followedRoomDocs = await RoomFollow.find({ userId: new mongoose.Types.ObjectId(userId) });
+        const userObjId = new mongoose.Types.ObjectId(userId);
+        const [followedRoomDocs, followedHostDocs] = await Promise.all([
+          RoomFollow.find({ userId: userObjId }).select('roomId'),
+          Follow.find({ followerId: userObjId, status: 'accepted' }).select('followingId')
+        ]);
         const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
-        if (followedRoomIds.length === 0) {
+        const followedHostIds = followedHostDocs.map(doc => doc.followingId);
+
+        const orConditions: any[] = [];
+        if (followedRoomIds.length > 0) {
+          orConditions.push({ _id: { $in: followedRoomIds } });
+        }
+        if (followedHostIds.length > 0) {
+          orConditions.push({ hostId: { $in: followedHostIds } });
+        }
+
+        if (orConditions.length === 0) {
           return {
             streams: [],
             pagination: {
@@ -1178,7 +1221,7 @@ export class LiveStreamService {
             }
           };
         }
-        query._id = { $in: followedRoomIds };
+        query.$or = orConditions;
       } else {
         return {
           streams: [],
@@ -1403,9 +1446,17 @@ export class LiveStreamService {
       ? (roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString())
       : '';
     const isMine = currentUserId && hostIdStr ? hostIdStr === currentUserId.toString() : false;
-    const isFollowingRoom = currentUserId && roomObj._id
-      ? !!(await RoomFollow.exists({ userId: new mongoose.Types.ObjectId(currentUserId), roomId: roomObj._id }))
-      : false;
+
+    let isFollowingRoom = false;
+    if (currentUserId) {
+      const isRoomFollowed = roomObj._id && mongoose.Types.ObjectId.isValid(roomObj._id)
+        ? !!(await RoomFollow.exists({ userId: new mongoose.Types.ObjectId(currentUserId), roomId: roomObj._id }))
+        : false;
+      const isHostFollowed = hostIdStr && mongoose.Types.ObjectId.isValid(hostIdStr)
+        ? !!(await Follow.exists({ followerId: new mongoose.Types.ObjectId(currentUserId), followingId: new mongoose.Types.ObjectId(hostIdStr), status: 'accepted' }))
+        : false;
+      isFollowingRoom = isRoomFollowed || isHostFollowed;
+    }
 
     roomObj.isMine = isMine;
     roomObj.isFollowingRoom = isFollowingRoom;

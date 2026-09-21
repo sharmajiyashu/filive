@@ -498,16 +498,24 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      const roomTypeParam = req.query.roomType?.toString()?.trim()?.toLowerCase();
+      const roomTypeParam = (req.query.roomType || req.query.type || req.query.room_type)?.toString()?.trim()?.toLowerCase();
       const roomType: 'livestream' | 'party_room' | 'all' =
-        roomTypeParam === 'party_room'
+        (roomTypeParam === 'party_room' || roomTypeParam === 'party')
           ? 'party_room'
           : roomTypeParam === 'all'
             ? 'all'
-            : 'livestream'; // Default strictly to livestream: party rooms will never mix into live stream list!
+            : 'livestream';
 
-      const isFollowingRoomParam = req.query.isFollowingRoom ?? req.query.following ?? req.query.followed;
-      const isMineParam = req.query.isMine ?? req.query.mine;
+      const tabParam = (req.query.tab || req.query.filter || req.query.category)?.toString()?.trim()?.toLowerCase();
+      let isFollowingRoomParam = req.query.isFollowingRoom ?? req.query.following ?? req.query.followed;
+      let isMineParam = req.query.isMine ?? req.query.mine;
+
+      if (tabParam === 'mine' || tabParam === 'my') {
+        isMineParam = true;
+        isFollowingRoomParam = true;
+      } else if (tabParam === 'following' || tabParam === 'follow') {
+        isFollowingRoomParam = true;
+      }
 
       const isFollowingRoom = isFollowingRoomParam !== undefined
         ? String(isFollowingRoomParam).toLowerCase() === 'true' || isFollowingRoomParam === true
