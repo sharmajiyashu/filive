@@ -107,6 +107,11 @@ export default (router: Router) => {
    *           enum: [friends, populated]
    *         description: Type of families to fetch
    *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search family by name
+   *       - in: query
    *         name: page
    *         schema:
    *           type: integer
@@ -122,12 +127,13 @@ export default (router: Router) => {
    */
   familyRouter.get('/hall', async (req: any, res: Response) => {
     try {
-      const { type, page, limit } = req.query;
+      const { type, page, limit, search } = req.query;
       const result = await familyService.getFamilyHall(
         req.user.id,
         type as any,
         page ? parseInt(page as string) : 1,
-        limit ? parseInt(limit as string) : 10
+        limit ? parseInt(limit as string) : 10,
+        search as string
       );
       return ResponseWrapper.success(res, result, 'Family hall fetched successfully');
     } catch (error: any) {

@@ -78,6 +78,12 @@ export default (router: Router) => {
    *                             type: boolean
    *                           isPinned:
    *                             type: boolean
+   *                           isSystem:
+   *                             type: boolean
+   *                           isSupport:
+   *                             type: boolean
+   *                           isOfficial:
+   *                             type: boolean
    *                           lastSeenAt:
    *                             type: string
    *                             format: date-time

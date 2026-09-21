@@ -98,6 +98,7 @@ export class RankingService {
           countryDetail: levels.country || user.countryId,
           friendsCount,
           coins: user.coins,
+          beans: user.beans || 0,
           wealthCoins: user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0),
           charmCoins: user.charmCoins || 0,
           level: hideWealth ? null : levels.level,

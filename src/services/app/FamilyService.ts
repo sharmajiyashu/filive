@@ -98,15 +98,20 @@ export class FamilyService {
     return updatedFamily;
   }
 
-  async getFamilyHall(userId: string, type?: 'friends' | 'populated', page: number = 1, limit: number = 10) {
+  async getFamilyHall(userId: string, type?: 'friends' | 'populated', page: number = 1, limit: number = 10, search?: string) {
     const skip = (page - 1) * limit;
     const userJoinedFamilies = await FamilyMember.find({ userId }).distinct('familyId');
     const userJoinedSet = new Set(userJoinedFamilies.map(id => id.toString()));
 
+    const searchQuery: any = {};
+    if (search && search.trim()) {
+      searchQuery.name = { $regex: search.trim(), $options: 'i' };
+    }
+
     if (type === 'populated') {
-      const populatedRaw = await Family.find().populate('image').sort({ memberCount: -1 }).skip(skip).limit(limit);
-      const total = await Family.countDocuments();
-      
+      const populatedRaw = await Family.find(searchQuery).populate('image').sort({ memberCount: -1 }).skip(skip).limit(limit);
+      const total = await Family.countDocuments(searchQuery);
+
       const populated = await Promise.all(populatedRaw.map(async (f) => {
         const stats = await this.getFamilyGenderStats(f._id.toString());
         const familyObj = f.toObject();
@@ -132,9 +137,10 @@ export class FamilyService {
     if (type === 'friends') {
       const following = await Follow.find({ followerId: userId, status: 'accepted' }).distinct('followingId');
       const friendFamilyIds = await FamilyMember.find({ userId: { $in: following } }).distinct('familyId');
-      
-      const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds } }).populate('image').skip(skip).limit(limit);
-      const total = await Family.countDocuments({ _id: { $in: friendFamilyIds } });
+
+      const query = { _id: { $in: friendFamilyIds }, ...searchQuery };
+      const friendsFamilyRaw = await Family.find(query).populate('image').skip(skip).limit(limit);
+      const total = await Family.countDocuments(query);
 
       const friendsFamily = await Promise.all(friendsFamilyRaw.map(async (f) => {
         const stats = await this.getFamilyGenderStats(f._id.toString());
@@ -159,10 +165,10 @@ export class FamilyService {
     }
 
     // Default: return top 10 of each without full pagination metadata
-    const populatedRaw = await Family.find().populate('image').sort({ memberCount: -1 }).limit(10);
+    const populatedRaw = await Family.find(searchQuery).populate('image').sort({ memberCount: -1 }).limit(10);
     const following = await Follow.find({ followerId: userId, status: 'accepted' }).distinct('followingId');
     const friendFamilyIds = await FamilyMember.find({ userId: { $in: following } }).distinct('familyId');
-    const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds } }).populate('image').limit(10);
+    const friendsFamilyRaw = await Family.find({ _id: { $in: friendFamilyIds }, ...searchQuery }).populate('image').limit(10);
 
     const populated = await Promise.all(populatedRaw.map(async (f) => {
       const stats = await this.getFamilyGenderStats(f._id.toString());

@@ -11,6 +11,62 @@ import { assertUsersNotBlocked } from '../../utils/blockCheck';
 export class ChatService {
   constructor() { }
 
+  async resolveSystemUser() {
+    const envId = process.env.SYSTEM_CHAT_USER_ID;
+    if (envId && mongoose.Types.ObjectId.isValid(envId)) {
+      const exists = await User.findById(envId).populate('profileImage');
+      if (exists) return exists;
+    }
+
+    let systemUser = await User.findOne({
+      $or: [
+        { email: 'system@filive.com' },
+        { name: 'System Message' },
+        { name: 'System Messages' }
+      ]
+    }).populate('profileImage');
+
+    if (!systemUser) {
+      systemUser = await User.create({
+        name: 'System Message',
+        email: 'system@filive.com',
+        userRole: 'admin',
+        isVerified: true,
+        bio: 'Official System Messages & Announcements'
+      });
+    }
+
+    return systemUser;
+  }
+
+  async resolveSupportUser() {
+    const envId = process.env.SUPPORT_CHAT_USER_ID;
+    if (envId && mongoose.Types.ObjectId.isValid(envId)) {
+      const exists = await User.findById(envId).populate('profileImage');
+      if (exists) return exists;
+    }
+
+    let supportUser = await User.findOne({
+      $or: [
+        { email: 'support@filive.com' },
+        { name: 'Contact Support' },
+        { name: 'Customer Support' }
+      ]
+    }).populate('profileImage');
+
+    if (!supportUser) {
+      supportUser = await User.create({
+        name: 'Contact Support',
+        email: 'support@filive.com',
+        userRole: 'admin',
+        isVerified: true,
+        bio: 'Official Customer Support & Help Desk'
+      });
+    }
+
+    return supportUser;
+  }
+
   async getUserChats(
     userId: string,
     page: number = 1,
@@ -20,6 +76,56 @@ export class ChatService {
   ) {
     const skip = (page - 1) * limit;
     const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    let systemUser: any = null;
+    let supportUser: any = null;
+    let systemUserIdStr = '';
+    let supportUserIdStr = '';
+
+    try {
+      [systemUser, supportUser] = await Promise.all([
+        this.resolveSystemUser(),
+        this.resolveSupportUser()
+      ]);
+      systemUserIdStr = systemUser?._id?.toString() || '';
+      supportUserIdStr = supportUser?._id?.toString() || '';
+
+      if (systemUserIdStr && systemUserIdStr !== userId) {
+        const sysChat = await this.getOrCreateSingleChat(userId, systemUserIdStr);
+        if (sysChat) {
+          const msgCount = await Message.countDocuments({ chatId: sysChat._id, deletedAt: { $exists: false } });
+          if (msgCount === 0) {
+            await Message.create({
+              chatId: sysChat._id,
+              senderId: systemUser._id,
+              type: 'system',
+              text: 'Welcome to Filive! Official system notifications and announcements will appear here.',
+              seenBy: [],
+              reactions: []
+            });
+          }
+        }
+      }
+
+      if (supportUserIdStr && supportUserIdStr !== userId) {
+        const supChat = await this.getOrCreateSingleChat(userId, supportUserIdStr);
+        if (supChat) {
+          const msgCount = await Message.countDocuments({ chatId: supChat._id, deletedAt: { $exists: false } });
+          if (msgCount === 0) {
+            await Message.create({
+              chatId: supChat._id,
+              senderId: supportUser._id,
+              type: 'text',
+              text: 'Hello! Welcome to Contact Support. How can we help you today?',
+              seenBy: [],
+              reactions: []
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking fallback
+    }
 
     const chats = await Chat.find({
       'participants.userId': userObjectId,
@@ -195,6 +301,19 @@ export class ChatService {
           return pObj;
         });
 
+        const isSystem = Boolean(systemUserIdStr && otherParticipantIdStr === systemUserIdStr);
+        const isSupport = Boolean(supportUserIdStr && otherParticipantIdStr === supportUserIdStr);
+
+        if (isSystem) {
+          name = 'System Message';
+          isOnline = true;
+          userStatus = 'online';
+        } else if (isSupport) {
+          name = 'Contact Support';
+          isOnline = true;
+          userStatus = 'online';
+        }
+
         return {
           id: chat._id,
           type: chat.type,
@@ -203,6 +322,9 @@ export class ChatService {
           role: participantInfo ? participantInfo.role : 'member',
           isMuted: participantInfo ? participantInfo.isMuted : false,
           isPinned: participantInfo ? participantInfo.isPinned : false,
+          isSystem,
+          isSupport,
+          isOfficial: isSystem || isSupport,
           lastSeenAt: participantInfo ? participantInfo.lastSeenAt : null,
           archiveAt: participantInfo ? participantInfo.archiveAt : null,
           unreadCount,
@@ -299,14 +421,20 @@ export class ChatService {
               ? 'You have blocked this user'
               : null;
 
+          const isSystem = Boolean(systemUserIdStr && globalUserIdStr === systemUserIdStr);
+          const isSupport = Boolean(supportUserIdStr && globalUserIdStr === supportUserIdStr);
+
           data.push({
             id: existingSingleChat ? existingSingleChat._id : (null as any),
             type: 'private',
-            name: globalUser.name || globalUser.email || 'User',
+            name: isSystem ? 'System Message' : isSupport ? 'Contact Support' : (globalUser.name || globalUser.email || 'User'),
             mediaUrl: globalUser.profileImage ? (globalUser.profileImage as any).url : '',
             role: 'member',
             isMuted: false,
             isPinned: false,
+            isSystem,
+            isSupport,
+            isOfficial: isSystem || isSupport,
             lastSeenAt: null,
             archiveAt: null,
             unreadCount: 0,
@@ -351,6 +479,23 @@ export class ChatService {
     }
 
     filteredData.sort((a, b) => {
+      // 1. System Message always top
+      const aIsSystem = a.isSystem || (systemUserIdStr && a.userId === systemUserIdStr);
+      const bIsSystem = b.isSystem || (systemUserIdStr && b.userId === systemUserIdStr);
+      if (aIsSystem && !bIsSystem) return -1;
+      if (!aIsSystem && bIsSystem) return 1;
+
+      // 2. Contact Support always second
+      const aIsSupport = a.isSupport || (supportUserIdStr && a.userId === supportUserIdStr);
+      const bIsSupport = b.isSupport || (supportUserIdStr && b.userId === supportUserIdStr);
+      if (aIsSupport && !bIsSupport) return -1;
+      if (!aIsSupport && bIsSupport) return 1;
+
+      // 3. Pinned chats
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
+      // 4. Latest activity
       const dateA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : new Date(a.updatedAt).getTime();
       const dateB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : new Date(b.updatedAt).getTime();
       return dateB - dateA;
