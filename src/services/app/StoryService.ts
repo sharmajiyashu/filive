@@ -10,6 +10,8 @@ import mongoose from 'mongoose';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
+import { resolveCountryUserIds } from '../../utils/countryFilter';
 
 @Service()
 export class StoryService {
@@ -50,12 +52,18 @@ export class StoryService {
       content: contentText,
       images: mediaIds,
       tags: allTags,
-      mentions: mentions,
+      mentions
     });
     return story;
   }
 
-  public async getExploreStories(currentUserId?: string, page: number = 1, limit: number = 10, filter?: string) {
+  public async getExploreStories(
+    currentUserId?: string,
+    page: number = 1,
+    limit: number = 10,
+    filter?: string,
+    country?: string
+  ) {
     let query: any = { isBlocked: { $ne: true } };
 
     if (currentUserId) {
@@ -72,6 +80,21 @@ export class StoryService {
 
       if (excludedUserIds.length > 0) {
         query.userId = { $nin: excludedUserIds };
+      }
+    }
+
+    if (country) {
+      const userIdsInCountry = await resolveCountryUserIds(country);
+      if (userIdsInCountry) {
+        if (query.userId && query.userId.$in) {
+          const currentIn = query.userId.$in.map((id: any) => id.toString());
+          const filtered = userIdsInCountry.filter((id) => currentIn.includes(id.toString()));
+          query.userId.$in = filtered;
+        } else if (query.userId && query.userId.$nin) {
+          query.userId = { $in: userIdsInCountry, $nin: query.userId.$nin };
+        } else {
+          query.userId = { $in: userIdsInCountry };
+        }
       }
     }
 
@@ -107,7 +130,7 @@ export class StoryService {
     const stories = await Story.find(query)
       .populate({
         path: 'userId',
-        select: 'userId name email profileImage bio dob gender country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
+        select: 'userId name email profileImage bio dob gender nationality country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
         populate: [{ path: 'profileImage' }, { path: 'countryId' }]
       })
       .populate('images')
@@ -146,31 +169,36 @@ export class StoryService {
       followingUserIds = new Set(following.map(f => f.followingId.toString()));
     }
 
-    const storiesWithStatus = stories.map(story => {
+    const storiesWithStatus = await Promise.all(stories.map(async story => {
       const storyObj = story.toObject();
       const authorId = story.userId ? ((story.userId as any)._id || story.userId) : null;
       const isFollowing = (currentUserId && authorId) ? followingUserIds.has(authorId.toString()) : false;
 
       let userObj = storyObj.userId as any;
+      let formattedUser = userObj;
       if (userObj && typeof userObj === 'object') {
         const isOnline = userObj.lastLoginAt ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-        userObj = {
+        formattedUser = await attachUserCountryAndAge({
           ...userObj,
           isOnline,
           status: isOnline ? 'online' : 'offline',
           isFollowing
-        };
+        });
       }
 
       return {
         ...storyObj,
-        userId: userObj,
-        user: userObj,
+        userId: formattedUser,
+        user: formattedUser,
+        country: formattedUser?.country || null,
+        countryId: formattedUser?.countryId || null,
+        countryCode: formattedUser?.countryCode || null,
+        country_flag: formattedUser?.country_flag || null,
         isLiked: currentUserId ? likedStoryIds.has(story._id.toString()) : false,
         isCommented: currentUserId ? commentedStoryIds.has(story._id.toString()) : false,
         isFollowing
       };
-    });
+    }));
 
     return {
       stories: storiesWithStatus,
@@ -200,7 +228,7 @@ export class StoryService {
   private commentUserPopulate() {
     return {
       path: 'userId',
-      select: 'userId name email profileImage bio dob gender country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
+      select: 'userId name email profileImage bio dob gender nationality country countryId height weight maritalStatus isPremium location isVerified lastLoginAt',
       populate: [{ path: 'profileImage' }, { path: 'countryId' }]
     };
   }
@@ -213,20 +241,20 @@ export class StoryService {
     };
   }
 
-  private formatCommentUser(userObj: any, isFollowing: boolean) {
+  private async formatCommentUser(userObj: any, isFollowing: boolean) {
     if (!userObj || typeof userObj !== 'object') return userObj;
     const isOnline = userObj.lastLoginAt
       ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
       : false;
-    return {
+    return attachUserCountryAndAge({
       ...userObj,
       isOnline,
       status: isOnline ? 'online' : 'offline',
       isFollowing
-    };
+    });
   }
 
-  private formatComment(
+  private async formatComment(
     comment: any,
     currentUserId?: string,
     followingUserIds?: Set<string>,
@@ -237,7 +265,7 @@ export class StoryService {
     const commentObj = comment.toObject ? comment.toObject() : { ...comment };
     const authorId = comment.userId?._id?.toString() || commentObj.userId?._id?.toString();
     const isFollowing = !!(currentUserId && authorId && followingUserIds?.has(authorId));
-    const userObj = this.formatCommentUser(commentObj.userId, isFollowing);
+    const userObj = await this.formatCommentUser(commentObj.userId, isFollowing);
     const replyToUser = commentObj.replyToUserId && typeof commentObj.replyToUserId === 'object'
       ? commentObj.replyToUserId
       : null;
@@ -323,9 +351,9 @@ export class StoryService {
 
     const replies = parentIds.length > 0
       ? await Comment.find({ storyId, parentCommentId: { $in: parentIds } })
-          .populate(this.commentUserPopulate())
-          .populate(this.replyToUserPopulate())
-          .sort({ createdAt: 1 })
+        .populate(this.commentUserPopulate())
+        .populate(this.replyToUserPopulate())
+        .sort({ createdAt: 1 })
       : [];
 
     const allComments = [...comments, ...replies];
@@ -364,18 +392,20 @@ export class StoryService {
     for (const reply of replies) {
       const parentId = reply.parentCommentId?.toString();
       if (!parentId) continue;
-      const formatted = this.formatComment(reply, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
+      const formatted = await this.formatComment(reply, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
       const list = repliesByParent.get(parentId) || [];
       list.push(formatted);
       repliesByParent.set(parentId, list);
     }
 
-    const commentsWithFullStatus = comments.map(comment => {
-      const formatted = this.formatComment(comment, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
-      formatted.replies = repliesByParent.get(comment._id.toString()) || [];
-      formatted.repliesCount = formatted.replies.length;
-      return formatted;
-    });
+    const commentsWithFullStatus = await Promise.all(
+      comments.map(async (comment) => {
+        const formatted = await this.formatComment(comment, currentUserId, followingUserIds, likedCommentIds, isCommented, isStoryLiked);
+        formatted.replies = repliesByParent.get(comment._id.toString()) || [];
+        formatted.repliesCount = formatted.replies.length;
+        return formatted;
+      })
+    );
 
     return {
       comments: commentsWithFullStatus,

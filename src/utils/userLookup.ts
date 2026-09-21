@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Country from '../models/Country';
 import User from '../models/User';
 import { LevelService } from '../services/app/LevelService';
@@ -48,28 +49,66 @@ function escapeRegex(value: string) {
 }
 
 export async function resolveCountryObject(user: InstanceType<typeof User> | Record<string, any>) {
-  const populated = user.countryId as any;
+  if (!user) return null;
+  const rawUser = (user as any) || {};
+
+  const populated = rawUser.countryId as any;
   if (populated && typeof populated === 'object' && populated._id && (populated.name || populated.code || populated.flag)) {
     return formatCountryObject(populated);
   }
 
-  if (user.country && typeof user.country === 'object' && (user.country._id || user.country.code || user.country.name)) {
-    return formatCountryObject(user.country);
+  if (rawUser.country && typeof rawUser.country === 'object' && (rawUser.country._id || rawUser.country.code || rawUser.country.name)) {
+    return formatCountryObject(rawUser.country);
   }
 
-  if (user.countryId) {
-    const countryId = typeof user.countryId === 'object' ? user.countryId._id || user.countryId : user.countryId;
-    const country = await Country.findById(countryId);
-    if (country) return formatCountryObject(country);
+  if (rawUser.countryId) {
+    const countryId = typeof rawUser.countryId === 'object' ? rawUser.countryId._id || rawUser.countryId : rawUser.countryId;
+    if (mongoose.Types.ObjectId.isValid(countryId)) {
+      const country = await Country.findById(countryId);
+      if (country) return formatCountryObject(country);
+    }
   }
 
-  const countrySignal = typeof user.country === 'string' ? user.country.trim() : '';
+  const countrySignal = typeof rawUser.country === 'string' ? rawUser.country.trim() : '';
   if (countrySignal) {
     const pattern = new RegExp(`^${escapeRegex(countrySignal)}$`, 'i');
     const country = await Country.findOne({
       $or: [{ code: pattern }, { name: pattern }],
     });
     if (country) return formatCountryObject(country);
+  }
+
+  const nationalitySignal = typeof rawUser.nationality === 'string' ? rawUser.nationality.trim() : '';
+  if (nationalitySignal) {
+    const pattern = new RegExp(`^${escapeRegex(nationalitySignal)}$`, 'i');
+    const country = await Country.findOne({
+      $or: [{ code: pattern }, { name: pattern }],
+    });
+    if (country) return formatCountryObject(country);
+  }
+
+  const countryCodeSignal = typeof rawUser.countryCode === 'string' ? rawUser.countryCode.trim() : '';
+  if (countryCodeSignal) {
+    const pattern = new RegExp(`^${escapeRegex(countryCodeSignal)}$`, 'i');
+    const country = await Country.findOne({
+      $or: [{ code: pattern }, { name: pattern }],
+    });
+    if (country) return formatCountryObject(country);
+  }
+
+  if (countrySignal || nationalitySignal || countryCodeSignal) {
+    const name = countrySignal || nationalitySignal || countryCodeSignal;
+    const code = countryCodeSignal || (name.length === 2 ? name.toUpperCase() : null);
+    return {
+      _id: null,
+      name,
+      code,
+      flag: rawUser.country_flag || null,
+      phoneCode: null,
+      countryCode: code,
+      currencySymbol: null,
+      currencyCode: null,
+    };
   }
 
   return null;
@@ -88,12 +127,13 @@ export async function attachUserCountryAndAge<T extends Record<string, any>>(
 ): Promise<T & UserCountryAgeFields> {
   const payload = (user ?? {}) as T & UserCountryAgeFields;
   if (!user) return payload;
+  const rawUser = user as any;
   const country = await resolveCountryObject(user);
   payload.country = country;
   payload.countryId = country;
-  payload.countryCode = country?.code ?? null;
-  payload.country_flag = country?.flag ?? null;
-  payload.age = ageFromDob(user.dob);
+  payload.countryCode = country?.code ?? (typeof rawUser.countryCode === 'string' ? rawUser.countryCode : null);
+  payload.country_flag = country?.flag ?? (typeof rawUser.country_flag === 'string' ? rawUser.country_flag : null);
+  payload.age = ageFromDob(rawUser.dob);
   return payload;
 }
 

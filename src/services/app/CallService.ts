@@ -10,6 +10,7 @@ import { AppSettingService } from '../common/AppSettingService';
 import { AgencyCommissionService } from './AgencyCommissionService';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import { resolveCountryUserFilter } from '../../utils/countryFilter';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
 
 @Service()
 export class CallService {
@@ -785,7 +786,7 @@ export class CallService {
     query._id = { $nin: ninIds };
 
     const hosts = await User.find(query)
-      .select('userId name profileImage email bio isPremium gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
+      .select('userId name profileImage email bio isPremium gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
       .populate('profileImage')
       .populate('countryId');
 
@@ -794,18 +795,33 @@ export class CallService {
       io = Container.get('socket');
     } catch (e) { }
 
-    const formattedHosts = hosts.map((h: any) => {
+    const formattedHosts = await Promise.all(hosts.map(async (h: any) => {
       const hObj = h.toObject ? h.toObject() : h;
       const hostId = hObj._id?.toString();
       const socketOnline = (io && hostId) ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
       const recentLogin = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
       const isOnline = socketOnline || recentLogin;
-      return {
+
+      const voiceCallPrice = Number(hObj.voiceCallPrice || hObj.audioCallChargePerMinute || 0);
+      const videoCallPrice = Number(hObj.videoCallPrice || hObj.videoCallChargePerMinute || 0);
+      const audioCallChargePerMinute = voiceCallPrice;
+      const videoCallChargePerMinute = videoCallPrice;
+      const currentRate = callType === 'voice' ? voiceCallPrice : (callType === 'video' ? videoCallPrice : (videoCallPrice || voiceCallPrice));
+
+      return attachUserCountryAndAge({
         ...hObj,
+        voiceCallPrice,
+        videoCallPrice,
+        audioCallPrice: voiceCallPrice,
+        audioCallChargePerMinute,
+        videoCallChargePerMinute,
+        voiceRatePerMinute: voiceCallPrice,
+        videoRatePerMinute: videoCallPrice,
+        ratePerMinute: currentRate,
         isOnline,
         status: isOnline ? 'online' : 'offline',
-      };
-    });
+      });
+    }));
 
     formattedHosts.sort((a, b) => {
       if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;

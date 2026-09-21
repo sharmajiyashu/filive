@@ -17,6 +17,7 @@ import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../util
 import { LevelService } from './LevelService';
 import { withDefaultAlbum } from './profileDefaults';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
+import { resolveCountryUserFilter } from '../../utils/countryFilter';
 
 @Service()
 export class UserService {
@@ -59,38 +60,10 @@ export class UserService {
     }
 
     // Country filter
-    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
-      const targetCountry = country.trim();
-      const countryConditions: any[] = [];
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
-
-      const matchingCountries = await Country.find({ $or: countryConditions });
-      const countryObjIds = matchingCountries.map(c => c._id);
-      const countryNames = matchingCountries.map(c => c.name);
-      const countryCodes = matchingCountries.map(c => c.code);
-
-      const userQueryConditions: any[] = [];
-      if (countryObjIds.length > 0) {
-        userQueryConditions.push({ countryId: { $in: countryObjIds } });
-      }
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
-      if (countryNames.length > 0) {
-        userQueryConditions.push({ country: { $in: countryNames } });
-      }
-      if (countryCodes.length > 0) {
-        userQueryConditions.push({ country: { $in: countryCodes } });
-      }
-
+    const countryFilter = await resolveCountryUserFilter(country);
+    if (countryFilter) {
       query.$and = query.$and || [];
-      query.$and.push({ $or: userQueryConditions });
+      query.$and.push(countryFilter);
     }
 
     if (search && search.trim() !== '') {
@@ -121,7 +94,7 @@ export class UserService {
 
     const total = await User.countDocuments(query);
     const userDocs = await User.find(query)
-      .select('userId name email mobile profileImage bio location isPremium selfIntroduce height country countryId maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt createdAt referralCode referCode')
+      .select('userId name email mobile profileImage bio location isPremium gender dob selfIntroduce height nationality country countryId maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute lastLoginAt createdAt referralCode referCode')
       .populate('profileImage')
       .populate('countryId')
       .sort(sortOptions)
@@ -132,9 +105,19 @@ export class UserService {
       const uObj = u.toObject ? u.toObject() : u;
       const isOnline = uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
       const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
+      const voiceCallPrice = Number(uObj.voiceCallPrice || uObj.audioCallChargePerMinute || 0);
+      const videoCallPrice = Number(uObj.videoCallPrice || uObj.videoCallChargePerMinute || 0);
       return attachUserCountryAndAge({
         ...uObj,
         isOnline,
+        voiceCallPrice,
+        videoCallPrice,
+        audioCallPrice: voiceCallPrice,
+        audioCallChargePerMinute: voiceCallPrice,
+        videoCallChargePerMinute: videoCallPrice,
+        voiceRatePerMinute: voiceCallPrice,
+        videoRatePerMinute: videoCallPrice,
+        ratePerMinute: videoCallPrice || voiceCallPrice,
         referralCode: refCode,
         referCode: refCode
       });

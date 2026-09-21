@@ -5,6 +5,7 @@ import User from '../../models/User';
 import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 import { CallService } from './CallService';
+import { attachUserCountryAndAge } from '../../utils/userLookup';
 
 export type RandomCallType = 'voice' | 'video';
 
@@ -222,16 +223,33 @@ export class RandomMatchService {
     }
 
     const hosts = await User.find({ _id: { $in: hostIds }, gender: 'Female' })
-      .select('userId name profileImage gender country countryId enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice lastLoginAt')
+      .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
       .populate('profileImage')
       .populate('countryId');
 
-    const shuffled = hosts
-      .map((h: any) => {
+    const formattedHosts = await Promise.all(
+      hosts.map(async (h: any) => {
         const obj = h.toObject ? h.toObject() : h;
-        return { ...obj, isOnline: true, status: 'online' };
+        const voiceCallPrice = Number(obj.voiceCallPrice || obj.audioCallChargePerMinute || 0);
+        const videoCallPrice = Number(obj.videoCallPrice || obj.videoCallChargePerMinute || 0);
+        const currentRate = callType === 'voice' ? voiceCallPrice : (callType === 'video' ? videoCallPrice : (videoCallPrice || voiceCallPrice));
+        return attachUserCountryAndAge({
+          ...obj,
+          voiceCallPrice,
+          videoCallPrice,
+          audioCallPrice: voiceCallPrice,
+          audioCallChargePerMinute: voiceCallPrice,
+          videoCallChargePerMinute: videoCallPrice,
+          voiceRatePerMinute: voiceCallPrice,
+          videoRatePerMinute: videoCallPrice,
+          ratePerMinute: currentRate,
+          isOnline: true,
+          status: 'online',
+        });
       })
-      .sort(() => Math.random() - 0.5);
+    );
+
+    const shuffled = formattedHosts.sort(() => Math.random() - 0.5);
 
     return { data: shuffled, total: shuffled.length };
   }

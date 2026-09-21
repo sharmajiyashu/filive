@@ -56,7 +56,7 @@ export default (router: Router) => {
    * @swagger
    * /app/stories/explore:
    *   get:
-   *     summary: Explore stories with filter (explore, following, popular)
+   *     summary: Explore stories with filter (explore, following, popular) and optional country filter
    *     tags: [Stories]
    *     parameters:
    *       - in: query
@@ -77,6 +77,21 @@ export default (router: Router) => {
    *         schema:
    *           type: string
    *           enum: [explore, following, popular]
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *         description: Filter stories by country (name, ISO code, or countryId)
+   *       - in: query
+   *         name: countryId
+   *         schema:
+   *           type: string
+   *         description: Filter stories by countryId
+   *       - in: query
+   *         name: countryCode
+   *         schema:
+   *           type: string
+   *         description: Filter stories by ISO country code
    *     responses:
    *       200:
    *         description: List of stories
@@ -86,8 +101,9 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const filter = (req.query.filter || req.query.type)?.toString();
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
       const userId = req.user?.id;
-      const result = await storyService.getExploreStories(userId, page, limit, filter);
+      const result = await storyService.getExploreStories(userId, page, limit, filter, country);
       return ResponseWrapper.success(res, result, 'Stories fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
