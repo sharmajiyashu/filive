@@ -5,6 +5,7 @@ export interface IRoomSetting extends Document {
   maxSeats: number;
   admins: mongoose.Types.ObjectId[];
   roomTheme?: mongoose.Types.ObjectId;
+  roomPhoto?: mongoose.Types.ObjectId;
   announcement?: string;
   muteAllSeats?: boolean;
   gameId?: mongoose.Types.ObjectId;
@@ -18,6 +19,7 @@ const RoomSettingSchema: Schema = new Schema(
     maxSeats: { type: Number, default: 4 },
     admins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
+    roomPhoto: { type: Schema.Types.ObjectId, ref: 'Media' },
     announcement: { type: String, default: '' },
     muteAllSeats: { type: Boolean, default: false },
     gameId: { type: Schema.Types.ObjectId, ref: 'Game' },

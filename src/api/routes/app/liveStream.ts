@@ -5,6 +5,7 @@ import { RoomFollowService } from '../../../services/app/RoomFollowService';
 import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import upload from '../../middleware/upload';
 import Room from '../../../models/Room';
 import User from '../../../models/User';
 import CoinHistory from '../../../models/CoinHistory';
@@ -35,6 +36,8 @@ export default (router: Router) => {
    *             properties:
    *               title:
    *                 type: string
+   *               roomPhoto:
+   *                 type: string
    *               roomType:
    *                 type: string
    *                 enum: [livestream, party_room]
@@ -47,16 +50,17 @@ export default (router: Router) => {
    *       200:
    *         description: Livestream/Room started successfully
    */
-  liveRouter.post('/start', async (req: any, res: Response) => {
+  liveRouter.post('/start', upload.single('roomPhoto'), async (req: any, res: Response) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { title, roomType, partyRoomOption, roomTheme, announcement, gameId } = req.body;
+      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage;
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId, roomPhoto, req.file);
       AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
@@ -86,6 +90,8 @@ export default (router: Router) => {
    *                 type: string
    *               title:
    *                 type: string
+   *               roomPhoto:
+   *                 type: string
    *               roomTheme:
    *                 type: string
    *               partyRoomOption:
@@ -99,11 +105,12 @@ export default (router: Router) => {
    *       200:
    *         description: Room details updated successfully
    */
-  liveRouter.post('/edit', async (req: any, res: Response) => {
+  liveRouter.post('/edit', upload.single('roomPhoto'), async (req: any, res: Response) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       let { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats } = req.body;
+      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage;
 
       if (!channelName) {
         AppLogger.info(`[HTTP POST /app/room/edit] channelName not provided. Fetching latest room for hostId=${userId}`);
@@ -118,7 +125,7 @@ export default (router: Router) => {
         throw new Error('channelName is required, or you must have started a room before');
       }
 
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats });
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats, roomPhoto }, req.file);
 
       // Emit room_updated socket event
       try {

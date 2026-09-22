@@ -69,6 +69,19 @@ export interface IUser extends Document {
   isCoinseller: boolean;
   isCoinsellerActive: boolean;
   coinSellerCoins: number;
+  coinSellerPaymentMethods?: {
+    upiId?: string;
+    qrCode?: mongoose.Types.ObjectId;
+    bankDetails?: {
+      accountNumber?: string;
+      ifscCode?: string;
+      bankName?: string;
+      accountHolderName?: string;
+      accountType?: string;
+    };
+    acceptedMethods?: string[];
+    paymentInstructions?: string;
+  };
   videoVerificationVideo?: mongoose.Types.ObjectId;
   videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
   referredBy?: mongoose.Types.ObjectId;
@@ -157,6 +170,19 @@ const UserSchema: Schema = new Schema(
     isCoinseller: { type: Boolean, default: false },
     isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },
+    coinSellerPaymentMethods: {
+      upiId: { type: String },
+      qrCode: { type: Schema.Types.ObjectId, ref: 'Media' },
+      bankDetails: {
+        accountNumber: { type: String },
+        ifscCode: { type: String },
+        bankName: { type: String },
+        accountHolderName: { type: String },
+        accountType: { type: String },
+      },
+      acceptedMethods: [{ type: String }],
+      paymentInstructions: { type: String },
+    },
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
     videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },

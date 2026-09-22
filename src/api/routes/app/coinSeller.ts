@@ -3,6 +3,7 @@ import Container from 'typedi';
 import { CoinSellerService } from '../../../services/app/CoinSellerService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import upload from '../../middleware/upload';
 
 export default (router: Router) => {
   const coinSellerService = Container.get(CoinSellerService);
@@ -279,6 +280,34 @@ export default (router: Router) => {
         phoneCode: req.body.phoneCode,
       });
       return ResponseWrapper.success(res, result, 'WhatsApp number updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  sellerRouter.put('/payment-methods', upload.single('qrCode'), async (req: any, res: Response) => {
+    try {
+      const result = await coinSellerService.updatePaymentMethods(req.user.id, req.body, req.file);
+      return ResponseWrapper.success(res, result, 'Payment methods updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  sellerRouter.get('/payment-methods', async (req: any, res: Response) => {
+    try {
+      const result = await coinSellerService.getPaymentMethods(req.user.id);
+      return ResponseWrapper.success(res, result, 'Payment methods retrieved successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  sellerRouter.get('/payment-methods/:sellerId', async (req: any, res: Response) => {
+    try {
+      const { sellerId } = req.params;
+      const result = await coinSellerService.getPaymentMethods(sellerId);
+      return ResponseWrapper.success(res, result, 'Seller payment methods retrieved successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

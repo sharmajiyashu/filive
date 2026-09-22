@@ -8,6 +8,7 @@ import User from '../../models/User';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 import { emitSocketError } from '../../utils/socketResponse';
+import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
 
 interface JoinLiveStreamData {
   channelName: string;
@@ -62,13 +63,24 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio location isPremium gender country')
-        .populate('profileImage');
+        .select('name userId profileImage bio location isPremium gender country activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .populate('profileImage')
+        .populate([...ACTIVE_STORE_POPULATE] as any);
+
+      if (userObj) {
+        await stripExpiredActiveStoreOnUser(userObj);
+      }
 
       const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
       if (userJson) {
         userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+        userJson.activeFrame = userJson.activeFrame ?? null;
+        userJson.frame = userJson.activeFrame ?? null;
+        userJson.activeEntity = userJson.activeEntity ?? null;
+        userJson.activeChatBubble = userJson.activeChatBubble ?? null;
+        userJson.activeTheme = userJson.activeTheme ?? null;
+        userJson.activeRide = userJson.activeRide ?? null;
       }
 
       const payload = {
@@ -78,6 +90,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         roomId: liveStream.roomId ?? null,
         room_id: liveStream.roomId ?? null,
         user: userJson || userObj,
+        activeFrame: userJson?.activeFrame ?? null,
+        frame: userJson?.activeFrame ?? null,
         viewerCount: liveStream.viewerCount,
         charmRankingDaily: userJson?.charmRankingDaily,
         totalGiftRevenue: liveStream?.totalGiftRevenue || 0,
@@ -209,12 +223,22 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio isPremium')
-        .populate('profileImage');
+        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide')
+        .populate('profileImage')
+        .populate([...ACTIVE_STORE_POPULATE] as any);
+
+      if (userObj) {
+        await stripExpiredActiveStoreOnUser(userObj);
+      }
+
       const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
       if (userJson) {
         userJson.userId = userJson.userId ?? null;
         userJson.profileImage = userJson.profileImage ?? null;
+        userJson.activeFrame = userJson.activeFrame ?? null;
+        userJson.frame = userJson.activeFrame ?? null;
+        userJson.activeEntity = userJson.activeEntity ?? null;
+        userJson.activeChatBubble = userJson.activeChatBubble ?? null;
       }
 
       const payload = {

@@ -14,6 +14,7 @@ export interface IRoom extends Document {
   roomId?: number;
   channelName: string;
   title: string;
+  roomPhoto?: mongoose.Types.ObjectId;
   status: 'live' | 'ended';
   token: string;
   viewerCount: number;
@@ -38,6 +39,7 @@ const RoomSchema: Schema = new Schema(
     roomId: { type: Number, unique: true, sparse: true },
     channelName: { type: String, required: true, unique: true },
     title: { type: String, required: true },
+    roomPhoto: { type: Schema.Types.ObjectId, ref: 'Media' },
     status: { type: String, enum: ['live', 'ended'], default: 'live' },
     token: { type: String, required: true },
     viewerCount: { type: Number, default: 0 },

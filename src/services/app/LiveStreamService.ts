@@ -12,6 +12,7 @@ import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 import { LevelService } from './LevelService';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
+import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
 
 const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins';
 
@@ -23,7 +24,7 @@ export class LiveStreamService {
     return {
       path: 'hostId',
       select: HOST_SAFE_SELECT,
-      populate: [{ path: 'profileImage' }, { path: 'countryId' }]
+      populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
     };
   }
 
@@ -31,7 +32,7 @@ export class LiveStreamService {
     return {
       path: 'seats.userId',
       select: HOST_SAFE_SELECT,
-      populate: [{ path: 'profileImage' }, { path: 'countryId' }]
+      populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
     };
   }
 
@@ -90,14 +91,16 @@ export class LiveStreamService {
     partyRoomOption: 'live' | 'chat' = 'live',
     roomThemeId?: string,
     announcement?: string,
-    gameId?: string
+    gameId?: string,
+    roomPhoto?: string | mongoose.Types.ObjectId,
+    file?: Express.Multer.File
   ) {
     const normalizedRoomType: 'livestream' | 'party_room' =
       roomType === 'party_room' ? 'party_room' : 'livestream';
     const normalizedPartyOption: 'live' | 'chat' =
       partyRoomOption === 'chat' ? 'chat' : 'live';
 
-    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${normalizedRoomType}, option=${normalizedPartyOption}, roomTheme=${roomThemeId}, announcement="${announcement}", gameId=${gameId}`);
+    AppLogger.info(`[LiveStreamService: startLiveStream] Entered. hostId=${hostId}, title="${title}", roomType=${normalizedRoomType}, option=${normalizedPartyOption}, roomTheme=${roomThemeId}, announcement="${announcement}", gameId=${gameId}, roomPhoto=${roomPhoto}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: startLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
@@ -121,6 +124,32 @@ export class LiveStreamService {
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) {
       roomSetting = await RoomSetting.create({ hostId });
+    }
+
+    // Resolve roomPhoto if file uploaded or id provided
+    let resolvedRoomPhotoId: mongoose.Types.ObjectId | undefined;
+    if (file) {
+      try {
+        const { CloudinaryService } = await import('../common/CloudinaryService');
+        const { MediaService } = await import('../common/MediaService');
+        const { MediaType } = await import('../../constants/enum');
+        const cloudinaryService = Container.get(CloudinaryService);
+        const mediaService = Container.get(MediaService);
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [file], 'rooms');
+        const media = await mediaService.createMedia(uploadResults[0]);
+        resolvedRoomPhotoId = media._id as mongoose.Types.ObjectId;
+      } catch (err: any) {
+        AppLogger.error(`[LiveStreamService: startLiveStream] Failed to upload roomPhoto: ${err?.message || err}`);
+      }
+    } else if (roomPhoto && mongoose.Types.ObjectId.isValid(String(roomPhoto))) {
+      resolvedRoomPhotoId = new mongoose.Types.ObjectId(String(roomPhoto));
+    }
+
+    if (!resolvedRoomPhotoId && roomSetting.roomPhoto) {
+      resolvedRoomPhotoId = roomSetting.roomPhoto;
+    }
+    if (!resolvedRoomPhotoId && hostUser.profileImage) {
+      resolvedRoomPhotoId = hostUser.profileImage as mongoose.Types.ObjectId;
     }
 
     // End any live room of the other type so livestream and party room never both stay live
@@ -153,6 +182,9 @@ export class LiveStreamService {
       AppLogger.info(`[LiveStreamService: startLiveStream] Host already has a ${normalizedRoomType}: channelName=${activeStream.channelName}, streamId=${activeStream._id}. Updating details and returning.`);
 
       activeStream.title = title;
+      if (resolvedRoomPhotoId) {
+        activeStream.roomPhoto = resolvedRoomPhotoId;
+      }
       const wasLive = activeStream.status === 'live';
       activeStream.status = 'live';
       activeStream.roomType = normalizedRoomType;
@@ -189,6 +221,10 @@ export class LiveStreamService {
       activeStream.endedAt = undefined;
       activeStream.totalGiftRevenue = 0;
       let settingsUpdated = false;
+      if (resolvedRoomPhotoId) {
+        roomSetting.roomPhoto = resolvedRoomPhotoId;
+        settingsUpdated = true;
+      }
       if (roomThemeId !== undefined && mongoose.Types.ObjectId.isValid(roomThemeId)) {
         roomSetting.roomTheme = new mongoose.Types.ObjectId(roomThemeId);
         settingsUpdated = true;
@@ -236,7 +272,8 @@ export class LiveStreamService {
 
       const populatedStream = await Room.findById(activeStream._id)
         .populate(this.hostPopulate())
-        .populate(this.seatPopulate());
+        .populate(this.seatPopulate())
+        .populate('roomPhoto');
       return await this.populateRoomWithDailyRank(populatedStream || activeStream, hostId);
     }
 
@@ -258,6 +295,10 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: startLiveStream] Agora token successfully generated.`);
 
     let settingsUpdated = false;
+    if (resolvedRoomPhotoId) {
+      roomSetting.roomPhoto = resolvedRoomPhotoId;
+      settingsUpdated = true;
+    }
     if (roomThemeId && mongoose.Types.ObjectId.isValid(roomThemeId)) {
       roomSetting.roomTheme = new mongoose.Types.ObjectId(roomThemeId);
       settingsUpdated = true;
@@ -287,6 +328,7 @@ export class LiveStreamService {
       hostId: new mongoose.Types.ObjectId(hostId),
       channelName,
       title,
+      roomPhoto: resolvedRoomPhotoId,
       roomType: normalizedRoomType,
       partyRoomOption: normalizedPartyOption,
       blockedUsers: [],
@@ -299,7 +341,8 @@ export class LiveStreamService {
     AppLogger.info(`[LiveStreamService: startLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
       .populate(this.hostPopulate())
-      .populate(this.seatPopulate());
+      .populate(this.seatPopulate())
+      .populate('roomPhoto');
 
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, hostId);
   }
@@ -310,7 +353,18 @@ export class LiveStreamService {
   public async updateLiveStream(
     hostId: string,
     channelName: string | undefined | null,
-    data: { title?: string; roomTheme?: string; partyRoomOption?: 'live' | 'chat'; announcement?: string; gameId?: string; muteAllSeats?: boolean; roomType?: 'livestream' | 'party_room'; maxSeats?: number }
+    data: {
+      title?: string;
+      roomTheme?: string;
+      partyRoomOption?: 'live' | 'chat';
+      announcement?: string;
+      gameId?: string;
+      muteAllSeats?: boolean;
+      roomType?: 'livestream' | 'party_room';
+      maxSeats?: number;
+      roomPhoto?: string;
+    },
+    file?: Express.Multer.File
   ) {
     AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     const query: any = { hostId: new mongoose.Types.ObjectId(hostId) };
@@ -350,6 +404,28 @@ export class LiveStreamService {
     }
 
     let settingsUpdated = false;
+
+    if (file) {
+      try {
+        const { CloudinaryService } = await import('../common/CloudinaryService');
+        const { MediaService } = await import('../common/MediaService');
+        const { MediaType } = await import('../../constants/enum');
+        const cloudinaryService = Container.get(CloudinaryService);
+        const mediaService = Container.get(MediaService);
+        const uploadResults = await cloudinaryService.uploadMedia(MediaType.image, [file], 'rooms');
+        const media = await mediaService.createMedia(uploadResults[0]);
+        liveStream.roomPhoto = media._id as mongoose.Types.ObjectId;
+        roomSetting.roomPhoto = media._id as mongoose.Types.ObjectId;
+        settingsUpdated = true;
+      } catch (err: any) {
+        AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to upload roomPhoto: ${err?.message || err}`);
+      }
+    } else if (data.roomPhoto && mongoose.Types.ObjectId.isValid(data.roomPhoto)) {
+      liveStream.roomPhoto = new mongoose.Types.ObjectId(data.roomPhoto);
+      roomSetting.roomPhoto = liveStream.roomPhoto;
+      settingsUpdated = true;
+    }
+
     if (data.roomType !== undefined || data.partyRoomOption !== undefined) {
       settingsUpdated = true;
     }
@@ -1466,22 +1542,45 @@ export class LiveStreamService {
     roomObj.viewerCount = roomObj.viewerCount || 0;
     roomObj.totalGiftRevenue = roomObj.totalGiftRevenue || 0;
 
+    let populatedRoomPhoto: any = roomObj.roomPhoto;
+    if (populatedRoomPhoto && mongoose.Types.ObjectId.isValid(populatedRoomPhoto) && !populatedRoomPhoto.url) {
+      try {
+        const MediaModel = mongoose.model('Media');
+        populatedRoomPhoto = await MediaModel.findById(populatedRoomPhoto);
+      } catch (e) {
+        // ignore
+      }
+    }
+
     if (roomObj.hostId) {
       const hostIdStr = roomObj.hostId._id ? roomObj.hostId._id.toString() : roomObj.hostId.toString();
       const roomSetting = await RoomSetting.findOne({ hostId: hostIdStr })
         .populate({ path: 'roomTheme', populate: { path: 'media' } })
-        .populate({ path: 'gameId', populate: { path: 'image' } });
+        .populate({ path: 'gameId', populate: { path: 'image' } })
+        .populate('roomPhoto');
       if (roomSetting) {
         roomObj.roomTheme = roomSetting.roomTheme ?? null;
         roomObj.gameId = roomSetting.gameId ?? null;
         roomObj.muteAllSeats = roomSetting.muteAllSeats;
         roomObj.announcement = roomSetting.announcement ?? null;
+        if (!populatedRoomPhoto && roomSetting.roomPhoto) {
+          populatedRoomPhoto = roomSetting.roomPhoto;
+        }
       } else {
         roomObj.roomTheme = roomObj.roomTheme ?? null;
         roomObj.gameId = roomObj.gameId ?? null;
         roomObj.announcement = roomObj.announcement ?? null;
       }
     }
+
+    if (!populatedRoomPhoto && roomObj.hostId?.profileImage) {
+      populatedRoomPhoto = roomObj.hostId.profileImage;
+    }
+
+    const finalPhoto = populatedRoomPhoto ? (populatedRoomPhoto.toObject ? populatedRoomPhoto.toObject() : populatedRoomPhoto) : null;
+    roomObj.roomPhoto = finalPhoto;
+    roomObj.room_photo = finalPhoto;
+    roomObj.photo = finalPhoto;
 
     if (currentUserId && roomObj.channelName) {
       const uid = this.agoraUidFromUserId(currentUserId);

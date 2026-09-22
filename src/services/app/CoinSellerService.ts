@@ -6,6 +6,9 @@ import CoinPackage from '../../models/CoinPackage';
 import { AppSettingService } from '../common/AppSettingService';
 import { LevelService } from './LevelService';
 import { ChatService } from './ChatService';
+import { MediaService } from '../common/MediaService';
+import { CloudinaryService } from '../common/CloudinaryService';
+import { MediaType } from '../../constants/enum';
 import { getUserCountryAndLevels, resolveCountryObject, toPlainObject } from '../../utils/userLookup';
 import Country from '../../models/Country';
 
@@ -13,7 +16,9 @@ import Country from '../../models/Country';
 export class CoinSellerService {
   constructor(
     @Inject() private levelService: LevelService,
-    @Inject() private chatService: ChatService
+    @Inject() private chatService: ChatService,
+    @Inject() private mediaService: MediaService,
+    @Inject() private cloudinaryService: CloudinaryService
   ) { }
 
 
@@ -181,8 +186,9 @@ export class CoinSellerService {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
 
     const seller = await User.findById(sellerId)
-      .select('userId name coins coinSellerCoins beans mobile whatsapp profileImage')
-      .populate('profileImage');
+      .select('userId name coins coinSellerCoins beans mobile whatsapp profileImage coinSellerPaymentMethods')
+      .populate('profileImage')
+      .populate('coinSellerPaymentMethods.qrCode');
     if (!seller) throw new Error('Seller not found');
 
     // 1. Calculate total coins sold
@@ -215,6 +221,13 @@ export class CoinSellerService {
       mobile: seller.mobile,
       whatsapp: seller.whatsapp,
       profileImage: seller.profileImage,
+      paymentMethods: seller.coinSellerPaymentMethods ? {
+        upiId: seller.coinSellerPaymentMethods.upiId || '',
+        qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
+        bankDetails: seller.coinSellerPaymentMethods.bankDetails || null,
+        acceptedMethods: seller.coinSellerPaymentMethods.acceptedMethods || [],
+        paymentInstructions: seller.coinSellerPaymentMethods.paymentInstructions || ''
+      } : null,
       availableBalance: seller.coinSellerCoins || 0,
       coinSellerBalance: seller.coinSellerCoins || 0,
       userCoinsBalance: seller.coins || 0,
@@ -493,9 +506,10 @@ export class CoinSellerService {
 
     const total = await User.countDocuments(query);
     const sellers = await User.find(query)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins createdAt')
+      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt')
       .populate('profileImage')
       .populate('countryId')
+      .populate('coinSellerPaymentMethods.qrCode')
       .skip(skip)
       .limit(limit)
       .lean();
@@ -563,6 +577,13 @@ export class CoinSellerService {
           buyersCount,
           dealsLast30Days,
           dealsLast30DaysFormatted: dealsFormatted,
+          paymentMethods: seller.coinSellerPaymentMethods ? {
+            upiId: seller.coinSellerPaymentMethods.upiId || '',
+            qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
+            bankDetails: seller.coinSellerPaymentMethods.bankDetails || null,
+            acceptedMethods: seller.coinSellerPaymentMethods.acceptedMethods || [],
+            paymentInstructions: seller.coinSellerPaymentMethods.paymentInstructions || ''
+          } : null,
         };
       })
     );
@@ -618,6 +639,163 @@ export class CoinSellerService {
       mobile: seller.mobile,
       countryCode: payload.countryCode || null,
       profileImage: seller.profileImage,
+    };
+  }
+
+  async updatePaymentMethods(
+    sellerId: string,
+    payload: {
+      upiId?: string;
+      qrCode?: string;
+      bankDetails?: {
+        accountNumber?: string;
+        ifscCode?: string;
+        bankName?: string;
+        accountHolderName?: string;
+        accountType?: string;
+      };
+      accountNumber?: string;
+      ifscCode?: string;
+      bankName?: string;
+      accountHolderName?: string;
+      accountType?: string;
+      acceptedMethods?: string[] | string;
+      paymentInstructions?: string;
+      instructions?: string;
+    },
+    file?: Express.Multer.File
+  ) {
+    const seller = await User.findById(sellerId).populate('profileImage').populate('coinSellerPaymentMethods.qrCode');
+    if (!seller) throw new Error('Seller not found');
+    if (!seller.isCoinseller) {
+      throw new Error('You are not authorized as a coin seller');
+    }
+
+    if (!seller.coinSellerPaymentMethods) {
+      seller.coinSellerPaymentMethods = {};
+    }
+
+    if (payload.upiId !== undefined) {
+      seller.coinSellerPaymentMethods.upiId = payload.upiId.trim();
+    }
+
+    if (file) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, [file], 'coin-seller-qr');
+      const media = await this.mediaService.createMedia(uploadResults[0]);
+      seller.coinSellerPaymentMethods.qrCode = media._id as mongoose.Types.ObjectId;
+    } else if (payload.qrCode && mongoose.Types.ObjectId.isValid(payload.qrCode)) {
+      seller.coinSellerPaymentMethods.qrCode = new mongoose.Types.ObjectId(payload.qrCode);
+    }
+
+    const bankDetails: any = seller.coinSellerPaymentMethods.bankDetails || {};
+    let bankDetailsUpdated = false;
+
+    if (typeof payload.bankDetails === 'string') {
+      try {
+        const parsed = JSON.parse(payload.bankDetails);
+        Object.assign(bankDetails, parsed);
+        bankDetailsUpdated = true;
+      } catch (e) {
+        // ignore parse error
+      }
+    } else if (payload.bankDetails && typeof payload.bankDetails === 'object') {
+      Object.assign(bankDetails, payload.bankDetails);
+      bankDetailsUpdated = true;
+    }
+
+    if (payload.accountNumber !== undefined) {
+      bankDetails.accountNumber = payload.accountNumber;
+      bankDetailsUpdated = true;
+    }
+    if (payload.ifscCode !== undefined) {
+      bankDetails.ifscCode = payload.ifscCode;
+      bankDetailsUpdated = true;
+    }
+    if (payload.bankName !== undefined) {
+      bankDetails.bankName = payload.bankName;
+      bankDetailsUpdated = true;
+    }
+    if (payload.accountHolderName !== undefined) {
+      bankDetails.accountHolderName = payload.accountHolderName;
+      bankDetailsUpdated = true;
+    }
+    if (payload.accountType !== undefined) {
+      bankDetails.accountType = payload.accountType;
+      bankDetailsUpdated = true;
+    }
+
+    if (bankDetailsUpdated) {
+      seller.coinSellerPaymentMethods.bankDetails = bankDetails;
+    }
+
+    if (payload.acceptedMethods !== undefined) {
+      if (Array.isArray(payload.acceptedMethods)) {
+        seller.coinSellerPaymentMethods.acceptedMethods = payload.acceptedMethods;
+      } else if (typeof payload.acceptedMethods === 'string') {
+        try {
+          const parsed = JSON.parse(payload.acceptedMethods);
+          if (Array.isArray(parsed)) {
+            seller.coinSellerPaymentMethods.acceptedMethods = parsed;
+          } else {
+            seller.coinSellerPaymentMethods.acceptedMethods = payload.acceptedMethods.split(',').map((s: string) => s.trim()).filter(Boolean);
+          }
+        } catch {
+          seller.coinSellerPaymentMethods.acceptedMethods = payload.acceptedMethods.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+      }
+    }
+
+    const instructions = payload.paymentInstructions !== undefined ? payload.paymentInstructions : payload.instructions;
+    if (instructions !== undefined) {
+      seller.coinSellerPaymentMethods.paymentInstructions = instructions;
+    }
+
+    await seller.save();
+
+    const updatedSeller = await User.findById(seller._id).populate('coinSellerPaymentMethods.qrCode');
+    return {
+      userId: updatedSeller?.userId,
+      name: updatedSeller?.name,
+      paymentMethods: updatedSeller?.coinSellerPaymentMethods ? {
+        upiId: updatedSeller.coinSellerPaymentMethods.upiId || '',
+        qrCode: toPlainObject(updatedSeller.coinSellerPaymentMethods.qrCode) || null,
+        bankDetails: updatedSeller.coinSellerPaymentMethods.bankDetails || null,
+        acceptedMethods: updatedSeller.coinSellerPaymentMethods.acceptedMethods || [],
+        paymentInstructions: updatedSeller.coinSellerPaymentMethods.paymentInstructions || ''
+      } : null
+    };
+  }
+
+  async getPaymentMethods(identifier: string | number) {
+    let query: any = {};
+    if (typeof identifier === 'number' || (!isNaN(Number(identifier)) && String(identifier).length >= 5)) {
+      query = { userId: Number(identifier) };
+    } else if (mongoose.Types.ObjectId.isValid(identifier)) {
+      query = { _id: new mongoose.Types.ObjectId(identifier) };
+    } else {
+      throw new Error('Invalid seller identifier');
+    }
+
+    const seller = await User.findOne(query)
+      .select('userId name mobile whatsapp country countryId coinSellerPaymentMethods')
+      .populate('coinSellerPaymentMethods.qrCode')
+      .populate('countryId');
+
+    if (!seller) throw new Error('Seller not found');
+
+    return {
+      sellerId: seller._id,
+      userId: seller.userId,
+      name: seller.name,
+      mobile: seller.mobile,
+      whatsapp: seller.whatsapp,
+      paymentMethods: seller.coinSellerPaymentMethods ? {
+        upiId: seller.coinSellerPaymentMethods.upiId || '',
+        qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
+        bankDetails: seller.coinSellerPaymentMethods.bankDetails || null,
+        acceptedMethods: seller.coinSellerPaymentMethods.acceptedMethods || [],
+        paymentInstructions: seller.coinSellerPaymentMethods.paymentInstructions || ''
+      } : null
     };
   }
 }
