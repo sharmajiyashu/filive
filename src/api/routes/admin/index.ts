@@ -29,6 +29,7 @@ import announcement from './announcement';
 import banner from './banner';
 import call from './call';
 import liveData from './liveData';
+import supportChat from './supportChat';
 
 export default (router: Router): Router => {
   auth(router);
@@ -61,6 +62,7 @@ export default (router: Router): Router => {
   banner(router);
   call(router);
   liveData(router);
+  supportChat(router);
   return router;
 };
 

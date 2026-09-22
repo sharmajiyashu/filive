@@ -41,6 +41,17 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
     AppLogger.info('Socket connected:', socket.id, 'User:', userId);
 
+    // Support admin socket rooms
+    socket.on('join_support_admin', () => {
+        socket.join('support_admins');
+        AppLogger.info(`Socket ${socket.id} (User ${userId}) joined support_admins room`);
+    });
+
+    socket.on('leave_support_admin', () => {
+        socket.leave('support_admins');
+        AppLogger.info(`Socket ${socket.id} (User ${userId}) left support_admins room`);
+    });
+
     // Join room for a chat session
     socket.on('join_chat', async (data: JoinChatData, callback?: any) => {
         if (!data?.chatId) {
@@ -185,6 +196,9 @@ export default (socket: AuthenticatedSocket, io: Server) => {
             const messageData = savedMessage && (savedMessage as any).toObject ? (savedMessage as any).toObject() : savedMessage;
             const messagePayload = { success: true, type: 'new_message', ...messageData };
             io.to(`chat_${chatId}`).emit('new_message', messagePayload);
+
+            // Notify support admins
+            io.to('support_admins').emit('new_support_message', messagePayload);
 
             if (typeof callback === 'function') {
                 callback({ success: true, type: 'SUCCESS', event: 'send_message', data: savedMessage });
