@@ -28,6 +28,29 @@ export default (router: Router) => {
    *     requestBody:
    *       required: true
    *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - title
+   *             properties:
+   *               title:
+   *                 type: string
+   *               roomPhoto:
+   *                 type: string
+   *                 format: binary
+   *               roomType:
+   *                 type: string
+   *                 enum: [livestream, party_room]
+   *               partyRoomOption:
+   *                 type: string
+   *                 enum: [live, chat]
+   *               roomTheme:
+   *                 type: string
+   *               announcement:
+   *                 type: string
+   *               gameId:
+   *                 type: string
    *         application/json:
    *           schema:
    *             type: object
@@ -46,21 +69,26 @@ export default (router: Router) => {
    *                 enum: [live, chat]
    *               roomTheme:
    *                 type: string
+   *               announcement:
+   *                 type: string
+   *               gameId:
+   *                 type: string
    *     responses:
    *       200:
    *         description: Livestream/Room started successfully
    */
-  liveRouter.post('/start', upload.single('roomPhoto'), async (req: any, res: Response) => {
+  liveRouter.post('/start', upload.any(), async (req: any, res: Response) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { title, roomType, partyRoomOption, roomTheme, announcement, gameId } = req.body;
-      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage;
+      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage || req.body.room_image;
+      const file = req.file || (req.files && Array.isArray(req.files) ? (req.files.find((f: any) => ['roomPhoto', 'room_photo', 'photo', 'image', 'roomImage', 'file'].includes(f.fieldname)) || req.files[0]) : undefined);
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId, roomPhoto, req.file);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId, roomPhoto, file);
       AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {
@@ -80,11 +108,31 @@ export default (router: Router) => {
    *     requestBody:
    *       required: true
    *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               channelName:
+   *                 type: string
+   *               title:
+   *                 type: string
+   *               roomPhoto:
+   *                 type: string
+   *                 format: binary
+   *               roomTheme:
+   *                 type: string
+   *               partyRoomOption:
+   *                 type: string
+   *                 enum: [live, chat]
+   *               announcement:
+   *                 type: string
+   *               muteAllSeats:
+   *                 type: boolean
+   *               gameId:
+   *                 type: string
    *         application/json:
    *           schema:
    *             type: object
-   *             required:
-   *               - channelName
    *             properties:
    *               channelName:
    *                 type: string
@@ -101,16 +149,19 @@ export default (router: Router) => {
    *                 type: string
    *               muteAllSeats:
    *                 type: boolean
+   *               gameId:
+   *                 type: string
    *     responses:
    *       200:
    *         description: Room details updated successfully
    */
-  liveRouter.post('/edit', upload.single('roomPhoto'), async (req: any, res: Response) => {
+  liveRouter.post('/edit', upload.any(), async (req: any, res: Response) => {
     const userId = req.user?.id;
     AppLogger.info(`[HTTP POST /app/room/edit] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       let { channelName, title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats } = req.body;
-      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage;
+      const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage || req.body.room_image;
+      const file = req.file || (req.files && Array.isArray(req.files) ? (req.files.find((f: any) => ['roomPhoto', 'room_photo', 'photo', 'image', 'roomImage', 'file'].includes(f.fieldname)) || req.files[0]) : undefined);
 
       if (!channelName) {
         AppLogger.info(`[HTTP POST /app/room/edit] channelName not provided. Fetching latest room for hostId=${userId}`);
@@ -125,7 +176,7 @@ export default (router: Router) => {
         throw new Error('channelName is required, or you must have started a room before');
       }
 
-      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats, roomPhoto }, req.file);
+      const result = await liveStreamService.updateLiveStream(userId, channelName, { title, roomTheme, partyRoomOption, announcement, gameId, muteAllSeats, roomType, maxSeats, roomPhoto }, file);
 
       // Emit room_updated socket event
       try {

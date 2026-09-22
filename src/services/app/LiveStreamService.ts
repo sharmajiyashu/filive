@@ -126,7 +126,7 @@ export class LiveStreamService {
       roomSetting = await RoomSetting.create({ hostId });
     }
 
-    // Resolve roomPhoto if file uploaded or id provided
+    // Resolve roomPhoto if file uploaded or id/url provided
     let resolvedRoomPhotoId: mongoose.Types.ObjectId | undefined;
     if (file) {
       try {
@@ -141,8 +141,31 @@ export class LiveStreamService {
       } catch (err: any) {
         AppLogger.error(`[LiveStreamService: startLiveStream] Failed to upload roomPhoto: ${err?.message || err}`);
       }
-    } else if (roomPhoto && mongoose.Types.ObjectId.isValid(String(roomPhoto))) {
-      resolvedRoomPhotoId = new mongoose.Types.ObjectId(String(roomPhoto));
+    } else if (roomPhoto) {
+      const photoVal = typeof roomPhoto === 'object' && (roomPhoto as any)._id
+        ? String((roomPhoto as any)._id)
+        : (typeof roomPhoto === 'object' && (roomPhoto as any).url
+          ? String((roomPhoto as any).url)
+          : String(roomPhoto));
+
+      if (photoVal.startsWith('http://') || photoVal.startsWith('https://') || photoVal.startsWith('data:')) {
+        try {
+          const MediaModel = mongoose.model('Media');
+          let existingMedia = await MediaModel.findOne({ url: photoVal });
+          if (!existingMedia) {
+            existingMedia = await MediaModel.create({
+              url: photoVal,
+              mimetype: 'image/jpeg',
+              type: 'image'
+            });
+          }
+          resolvedRoomPhotoId = existingMedia._id as mongoose.Types.ObjectId;
+        } catch (err: any) {
+          AppLogger.error(`[LiveStreamService: startLiveStream] Failed to resolve URL roomPhoto: ${err?.message || err}`);
+        }
+      } else if (mongoose.Types.ObjectId.isValid(photoVal)) {
+        resolvedRoomPhotoId = new mongoose.Types.ObjectId(photoVal);
+      }
     }
 
     if (!resolvedRoomPhotoId && roomSetting.roomPhoto) {
@@ -420,10 +443,35 @@ export class LiveStreamService {
       } catch (err: any) {
         AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to upload roomPhoto: ${err?.message || err}`);
       }
-    } else if (data.roomPhoto && mongoose.Types.ObjectId.isValid(data.roomPhoto)) {
-      liveStream.roomPhoto = new mongoose.Types.ObjectId(data.roomPhoto);
-      roomSetting.roomPhoto = liveStream.roomPhoto;
-      settingsUpdated = true;
+    } else if (data.roomPhoto) {
+      const photoVal = typeof data.roomPhoto === 'object' && (data.roomPhoto as any)._id
+        ? String((data.roomPhoto as any)._id)
+        : (typeof data.roomPhoto === 'object' && (data.roomPhoto as any).url
+          ? String((data.roomPhoto as any).url)
+          : String(data.roomPhoto));
+
+      if (photoVal.startsWith('http://') || photoVal.startsWith('https://') || photoVal.startsWith('data:')) {
+        try {
+          const MediaModel = mongoose.model('Media');
+          let existingMedia = await MediaModel.findOne({ url: photoVal });
+          if (!existingMedia) {
+            existingMedia = await MediaModel.create({
+              url: photoVal,
+              mimetype: 'image/jpeg',
+              type: 'image'
+            });
+          }
+          liveStream.roomPhoto = existingMedia._id as mongoose.Types.ObjectId;
+          roomSetting.roomPhoto = liveStream.roomPhoto;
+          settingsUpdated = true;
+        } catch (err: any) {
+          AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to resolve URL roomPhoto: ${err?.message || err}`);
+        }
+      } else if (mongoose.Types.ObjectId.isValid(photoVal)) {
+        liveStream.roomPhoto = new mongoose.Types.ObjectId(photoVal);
+        roomSetting.roomPhoto = liveStream.roomPhoto;
+        settingsUpdated = true;
+      }
     }
 
     if (data.roomType !== undefined || data.partyRoomOption !== undefined) {
@@ -1577,7 +1625,10 @@ export class LiveStreamService {
       populatedRoomPhoto = roomObj.hostId.profileImage;
     }
 
-    const finalPhoto = populatedRoomPhoto ? (populatedRoomPhoto.toObject ? populatedRoomPhoto.toObject() : populatedRoomPhoto) : null;
+    let finalPhoto = populatedRoomPhoto ? (populatedRoomPhoto.toObject ? populatedRoomPhoto.toObject() : populatedRoomPhoto) : null;
+    if (typeof finalPhoto === 'string' && (finalPhoto.startsWith('http://') || finalPhoto.startsWith('https://') || finalPhoto.startsWith('/'))) {
+      finalPhoto = { url: finalPhoto };
+    }
     roomObj.roomPhoto = finalPhoto;
     roomObj.room_photo = finalPhoto;
     roomObj.photo = finalPhoto;
