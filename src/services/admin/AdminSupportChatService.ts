@@ -36,7 +36,7 @@ export class AdminSupportChatService {
     }
   }
 
-  public async resolveSupportUser() {
+  public async resolveSupportUser(): Promise<any> {
     return this.chatService.resolveSupportUser();
   }
 

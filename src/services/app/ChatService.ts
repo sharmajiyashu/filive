@@ -9,13 +9,39 @@ import { assertUsersNotBlocked } from '../../utils/blockCheck';
 
 @Service()
 export class ChatService {
+  public static readonly SYSTEM_AVATAR_URL = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop';
+  public static readonly SUPPORT_AVATAR_URL = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop';
+
   constructor() { }
 
-  async resolveSystemUser() {
+  async getOrCreateOfficialMedia(url: string) {
+    const MediaModel = mongoose.model('Media');
+    let media = await MediaModel.findOne({ url });
+    if (!media) {
+      media = await MediaModel.create({
+        url,
+        mimetype: 'image/jpeg',
+        type: 'image'
+      });
+    }
+    return media;
+  }
+
+  async resolveSystemUser(): Promise<any> {
     const envId = process.env.SYSTEM_CHAT_USER_ID;
+    const defaultMedia = await this.getOrCreateOfficialMedia(ChatService.SYSTEM_AVATAR_URL);
+
     if (envId && mongoose.Types.ObjectId.isValid(envId)) {
       const exists = await User.findById(envId).populate('profileImage');
-      if (exists) return exists;
+      if (exists) {
+        if (!exists.profileImage) {
+          exists.profileImage = defaultMedia._id as any;
+          await exists.save();
+          const refreshed = await User.findById(exists._id).populate('profileImage');
+          return refreshed || exists;
+        }
+        return exists;
+      }
     }
 
     let systemUser = await User.findOne({
@@ -32,18 +58,36 @@ export class ChatService {
         email: 'system@filive.com',
         userRole: 'admin',
         isVerified: true,
-        bio: 'Official System Messages & Announcements'
+        bio: 'Official System Messages & Announcements',
+        profileImage: defaultMedia._id
       });
+      const refreshed = await User.findById(systemUser._id).populate('profileImage');
+      return refreshed || systemUser;
+    } else if (!systemUser.profileImage) {
+      systemUser.profileImage = defaultMedia._id as any;
+      await systemUser.save();
+      const refreshed = await User.findById(systemUser._id).populate('profileImage');
+      return refreshed || systemUser;
     }
 
     return systemUser;
   }
 
-  async resolveSupportUser() {
+  async resolveSupportUser(): Promise<any> {
     const envId = process.env.SUPPORT_CHAT_USER_ID;
+    const defaultMedia = await this.getOrCreateOfficialMedia(ChatService.SUPPORT_AVATAR_URL);
+
     if (envId && mongoose.Types.ObjectId.isValid(envId)) {
       const exists = await User.findById(envId).populate('profileImage');
-      if (exists) return exists;
+      if (exists) {
+        if (!exists.profileImage) {
+          exists.profileImage = defaultMedia._id as any;
+          await exists.save();
+          const refreshed = await User.findById(exists._id).populate('profileImage');
+          return refreshed || exists;
+        }
+        return exists;
+      }
     }
 
     let supportUser = await User.findOne({
@@ -60,8 +104,16 @@ export class ChatService {
         email: 'support@filive.com',
         userRole: 'admin',
         isVerified: true,
-        bio: 'Official Customer Support & Help Desk'
+        bio: 'Official Customer Support & Help Desk',
+        profileImage: defaultMedia._id
       });
+      const refreshed = await User.findById(supportUser._id).populate('profileImage');
+      return refreshed || supportUser;
+    } else if (!supportUser.profileImage) {
+      supportUser.profileImage = defaultMedia._id as any;
+      await supportUser.save();
+      const refreshed = await User.findById(supportUser._id).populate('profileImage');
+      return refreshed || supportUser;
     }
 
     return supportUser;
@@ -291,15 +343,37 @@ export class ChatService {
             const pSocketOnline = (io && pId) ? (io.sockets?.adapter?.rooms?.get(`user_${pId}`)?.size || 0) > 0 : false;
             const pRecentLogin = pObj.userId.lastLoginAt ? new Date(pObj.userId.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
             const pOnline = pSocketOnline || pRecentLogin;
+
+            let userProfileImg = pObj.userId.profileImage;
+            if (!userProfileImg) {
+              if (systemUserIdStr && pId === systemUserIdStr) {
+                userProfileImg = systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+              } else if (supportUserIdStr && pId === supportUserIdStr) {
+                userProfileImg = supportUser?.profileImage || { url: ChatService.SUPPORT_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+              }
+            }
+
             pObj.userId = {
               ...pObj.userId,
-              isOnline: pOnline,
-              status: pOnline ? 'online' : 'offline',
-              userStatus: pOnline ? 'online' : 'offline'
+              profileImage: userProfileImg,
+              isOnline: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? true : pOnline,
+              status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline'),
+              userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline')
             };
           }
           return pObj;
         });
+
+        if (lastMessage && lastMessage.senderId && typeof lastMessage.senderId === 'object') {
+          const senderIdStr = (lastMessage.senderId as any)._id?.toString();
+          if (!(lastMessage.senderId as any).profileImage) {
+            if (systemUserIdStr && senderIdStr === systemUserIdStr) {
+              (lastMessage.senderId as any).profileImage = systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+            } else if (supportUserIdStr && senderIdStr === supportUserIdStr) {
+              (lastMessage.senderId as any).profileImage = supportUser?.profileImage || { url: ChatService.SUPPORT_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+            }
+          }
+        }
 
         const isSystem = Boolean(systemUserIdStr && otherParticipantIdStr === systemUserIdStr);
         const isSupport = Boolean(supportUserIdStr && otherParticipantIdStr === supportUserIdStr);
@@ -308,10 +382,30 @@ export class ChatService {
           name = 'System Message';
           isOnline = true;
           userStatus = 'online';
+          if (!mediaUrl) {
+            mediaUrl = systemUser?.profileImage ? ((systemUser.profileImage as any).url || systemUser.profileImage) : ChatService.SYSTEM_AVATAR_URL;
+          }
+          if (otherParticipantDetails && !otherParticipantDetails.profileImage) {
+            otherParticipantDetails.profileImage = systemUser?.profileImage || {
+              url: ChatService.SYSTEM_AVATAR_URL,
+              mimetype: 'image/jpeg',
+              type: 'image'
+            };
+          }
         } else if (isSupport) {
           name = 'Contact Support';
           isOnline = true;
           userStatus = 'online';
+          if (!mediaUrl) {
+            mediaUrl = supportUser?.profileImage ? ((supportUser.profileImage as any).url || supportUser.profileImage) : ChatService.SUPPORT_AVATAR_URL;
+          }
+          if (otherParticipantDetails && !otherParticipantDetails.profileImage) {
+            otherParticipantDetails.profileImage = supportUser?.profileImage || {
+              url: ChatService.SUPPORT_AVATAR_URL,
+              mimetype: 'image/jpeg',
+              type: 'image'
+            };
+          }
         }
 
         return {
@@ -424,11 +518,19 @@ export class ChatService {
           const isSystem = Boolean(systemUserIdStr && globalUserIdStr === systemUserIdStr);
           const isSupport = Boolean(supportUserIdStr && globalUserIdStr === supportUserIdStr);
 
+          const defaultImg = isSystem
+            ? (systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' })
+            : isSupport
+              ? (supportUser?.profileImage || { url: ChatService.SUPPORT_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' })
+              : null;
+          const globalUserProfileImg = globalUserObj.profileImage || defaultImg;
+          const itemMediaUrl = globalUserProfileImg ? ((globalUserProfileImg as any).url || globalUserProfileImg) : '';
+
           data.push({
             id: existingSingleChat ? existingSingleChat._id : (null as any),
             type: 'private',
             name: isSystem ? 'System Message' : isSupport ? 'Contact Support' : (globalUser.name || globalUser.email || 'User'),
-            mediaUrl: globalUser.profileImage ? (globalUser.profileImage as any).url : '',
+            mediaUrl: itemMediaUrl,
             role: 'member',
             isMuted: false,
             isPinned: false,
@@ -450,13 +552,14 @@ export class ChatService {
             otherParticipant: {
               id: globalUserIdStr,
               ...globalUserObj,
+              profileImage: globalUserProfileImg,
               isOnline,
               status: userStatus,
               userStatus
             },
             participants: [
               { userId: userObjectId as any, role: 'admin', isMuted: false, isPinned: false, joinedAt: new Date() },
-              { userId: { ...globalUserObj, isOnline, status: userStatus, userStatus } as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
+              { userId: { ...globalUserObj, profileImage: globalUserProfileImg, isOnline, status: userStatus, userStatus } as any, role: 'member', isMuted: false, isPinned: false, joinedAt: new Date() }
             ],
             isBlocked,
             blockedByMe,
@@ -520,6 +623,19 @@ export class ChatService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const chatObjectId = new mongoose.Types.ObjectId(chatId);
 
+    let systemUser: any = null;
+    let supportUser: any = null;
+    let systemUserIdStr = '';
+    let supportUserIdStr = '';
+    try {
+      [systemUser, supportUser] = await Promise.all([
+        this.resolveSystemUser(),
+        this.resolveSupportUser()
+      ]);
+      systemUserIdStr = systemUser?._id?.toString() || '';
+      supportUserIdStr = supportUser?._id?.toString() || '';
+    } catch (e) { }
+
     const chat = await Chat.findOne({
       _id: chatObjectId,
       'participants.userId': userObjectId
@@ -581,11 +697,22 @@ export class ChatService {
         const pSocketOnline = (io && pId) ? (io.sockets?.adapter?.rooms?.get(`user_${pId}`)?.size || 0) > 0 : false;
         const pRecentLogin = pObj.userId.lastLoginAt ? new Date(pObj.userId.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
         const pOnline = pSocketOnline || pRecentLogin;
+
+        let userProfileImg = pObj.userId.profileImage;
+        if (!userProfileImg) {
+          if (systemUserIdStr && pId === systemUserIdStr) {
+            userProfileImg = systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+          } else if (supportUserIdStr && pId === supportUserIdStr) {
+            userProfileImg = supportUser?.profileImage || { url: ChatService.SUPPORT_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' };
+          }
+        }
+
         pObj.userId = {
           ...pObj.userId,
-          isOnline: pOnline,
-          status: pOnline ? 'online' : 'offline',
-          userStatus: pOnline ? 'online' : 'offline'
+          profileImage: userProfileImg,
+          isOnline: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? true : pOnline,
+          status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline'),
+          userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline')
         };
       }
       return pObj;

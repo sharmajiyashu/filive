@@ -556,17 +556,11 @@ export default (router: Router) => {
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '10');
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      const roomTypeParam = (req.query.roomType || req.query.type || req.query.room_type)?.toString()?.trim()?.toLowerCase();
-      const roomType: 'livestream' | 'party_room' | 'all' =
-        (roomTypeParam === 'party_room' || roomTypeParam === 'party')
-          ? 'party_room'
-          : roomTypeParam === 'all'
-            ? 'all'
-            : 'livestream';
+      const roomTypeParam = (req.query.roomType || req.query.type || req.query.room_type || req.body?.roomType || req.body?.type || req.body?.room_type)?.toString()?.trim()?.toLowerCase();
 
-      const tabParam = (req.query.tab || req.query.filter || req.query.category)?.toString()?.trim()?.toLowerCase();
-      let isFollowingRoomParam = req.query.isFollowingRoom ?? req.query.following ?? req.query.followed;
-      let isMineParam = req.query.isMine ?? req.query.mine;
+      const tabParam = (req.query.tab || req.query.filter || req.query.category || req.body?.tab || req.body?.filter || req.body?.category)?.toString()?.trim()?.toLowerCase();
+      let isFollowingRoomParam = req.query.isFollowingRoom ?? req.query.following ?? req.query.followed ?? req.body?.isFollowingRoom ?? req.body?.following ?? req.body?.followed;
+      let isMineParam = req.query.isMine ?? req.query.mine ?? req.body?.isMine ?? req.body?.mine;
 
       if (tabParam === 'mine' || tabParam === 'my') {
         isMineParam = true;
@@ -582,6 +576,15 @@ export default (router: Router) => {
       const isMine = isMineParam !== undefined
         ? String(isMineParam).toLowerCase() === 'true' || isMineParam === true
         : undefined;
+
+      const roomType: 'livestream' | 'party_room' | 'all' =
+        (roomTypeParam === 'party_room' || roomTypeParam === 'party')
+          ? 'party_room'
+          : (roomTypeParam === 'livestream' || roomTypeParam === 'live')
+            ? 'livestream'
+            : (roomTypeParam === 'all' || isMine === true || isFollowingRoom === true || !roomTypeParam)
+              ? 'all'
+              : 'livestream';
 
       const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType, {
         isFollowingRoom,

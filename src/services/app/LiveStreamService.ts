@@ -1223,14 +1223,16 @@ export class LiveStreamService {
   ) {
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Entered. page=${page}, limit=${limit}, userId=${userId}, country=${country}, roomType=${roomType}, filters=${JSON.stringify(filters)}`);
 
-    const query: any = { status: 'live' };
+    const query: any = {};
 
     if (roomType === 'party_room') {
       query.roomType = 'party_room';
+    } else if (roomType === 'livestream') {
+      query.roomType = 'livestream';
     } else if (roomType === 'all') {
-      // no roomType filter - return all live rooms
-    } else {
-      // Default: strictly livestream only! Party rooms will never show in live stream feeds.
+      // no roomType filter - return all rooms
+    } else if (!filters?.isMine && !filters?.isFollowingRoom) {
+      // Default live feed: strictly livestream only!
       query.roomType = 'livestream';
     }
 
@@ -1284,10 +1286,10 @@ export class LiveStreamService {
           { hostId: userObjId }
         ];
         if (followedRoomIds.length > 0) {
-          orConditions.push({ _id: { $in: followedRoomIds } });
+          orConditions.push({ _id: { $in: followedRoomIds }, status: 'live' });
         }
         if (followedHostIds.length > 0) {
-          orConditions.push({ hostId: { $in: followedHostIds } });
+          orConditions.push({ hostId: { $in: followedHostIds }, status: 'live' });
         }
 
         query.$or = orConditions;
@@ -1345,6 +1347,7 @@ export class LiveStreamService {
             }
           };
         }
+        query.status = 'live';
         query.$or = orConditions;
       } else {
         return {
@@ -1357,6 +1360,8 @@ export class LiveStreamService {
           }
         };
       }
+    } else {
+      query.status = 'live';
     }
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams with query=${JSON.stringify(query)}...`);
@@ -1369,8 +1374,7 @@ export class LiveStreamService {
           { path: 'countryId' }
         ]
       })
-
-      .sort({ viewerCount: -1, createdAt: -1 })
+      .sort({ status: -1, viewerCount: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
