@@ -25,6 +25,39 @@ export default async (expressApp: Express): Promise<void> => {
         AppLogger.error('❌ Failed to run startup cleanup for stuck calls:', err);
     }
 
+    // Auto-migration: Move any legacy 'entity' store items and activeEntity user fields to 'entry' / activeEntry
+    try {
+        const StoreItem = (await import('../../models/StoreItem')).default;
+        const User = (await import('../../models/User')).default;
+
+        const storeResult = await StoreItem.collection.updateMany(
+            { type: 'entity' } as any,
+            { $set: { type: 'entry' } }
+        );
+        if (storeResult.modifiedCount > 0) {
+            AppLogger.info(`🧹 Startup migration: Updated ${storeResult.modifiedCount} store items from 'entity' to 'entry'.`);
+        }
+
+        const userResult = await User.collection.updateMany(
+            { activeEntity: { $exists: true, $ne: null } } as any,
+            [
+                {
+                    $set: {
+                        activeEntry: { $ifNull: ['$activeEntry', '$activeEntity'] }
+                    }
+                },
+                {
+                    $unset: 'activeEntity'
+                }
+            ] as any
+        );
+        if (userResult.modifiedCount > 0) {
+            AppLogger.info(`🧹 Startup migration: Migrated ${userResult.modifiedCount} users from activeEntity to activeEntry.`);
+        }
+    } catch (err: any) {
+        AppLogger.error('❌ Failed to run entity->entry store migration:', err);
+    }
+
     const cloudinaryClient = await cloudinaryLoader();
     const firebaseApp = firebaseLoader();
     // const emailClient = await smtpLoader();

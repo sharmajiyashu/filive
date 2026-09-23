@@ -3,7 +3,7 @@ import User from '../models/User';
 import UserStoreItem from '../models/UserStoreItem';
 
 export const ACTIVE_STORE_FIELD_BY_TYPE: Record<string, string> = {
-  entity: 'activeEntity',
+  entry: 'activeEntry',
   frame: 'activeFrame',
   chat_bubble: 'activeChatBubble',
   theme: 'activeTheme',
@@ -12,9 +12,19 @@ export const ACTIVE_STORE_FIELD_BY_TYPE: Record<string, string> = {
 
 export const ACTIVE_STORE_FIELDS = Object.values(ACTIVE_STORE_FIELD_BY_TYPE);
 
+export function normalizeStoreTypeQuery(type?: string): string | undefined {
+  if (!type) return undefined;
+  const t = type.trim().toLowerCase();
+  if (t === 'entity') return 'entry';
+  if (t === 'chatbubble' || t === 'bubble') return 'chat_bubble';
+  if (t === 'avatar_frame') return 'frame';
+  if (t === 'room_theme') return 'theme';
+  return t;
+}
+
 /** Nested populate so profile/user APIs return store items with media URL. */
 export const ACTIVE_STORE_POPULATE = [
-  { path: 'activeEntity', populate: { path: 'media' } },
+  { path: 'activeEntry', populate: { path: 'media' } },
   { path: 'activeFrame', populate: { path: 'media' } },
   { path: 'activeChatBubble', populate: { path: 'media' } },
   { path: 'activeTheme', populate: { path: 'media' } },
@@ -32,11 +42,14 @@ export function formatStoreItem(item: any) {
     ? (mediaObj.url || mediaObj.path)
     : (typeof raw.media === 'string' ? raw.media : (raw.url || raw.path || ''));
 
+  let itemType = raw.type || '';
+  if (itemType === 'entity') itemType = 'entry';
+
   return {
     _id: raw._id || raw.id || null,
     id: raw._id || raw.id || null,
     name: raw.name || '',
-    type: raw.type || '',
+    type: itemType,
     media: mediaObj || (path ? { url: path } : null),
     path: path || '',
     url: path || '',
@@ -108,14 +121,14 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
     await stripExpiredActiveStoreOnUser(rawUser);
   }
 
-  const activeEntity = formatStoreItem(rawUser.activeEntity || rawUser.entity);
+  const activeEntry = formatStoreItem(rawUser.activeEntry || rawUser.entry);
   const activeFrame = formatStoreItem(rawUser.activeFrame || rawUser.frame);
   const activeChatBubble = formatStoreItem(rawUser.activeChatBubble || rawUser.chatBubble || rawUser.chat_bubble);
   const activeTheme = formatStoreItem(rawUser.activeTheme || rawUser.theme);
   const activeRide = formatStoreItem(rawUser.activeRide || rawUser.ride);
 
-  rawUser.activeEntity = activeEntity;
-  rawUser.entity = activeEntity;
+  rawUser.activeEntry = activeEntry;
+  rawUser.entry = activeEntry;
   rawUser.activeFrame = activeFrame;
   rawUser.frame = activeFrame;
   rawUser.activeChatBubble = activeChatBubble;
@@ -127,7 +140,7 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
   rawUser.ride = activeRide;
 
   const activeStoreItems: any[] = [];
-  if (activeEntity) activeStoreItems.push(activeEntity);
+  if (activeEntry) activeStoreItems.push(activeEntry);
   if (activeFrame) activeStoreItems.push(activeFrame);
   if (activeChatBubble) activeStoreItems.push(activeChatBubble);
   if (activeTheme) activeStoreItems.push(activeTheme);

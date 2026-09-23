@@ -12,7 +12,7 @@ import FamilyMember from '../../models/FamilyMember';
 import Country from '../../models/Country';
 import mongoose from 'mongoose';
 import { ensureUserReferralCode } from '../../utils/referral';
-import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 import { LevelService } from './LevelService';
 import { withDefaultAlbum } from './profileDefaults';
@@ -159,7 +159,7 @@ export class UserService {
       throw new Error('User not found');
     }
 
-    await stripExpiredActiveStoreOnUser(user);
+    const formattedUser = await formatUserActiveStoreItems(user, true);
 
     const userObjectIdStr = user._id.toString();
 
@@ -357,7 +357,7 @@ export class UserService {
     const { referralCode } = await ensureUserReferralCode(user);
     const isOnline = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
 
-    const userObj = await attachUserCountryAndAge(user.toObject());
+    const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
 
     return {

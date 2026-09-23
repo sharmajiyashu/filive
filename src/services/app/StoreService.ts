@@ -4,11 +4,11 @@ import UserStoreItem from '../../models/UserStoreItem';
 import User from '../../models/User';
 import mongoose from 'mongoose';
 import { addDays, addMonths, addYears } from 'date-fns';
-import { clearExpiredActiveStoreItems, formatStoreItem, ACTIVE_STORE_FIELD_BY_TYPE } from '../../utils/activeStorePopulate';
+import { clearExpiredActiveStoreItems, formatStoreItem, ACTIVE_STORE_FIELD_BY_TYPE, normalizeStoreTypeQuery } from '../../utils/activeStorePopulate';
 
 @Service()
 export class StoreService {
-  constructor() {}
+  constructor() { }
 
   // ----------------------------------------------------
   // ADMIN APIS
@@ -16,7 +16,7 @@ export class StoreService {
 
   public async createStoreItem(data: {
     name: string;
-    type: 'entity' | 'frame' | 'chat_bubble' | 'theme' | 'ride';
+    type: 'entry' | 'frame' | 'chat_bubble' | 'theme' | 'ride';
     media: string;
     priceOptions: IStoreItemPrice[];
   }) {
@@ -41,7 +41,7 @@ export class StoreService {
     const skip = (page - 1) * limit;
     const query: any = {};
     if (type) {
-      query.type = type;
+      query.type = normalizeStoreTypeQuery(type);
     }
     const items = await StoreItem.find(query).populate('media').skip(skip).limit(limit).sort({ createdAt: -1 });
     const total = await StoreItem.countDocuments(query);
@@ -67,8 +67,10 @@ export class StoreService {
 
   public async getStoreItems(type?: string, page: number = 1, limit: number = 20) {
     const query: any = { isActive: true };
-    if (type) query.type = type;
-    
+    if (type) {
+      query.type = normalizeStoreTypeQuery(type);
+    }
+
     const skip = (page - 1) * limit;
     const items = await StoreItem.find(query).populate('media').skip(skip).limit(limit);
     const total = await StoreItem.countDocuments(query);
@@ -227,7 +229,7 @@ export class StoreService {
 
   public async getUserPurchasedItems(userId: string, type?: string, page: number = 1, limit: number = 20) {
     await clearExpiredActiveStoreItems(userId);
-    const query: any = { 
+    const query: any = {
       userId: new mongoose.Types.ObjectId(userId),
       expiresAt: { $gt: new Date() } // Only active ones
     };
@@ -246,7 +248,8 @@ export class StoreService {
     });
 
     if (type) {
-      items = items.filter((item: any) => item.storeItemId && item.storeItemId.type === type);
+      const norm = normalizeStoreTypeQuery(type);
+      items = items.filter((item: any) => item.storeItemId && (item.storeItemId.type === norm || (item.storeItemId as any).type === norm));
     }
 
     const now = new Date();

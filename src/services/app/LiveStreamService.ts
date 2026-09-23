@@ -1675,7 +1675,7 @@ export class LiveStreamService {
 
     if (currentUserId) {
       const me = await User.findById(currentUserId)
-        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .select('name userId profileImage bio isPremium activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
       const meFormatted = await formatUserActiveStoreItems(me, true);
@@ -1690,8 +1690,8 @@ export class LiveStreamService {
           isFollowingRoom,
           activeFrame: meObj.activeFrame ?? null,
           frame: meObj.frame ?? null,
-          activeEntity: meObj.activeEntity ?? null,
-          entity: meObj.entity ?? null,
+          activeEntry: meObj.activeEntry ?? null,
+          entry: meObj.entry ?? null,
           activeChatBubble: meObj.activeChatBubble ?? null,
           chatBubble: meObj.chatBubble ?? null,
           chat_bubble: meObj.chat_bubble ?? null,

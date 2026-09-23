@@ -8,7 +8,7 @@ export interface IStoreItemPrice {
 
 export interface IStoreItem extends Document {
   name: string;
-  type: 'entity' | 'frame' | 'chat_bubble' | 'theme' | 'ride';
+  type: 'entry' | 'frame' | 'chat_bubble' | 'theme' | 'ride';
   media: mongoose.Types.ObjectId;
   priceOptions: IStoreItemPrice[];
   isActive: boolean;
@@ -21,7 +21,7 @@ const StoreItemSchema: Schema = new Schema(
     name: { type: String, required: true },
     type: { 
       type: String, 
-      enum: ['entity', 'frame', 'chat_bubble', 'theme', 'ride'], 
+      enum: ['entry', 'frame', 'chat_bubble', 'theme', 'ride'], 
       required: true 
     },
     media: { type: Schema.Types.ObjectId, ref: 'Media', required: true },

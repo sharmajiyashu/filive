@@ -63,7 +63,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio location isPremium gender country activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .select('name userId profileImage bio location isPremium gender country activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
@@ -82,8 +82,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         user: userJson || userObj,
         activeFrame: userJson?.activeFrame ?? null,
         frame: userJson?.frame ?? null,
-        activeEntity: userJson?.activeEntity ?? null,
-        entity: userJson?.entity ?? null,
+        activeEntry: userJson?.activeEntry ?? null,
+        entry: userJson?.entry ?? null,
         activeChatBubble: userJson?.activeChatBubble ?? null,
         chatBubble: userJson?.chatBubble ?? null,
         chat_bubble: userJson?.chat_bubble ?? null,
@@ -226,7 +226,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .select('name userId profileImage bio isPremium activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
@@ -245,8 +245,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         user: userJson,
         activeFrame: userJson?.activeFrame ?? null,
         frame: userJson?.frame ?? null,
-        activeEntity: userJson?.activeEntity ?? null,
-        entity: userJson?.entity ?? null,
+        activeEntry: userJson?.activeEntry ?? null,
+        entry: userJson?.entry ?? null,
         activeChatBubble: userJson?.activeChatBubble ?? null,
         chatBubble: userJson?.chatBubble ?? null,
         chat_bubble: userJson?.chat_bubble ?? null,

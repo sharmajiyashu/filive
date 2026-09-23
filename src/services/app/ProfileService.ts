@@ -14,7 +14,7 @@ import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
 import { applyProfileDefaultsWithAlbum, withDefaultAlbum } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
-import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
 
@@ -44,7 +44,7 @@ export class ProfileService {
       throw new Error('USER_NOT_FOUND');
     }
 
-    await stripExpiredActiveStoreOnUser(profile);
+    const formattedProfile = await formatUserActiveStoreItems(profile, true);
 
     const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
     const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
@@ -83,7 +83,7 @@ export class ProfileService {
       }
     }
 
-    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(profile));
+    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(formattedProfile || profile));
     const { referralCode } = await ensureUserReferralCode(profile);
     const deepLink = await getReferralDeepLink(referralCode);
 
@@ -259,7 +259,7 @@ export class ProfileService {
       throw new Error('USER_NOT_FOUND');
     }
 
-    await stripExpiredActiveStoreOnUser(updatedUser);
+    const formattedUpdatedUser = await formatUserActiveStoreItems(updatedUser, true);
 
     const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
     const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
@@ -298,7 +298,7 @@ export class ProfileService {
       }
     }
 
-    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(updatedUser));
+    const profileData = await attachUserCountryAndAge(await applyProfileDefaultsWithAlbum(formattedUpdatedUser || updatedUser));
     const { referralCode } = await ensureUserReferralCode(updatedUser);
     const deepLink = await getReferralDeepLink(referralCode);
 

@@ -61,7 +61,7 @@ export interface IUser extends Document {
   audioCallChargePerMinute: number;
   videoCallChargePerMinute: number;
   hostVerificationCode?: string;
-  activeEntity?: mongoose.Types.ObjectId;
+  activeEntry?: mongoose.Types.ObjectId;
   activeFrame?: mongoose.Types.ObjectId;
   activeChatBubble?: mongoose.Types.ObjectId;
   activeTheme?: mongoose.Types.ObjectId;
@@ -162,7 +162,7 @@ const UserSchema: Schema = new Schema(
     audioCallChargePerMinute: { type: Number, default: 0 },
     videoCallChargePerMinute: { type: Number, default: 0 },
     hostVerificationCode: { type: String, unique: true, sparse: true },
-    activeEntity: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
+    activeEntry: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeFrame: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeChatBubble: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeTheme: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
