@@ -70,6 +70,7 @@ export interface IUser extends Document {
   isCoinsellerActive: boolean;
   coinSellerCoins: number;
   coinSellerPaymentMethods?: {
+    country?: string;
     upiId?: string;
     qrCode?: mongoose.Types.ObjectId;
     bankDetails?: {
@@ -78,8 +79,18 @@ export interface IUser extends Document {
       bankName?: string;
       accountHolderName?: string;
       accountType?: string;
+      branchName?: string;
     };
     acceptedMethods?: string[];
+    selectedGateways?: string[];
+    methods?: Array<{
+      gateway?: string;
+      name?: string;
+      type?: string;
+      accountInfo?: string;
+      details?: any;
+      isEnabled?: boolean;
+    }>;
     paymentInstructions?: string;
   };
   videoVerificationVideo?: mongoose.Types.ObjectId;
@@ -171,6 +182,7 @@ const UserSchema: Schema = new Schema(
     isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },
     coinSellerPaymentMethods: {
+      country: { type: String },
       upiId: { type: String },
       qrCode: { type: Schema.Types.ObjectId, ref: 'Media' },
       bankDetails: {
@@ -179,8 +191,20 @@ const UserSchema: Schema = new Schema(
         bankName: { type: String },
         accountHolderName: { type: String },
         accountType: { type: String },
+        branchName: { type: String },
       },
       acceptedMethods: [{ type: String }],
+      selectedGateways: [{ type: String }],
+      methods: [
+        {
+          gateway: { type: String },
+          name: { type: String },
+          type: { type: String },
+          accountInfo: { type: String },
+          details: { type: Schema.Types.Mixed },
+          isEnabled: { type: Boolean, default: true },
+        },
+      ],
       paymentInstructions: { type: String },
     },
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },

@@ -172,18 +172,25 @@ export class CallService {
 
     const [caller, host] = await Promise.all([
       User.findById(callerId)
-        .select('name userId profileImage gender dob country countryId coins')
+        .select('name userId profileImage gender dob country countryId coins beans')
         .populate('profileImage')
         .populate('countryId'),
       User.findById(receiverId)
-        .select('name userId profileImage gender dob country countryId beans')
+        .select('name userId profileImage gender dob country countryId coins beans')
         .populate('profileImage')
         .populate('countryId')
     ]);
 
     const other = isCaller ? host : caller;
     const otherUser = await this.toPublicCallUser(other);
+    const callerUser = await this.toPublicCallUser(caller);
+    const hostUser = await this.toPublicCallUser(host);
     const endedAt = call.endedAt || null;
+
+    const coinsDeducted = Number(call.coinsDeducted || 0);
+    const coinsEarned = Number(call.coinsEarned || 0);
+    const platformFee = Number(call.platformFee || 0);
+
     const summary: any = {
       role,
       viewerWallet: isCaller ? 'coins' : 'beans',
@@ -196,16 +203,36 @@ export class CallService {
       endedAt,
       endedAtFormatted: this.formatEndedAt(endedAt),
       otherUser,
+      caller: callerUser,
+      receiver: hostUser,
       country: otherUser?.country || null,
       countryId: otherUser?.countryId || null,
+
+      // Universal debit vs earning metrics
+      coinsDeducted,
+      debitCoins: coinsDeducted,
+      debitCoin: coinsDeducted,
+      coinsSpent: coinsDeducted,
+
+      coinsEarned,
+      earningCoins: coinsEarned,
+      earningCoin: coinsEarned,
+      beansEarned: coinsEarned,
+      beansIncome: coinsEarned,
+
+      platformFee,
+      callerRemainingCoins: caller?.coins || 0,
+      hostBeansBalance: host?.beans || 0,
+      remainingCoins: isCaller ? (caller?.coins || 0) : (host?.coins || 0),
+      beansBalance: isCaller ? (caller?.beans || 0) : (host?.beans || 0),
     };
 
     if (isCaller) {
-      summary.coinsSpent = call.coinsDeducted || 0;
-      summary.remainingCoins = caller?.coins || 0;
+      summary.myAmount = coinsDeducted;
+      summary.myWalletBalance = caller?.coins || 0;
     } else {
-      summary.beansIncome = call.coinsEarned || 0;
-      summary.beansBalance = host?.beans || 0;
+      summary.myAmount = coinsEarned;
+      summary.myWalletBalance = host?.beans || 0;
     }
 
     return summary;
@@ -523,7 +550,7 @@ export class CallService {
    */
   private async settleEndedCall(call: any) {
     const [receiver, caller] = await Promise.all([
-      User.findById(call.receiverId).select('voiceCallPrice videoCallPrice'),
+      User.findById(call.receiverId).select('voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute'),
       User.findById(call.callerId).select('coins')
     ]);
 
@@ -531,8 +558,14 @@ export class CallService {
       return;
     }
 
-    const rate = call.callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
-    const minutes = Math.ceil((call.duration || 0) / 60);
+    const rate = call.callType === 'voice'
+      ? Number(receiver.voiceCallPrice || receiver.audioCallChargePerMinute || 0)
+      : Number(receiver.videoCallPrice || receiver.videoCallChargePerMinute || 0);
+    const durationSeconds = Math.max(0, call.duration || 0);
+    if (durationSeconds <= 0) {
+      return;
+    }
+    const minutes = Math.ceil(durationSeconds / 60);
     const cost = minutes * rate;
     if (cost <= 0) {
       return;
@@ -543,7 +576,9 @@ export class CallService {
       return;
     }
 
-    const platformFeePercent = Number(await this.appSettingService.getSettingValue('call_platform_fee_percent') ?? 10);
+    const settingFee = await this.appSettingService.getSettingValue('call_platform_fee_percent');
+    let platformFeePercent = Number(settingFee !== null && settingFee !== undefined && settingFee !== '' ? settingFee : 10);
+    if (isNaN(platformFeePercent) || platformFeePercent < 0) platformFeePercent = 10;
     const platformFee = Math.round((actualCost * platformFeePercent) / 100);
     const coinsEarned = Math.max(0, actualCost - platformFee);
 

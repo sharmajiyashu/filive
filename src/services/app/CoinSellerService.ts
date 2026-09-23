@@ -645,6 +645,9 @@ export class CoinSellerService {
   async updatePaymentMethods(
     sellerId: string,
     payload: {
+      country?: string;
+      selectedGateways?: string[] | string;
+      methods?: any[] | string;
       upiId?: string;
       qrCode?: string;
       bankDetails?: {
@@ -653,19 +656,21 @@ export class CoinSellerService {
         bankName?: string;
         accountHolderName?: string;
         accountType?: string;
+        branchName?: string;
       };
       accountNumber?: string;
       ifscCode?: string;
       bankName?: string;
       accountHolderName?: string;
       accountType?: string;
+      branchName?: string;
       acceptedMethods?: string[] | string;
       paymentInstructions?: string;
       instructions?: string;
     },
     file?: Express.Multer.File
   ) {
-    const seller = await User.findById(sellerId).populate('profileImage').populate('coinSellerPaymentMethods.qrCode');
+    const seller = await User.findById(sellerId).populate('profileImage').populate('coinSellerPaymentMethods.qrCode').populate('countryId');
     if (!seller) throw new Error('Seller not found');
     if (!seller.isCoinseller) {
       throw new Error('You are not authorized as a coin seller');
@@ -673,6 +678,10 @@ export class CoinSellerService {
 
     if (!seller.coinSellerPaymentMethods) {
       seller.coinSellerPaymentMethods = {};
+    }
+
+    if (payload.country !== undefined) {
+      seller.coinSellerPaymentMethods.country = payload.country.trim();
     }
 
     if (payload.upiId !== undefined) {
@@ -723,6 +732,10 @@ export class CoinSellerService {
       bankDetails.accountType = payload.accountType;
       bankDetailsUpdated = true;
     }
+    if (payload.branchName !== undefined) {
+      bankDetails.branchName = payload.branchName;
+      bankDetailsUpdated = true;
+    }
 
     if (bankDetailsUpdated) {
       seller.coinSellerPaymentMethods.bankDetails = bankDetails;
@@ -745,6 +758,41 @@ export class CoinSellerService {
       }
     }
 
+    if (payload.selectedGateways !== undefined) {
+      if (Array.isArray(payload.selectedGateways)) {
+        seller.coinSellerPaymentMethods.selectedGateways = payload.selectedGateways;
+      } else if (typeof payload.selectedGateways === 'string') {
+        try {
+          const parsed = JSON.parse(payload.selectedGateways);
+          if (Array.isArray(parsed)) {
+            seller.coinSellerPaymentMethods.selectedGateways = parsed;
+          } else {
+            seller.coinSellerPaymentMethods.selectedGateways = payload.selectedGateways.split(',').map((s: string) => s.trim()).filter(Boolean);
+          }
+        } catch {
+          seller.coinSellerPaymentMethods.selectedGateways = payload.selectedGateways.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+      }
+      if (!payload.acceptedMethods && seller.coinSellerPaymentMethods.selectedGateways?.length) {
+        seller.coinSellerPaymentMethods.acceptedMethods = seller.coinSellerPaymentMethods.selectedGateways;
+      }
+    }
+
+    if (payload.methods !== undefined) {
+      if (Array.isArray(payload.methods)) {
+        seller.coinSellerPaymentMethods.methods = payload.methods;
+      } else if (typeof payload.methods === 'string') {
+        try {
+          const parsed = JSON.parse(payload.methods);
+          if (Array.isArray(parsed)) {
+            seller.coinSellerPaymentMethods.methods = parsed;
+          }
+        } catch {
+          // ignore parse error
+        }
+      }
+    }
+
     const instructions = payload.paymentInstructions !== undefined ? payload.paymentInstructions : payload.instructions;
     if (instructions !== undefined) {
       seller.coinSellerPaymentMethods.paymentInstructions = instructions;
@@ -752,21 +800,29 @@ export class CoinSellerService {
 
     await seller.save();
 
-    const updatedSeller = await User.findById(seller._id).populate('coinSellerPaymentMethods.qrCode');
+    const updatedSeller = await User.findById(seller._id).populate('coinSellerPaymentMethods.qrCode').populate('countryId');
+    const countryCode = payload.country || updatedSeller?.coinSellerPaymentMethods?.country || (updatedSeller?.countryId as any)?.code || updatedSeller?.country || 'IN';
+    const availableGateways = await this.getAvailableGatewaysForCountry(countryCode);
+
     return {
       userId: updatedSeller?.userId,
       name: updatedSeller?.name,
+      country: countryCode,
+      availableGateways,
       paymentMethods: updatedSeller?.coinSellerPaymentMethods ? {
+        country: updatedSeller.coinSellerPaymentMethods.country || countryCode,
         upiId: updatedSeller.coinSellerPaymentMethods.upiId || '',
         qrCode: toPlainObject(updatedSeller.coinSellerPaymentMethods.qrCode) || null,
         bankDetails: updatedSeller.coinSellerPaymentMethods.bankDetails || null,
         acceptedMethods: updatedSeller.coinSellerPaymentMethods.acceptedMethods || [],
+        selectedGateways: updatedSeller.coinSellerPaymentMethods.selectedGateways || updatedSeller.coinSellerPaymentMethods.acceptedMethods || [],
+        methods: updatedSeller.coinSellerPaymentMethods.methods || [],
         paymentInstructions: updatedSeller.coinSellerPaymentMethods.paymentInstructions || ''
       } : null
     };
   }
 
-  async getPaymentMethods(identifier: string | number) {
+  async getPaymentMethods(identifier: string | number, countryFilter?: string) {
     let query: any = {};
     if (typeof identifier === 'number' || (!isNaN(Number(identifier)) && String(identifier).length >= 5)) {
       query = { userId: Number(identifier) };
@@ -783,20 +839,97 @@ export class CoinSellerService {
 
     if (!seller) throw new Error('Seller not found');
 
+    const countryObj = await resolveCountryObject(seller);
+    const countryCode = countryFilter || seller.coinSellerPaymentMethods?.country || countryObj?.code || seller.country || 'IN';
+    const availableGateways = await this.getAvailableGatewaysForCountry(countryCode);
+
     return {
       sellerId: seller._id,
       userId: seller.userId,
       name: seller.name,
       mobile: seller.mobile,
       whatsapp: seller.whatsapp,
+      country: countryObj || countryCode,
+      availableGateways,
       paymentMethods: seller.coinSellerPaymentMethods ? {
+        country: seller.coinSellerPaymentMethods.country || countryCode,
         upiId: seller.coinSellerPaymentMethods.upiId || '',
         qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
         bankDetails: seller.coinSellerPaymentMethods.bankDetails || null,
         acceptedMethods: seller.coinSellerPaymentMethods.acceptedMethods || [],
+        selectedGateways: seller.coinSellerPaymentMethods.selectedGateways || seller.coinSellerPaymentMethods.acceptedMethods || [],
+        methods: seller.coinSellerPaymentMethods.methods || [],
         paymentInstructions: seller.coinSellerPaymentMethods.paymentInstructions || ''
       } : null
     };
+  }
+
+  public async getAvailableGatewaysForCountry(countryCode?: string) {
+    const code = (countryCode || '').trim().toUpperCase();
+    const PaymentMethodModel = mongoose.model('PaymentMethod');
+    const PayoutMethodModel = mongoose.model('PayoutMethod');
+
+    const paymentQuery: any = { isActive: true, targetAudience: { $in: ['all', 'seller'] } };
+    if (code && code !== 'ALL') {
+      paymentQuery.countries = { $in: [code, 'ALL', '*'] };
+    }
+    const methods = await PaymentMethodModel.find(paymentQuery).sort({ gateway: 1 }).lean();
+
+    const payoutQuery: any = { isActive: true };
+    if (code && code !== 'ALL') {
+      payoutQuery.countries = { $in: [code, 'ALL', '*'] };
+    }
+    const payoutMethods = await PayoutMethodModel.find(payoutQuery).populate('media').sort({ name: 1 }).lean();
+
+    const gatewayList: any[] = [];
+
+    for (const m of methods as any[]) {
+      gatewayList.push({
+        key: m.gateway,
+        gateway: m.gateway,
+        name: m.displayName,
+        displayName: m.displayName,
+        type: 'gateway',
+        countries: m.countries,
+        targetAudience: m.targetAudience,
+      });
+    }
+
+    for (const p of payoutMethods as any[]) {
+      gatewayList.push({
+        key: p.name?.toLowerCase().replace(/\s+/g, '_'),
+        gateway: p.name?.toLowerCase().replace(/\s+/g, '_'),
+        name: p.name,
+        displayName: p.name,
+        type: 'payout',
+        countries: p.countries,
+        fields: p.fields || [],
+        media: toPlainObject(p.media),
+        instructions: p.instructions || '',
+      });
+    }
+
+    // Default regional presets if none explicitly configured in DB
+    if (code === 'BD' || code === 'BDT' || code === 'BANGLADESH') {
+      const exists = (k: string) => gatewayList.some(g => g.key === k || g.gateway === k);
+      if (!exists('bkash')) gatewayList.push({ key: 'bkash', gateway: 'bkash', name: 'bKash', displayName: 'bKash (Taka)', type: 'mobile_wallet', countries: ['BD'] });
+      if (!exists('nagad')) gatewayList.push({ key: 'nagad', gateway: 'nagad', name: 'Nagad', displayName: 'Nagad (Taka)', type: 'mobile_wallet', countries: ['BD'] });
+      if (!exists('rocket')) gatewayList.push({ key: 'rocket', gateway: 'rocket', name: 'Rocket', displayName: 'Rocket (Taka)', type: 'mobile_wallet', countries: ['BD'] });
+      if (!exists('bank')) gatewayList.push({ key: 'bank', gateway: 'bank', name: 'Bank Transfer', displayName: 'Bank Transfer (BDT)', type: 'bank', countries: ['BD'] });
+    } else if (code === 'PK' || code === 'PAKISTAN') {
+      const exists = (k: string) => gatewayList.some(g => g.key === k || g.gateway === k);
+      if (!exists('easypaisa')) gatewayList.push({ key: 'easypaisa', gateway: 'easypaisa', name: 'Easypaisa', displayName: 'Easypaisa', type: 'mobile_wallet', countries: ['PK'] });
+      if (!exists('jazzcash')) gatewayList.push({ key: 'jazzcash', gateway: 'jazzcash', name: 'JazzCash', displayName: 'JazzCash', type: 'mobile_wallet', countries: ['PK'] });
+      if (!exists('bank')) gatewayList.push({ key: 'bank', gateway: 'bank', name: 'Bank Transfer', displayName: 'Bank Transfer (PKR)', type: 'bank', countries: ['PK'] });
+    } else if (gatewayList.length === 0 || code === 'IN' || code === 'IND' || code === 'INDIA') {
+      const exists = (k: string) => gatewayList.some(g => g.key === k || g.gateway === k);
+      if (!exists('upi')) gatewayList.push({ key: 'upi', gateway: 'upi', name: 'UPI', displayName: 'UPI (GPay / PhonePe / Paytm / QR)', type: 'upi', countries: ['IN'] });
+      if (!exists('bank')) gatewayList.push({ key: 'bank', gateway: 'bank', name: 'Bank Account', displayName: 'Bank Transfer (IMPS / NEFT)', type: 'bank', countries: ['IN', 'ALL'] });
+      if (!exists('razorpay')) gatewayList.push({ key: 'razorpay', gateway: 'razorpay', name: 'Razorpay', displayName: 'Razorpay Gateway', type: 'gateway', countries: ['IN'] });
+      if (!exists('cashfree')) gatewayList.push({ key: 'cashfree', gateway: 'cashfree', name: 'Cashfree', displayName: 'Cashfree Gateway', type: 'gateway', countries: ['IN'] });
+    }
+
+    return gatewayList;
   }
 }
 

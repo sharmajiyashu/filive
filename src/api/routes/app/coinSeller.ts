@@ -296,7 +296,8 @@ export default (router: Router) => {
 
   sellerRouter.get('/payment-methods', async (req: any, res: Response) => {
     try {
-      const result = await coinSellerService.getPaymentMethods(req.user.id);
+      const country = (req.query.country || req.query.countryCode)?.toString();
+      const result = await coinSellerService.getPaymentMethods(req.user.id, country);
       return ResponseWrapper.success(res, result, 'Payment methods retrieved successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -306,7 +307,8 @@ export default (router: Router) => {
   sellerRouter.get('/payment-methods/:sellerId', async (req: any, res: Response) => {
     try {
       const { sellerId } = req.params;
-      const result = await coinSellerService.getPaymentMethods(sellerId);
+      const country = (req.query.country || req.query.countryCode)?.toString();
+      const result = await coinSellerService.getPaymentMethods(sellerId, country);
       return ResponseWrapper.success(res, result, 'Seller payment methods retrieved successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

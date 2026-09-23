@@ -155,7 +155,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       io.to(`user_${receiverId}`).emit('call_rejected', hostSummary);
 
       if (typeof callback === 'function') {
-        callback({ success: true, type: 'SUCCESS', event: 'reject_call', data: hostSummary });
+        const viewerSummary = userId === callerId ? callerSummary : hostSummary;
+        callback({ success: true, type: 'SUCCESS', event: 'reject_call', data: viewerSummary });
       }
 
       AppLogger.info(`[Socket Event: reject_call] Call rejected. ID=${callId}`);
@@ -208,7 +209,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       }
 
       if (typeof callback === 'function') {
-        callback({ success: true, type: 'SUCCESS', event: 'end_call', data: hostSummary });
+        const viewerSummary = userId === callerId ? callerSummary : hostSummary;
+        callback({ success: true, type: 'SUCCESS', event: 'end_call', data: viewerSummary });
       }
     } catch (error: any) {
       AppLogger.error(`[Socket Event: end_call] Error for user ${userId}: ${error.message}`);
