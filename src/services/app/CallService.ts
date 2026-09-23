@@ -10,7 +10,7 @@ import { AppSettingService } from '../common/AppSettingService';
 import { AgencyCommissionService } from './AgencyCommissionService';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import { resolveCountryUserFilter } from '../../utils/countryFilter';
-import { attachUserCountryAndAge } from '../../utils/userLookup';
+import { attachUserCountryAndAge, resolveCountryObject, ageFromDob } from '../../utils/userLookup';
 
 @Service()
 export class CallService {
@@ -53,18 +53,28 @@ export class CallService {
     return image.url || image.secure_url || null;
   }
 
-  public toPublicCallUser(user: any) {
+  public async toPublicCallUser(user: any) {
     if (!user) return null;
     const id = user._id || user.id || null;
     const profileImage = user.profileImage && typeof user.profileImage === 'object' && user.profileImage.url
       ? user.profileImage
       : (user.profileImage ?? null);
+    const country = await resolveCountryObject(user);
     return {
       id,
+      _id: id,
       userId: user.userId ?? null,
       name: user.name ?? null,
       profileImage,
-      profileImageUrl: this.profileImageUrl(user.profileImage)
+      profileImageUrl: this.profileImageUrl(user.profileImage),
+      gender: user.gender ?? null,
+      dob: user.dob ?? null,
+      age: user.dob ? ageFromDob(user.dob) : null,
+      country,
+      countryId: country,
+      countryDetail: country,
+      country_flag: country?.flag ?? (typeof user.country_flag === 'string' ? user.country_flag : null),
+      countryCode: country?.code ?? (typeof user.countryCode === 'string' ? user.countryCode : null),
     };
   }
 
@@ -94,15 +104,22 @@ export class CallService {
     const callType = call.callType;
 
     const [caller, receiver, rates] = await Promise.all([
-      User.findById(callerId).select('name userId profileImage').populate('profileImage'),
-      User.findById(receiverId).select('name userId profileImage voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute').populate('profileImage'),
+      User.findById(callerId)
+        .select('name userId profileImage gender dob country countryId')
+        .populate('profileImage')
+        .populate('countryId'),
+      User.findById(receiverId)
+        .select('name userId profileImage gender dob voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute country countryId')
+        .populate('profileImage')
+        .populate('countryId'),
       this.getHostCallEarnRates(receiverId)
     ]);
 
     const currentCallPrice = callType === 'voice' ? rates.voiceCallPrice : rates.videoCallPrice;
     const currentEarnPerMin = callType === 'voice' ? rates.voiceEarnPerMin : rates.videoEarnPerMin;
-    const callerUser = this.toPublicCallUser(caller);
-    const receiverUser = this.toPublicCallUser(receiver);
+    const callerUser = await this.toPublicCallUser(caller);
+    const receiverUser = await this.toPublicCallUser(receiver);
+    const otherUser = isCaller ? receiverUser : callerUser;
 
     const payload: any = {
       callId: call._id,
@@ -120,7 +137,10 @@ export class CallService {
       currency: 'Coins',
       caller: callerUser,
       receiver: receiverUser,
-      otherUser: isCaller ? receiverUser : callerUser,
+      otherUser,
+      country: otherUser?.country || null,
+      countryId: otherUser?.countryId || null,
+      countryDetail: otherUser?.countryDetail || null,
       agoraToken: isCaller ? (call.callerAgoraToken || call.agoraToken || null) : (call.receiverAgoraToken || call.agoraToken || null),
       callerAgoraToken: call.callerAgoraToken || null,
       receiverAgoraToken: call.receiverAgoraToken || null
@@ -151,11 +171,18 @@ export class CallService {
     const role = isCaller ? 'caller' : 'host';
 
     const [caller, host] = await Promise.all([
-      User.findById(callerId).select('name userId profileImage coins').populate('profileImage'),
-      User.findById(receiverId).select('name userId profileImage beans').populate('profileImage')
+      User.findById(callerId)
+        .select('name userId profileImage gender dob country countryId coins')
+        .populate('profileImage')
+        .populate('countryId'),
+      User.findById(receiverId)
+        .select('name userId profileImage gender dob country countryId beans')
+        .populate('profileImage')
+        .populate('countryId')
     ]);
 
     const other = isCaller ? host : caller;
+    const otherUser = await this.toPublicCallUser(other);
     const endedAt = call.endedAt || null;
     const summary: any = {
       role,
@@ -167,17 +194,11 @@ export class CallService {
       duration: call.duration || 0,
       durationFormatted: this.formatDuration(call.duration || 0),
       endedAt,
-      endedAtFormatted: this.formatEndedAt(endedAt)
+      endedAtFormatted: this.formatEndedAt(endedAt),
+      otherUser,
+      country: otherUser?.country || null,
+      countryId: otherUser?.countryId || null,
     };
-
-    if (other) {
-      summary.otherUser = {
-        id: other._id,
-        userId: other.userId ?? null,
-        name: other.name ?? null,
-        profileImage: other.profileImage ?? null
-      };
-    }
 
     if (isCaller) {
       summary.coinsSpent = call.coinsDeducted || 0;
