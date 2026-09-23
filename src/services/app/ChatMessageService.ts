@@ -563,8 +563,24 @@ export class ChatMessageService {
 
     await this.markChatAsRead(userId, chatId);
 
+    const formattedMessages = await Promise.all(
+      messages.map(async (msg) => {
+        const raw: any = formatAgencyHostInviteMessage(msg);
+        if (raw && raw.senderId && typeof raw.senderId === 'object') {
+          raw.senderId = await formatUserActiveStoreItems(raw.senderId, false);
+          raw.sender = raw.senderId;
+          raw.activeChatBubble = raw.senderId.activeChatBubble ?? null;
+          raw.chatBubble = raw.senderId.chatBubble ?? null;
+          raw.chat_bubble = raw.senderId.chat_bubble ?? null;
+          raw.activeFrame = raw.senderId.activeFrame ?? null;
+          raw.frame = raw.senderId.frame ?? null;
+        }
+        return raw;
+      })
+    );
+
     return {
-      data: messages.map((msg) => formatAgencyHostInviteMessage(msg)),
+      data: formattedMessages,
       pagination: {
         page,
         limit,
@@ -683,7 +699,18 @@ export class ChatMessageService {
 
     await Chat.findByIdAndUpdate(data.chatId, { updatedAt: new Date() });
 
-    return populatedMessage;
+    const rawMessage: any = populatedMessage ? (populatedMessage.toObject ? populatedMessage.toObject() : populatedMessage) : null;
+    if (rawMessage && rawMessage.senderId && typeof rawMessage.senderId === 'object') {
+      rawMessage.senderId = await formatUserActiveStoreItems(rawMessage.senderId, false);
+      rawMessage.sender = rawMessage.senderId;
+      rawMessage.activeChatBubble = rawMessage.senderId.activeChatBubble ?? null;
+      rawMessage.chatBubble = rawMessage.senderId.chatBubble ?? null;
+      rawMessage.chat_bubble = rawMessage.senderId.chat_bubble ?? null;
+      rawMessage.activeFrame = rawMessage.senderId.activeFrame ?? null;
+      rawMessage.frame = rawMessage.senderId.frame ?? null;
+    }
+
+    return rawMessage || populatedMessage;
   }
 
   async addReaction(userId: string, messageId: string, reaction: string) {
