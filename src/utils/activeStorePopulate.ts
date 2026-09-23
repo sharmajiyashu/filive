@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import User from '../models/User';
 import UserStoreItem from '../models/UserStoreItem';
 
@@ -19,6 +20,32 @@ export const ACTIVE_STORE_POPULATE = [
   { path: 'activeTheme', populate: { path: 'media' } },
   { path: 'activeRide', populate: { path: 'media' } },
 ] as const;
+
+/** Format a store item document or object to ensure path, url, type, and media are properly present. */
+export function formatStoreItem(item: any) {
+  if (!item) return null;
+  const raw = item.toObject ? item.toObject() : item;
+  if (typeof raw !== 'object') return raw;
+
+  const mediaObj = raw.media ? (raw.media.toObject ? raw.media.toObject() : raw.media) : null;
+  const path = (mediaObj && typeof mediaObj === 'object' && (mediaObj.url || mediaObj.path))
+    ? (mediaObj.url || mediaObj.path)
+    : (typeof raw.media === 'string' ? raw.media : (raw.url || raw.path || ''));
+
+  return {
+    _id: raw._id || raw.id || null,
+    id: raw._id || raw.id || null,
+    name: raw.name || '',
+    type: raw.type || '',
+    media: mediaObj || (path ? { url: path } : null),
+    path: path || '',
+    url: path || '',
+    priceOptions: raw.priceOptions || [],
+    isActive: raw.isActive ?? true,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+  };
+}
 
 export async function clearExpiredActiveStoreItems(userId?: string) {
   const now = new Date();
@@ -69,4 +96,92 @@ export async function stripExpiredActiveStoreOnUser(user: any) {
   }
 
   return user;
+}
+
+/** Formats a user object with all active store items (with path and type) and active purchases list. */
+export async function formatUserActiveStoreItems(user: any, includePurchasedList: boolean = true) {
+  if (!user) return null;
+  const rawUser = user.toObject ? user.toObject() : { ...user };
+  const userIdStr = (rawUser._id || rawUser.id)?.toString();
+
+  if (userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+    await stripExpiredActiveStoreOnUser(rawUser);
+  }
+
+  const activeEntity = formatStoreItem(rawUser.activeEntity || rawUser.entity);
+  const activeFrame = formatStoreItem(rawUser.activeFrame || rawUser.frame);
+  const activeChatBubble = formatStoreItem(rawUser.activeChatBubble || rawUser.chatBubble || rawUser.chat_bubble);
+  const activeTheme = formatStoreItem(rawUser.activeTheme || rawUser.theme);
+  const activeRide = formatStoreItem(rawUser.activeRide || rawUser.ride);
+
+  rawUser.activeEntity = activeEntity;
+  rawUser.entity = activeEntity;
+  rawUser.activeFrame = activeFrame;
+  rawUser.frame = activeFrame;
+  rawUser.activeChatBubble = activeChatBubble;
+  rawUser.chatBubble = activeChatBubble;
+  rawUser.chat_bubble = activeChatBubble;
+  rawUser.activeTheme = activeTheme;
+  rawUser.theme = activeTheme;
+  rawUser.activeRide = activeRide;
+  rawUser.ride = activeRide;
+
+  const activeStoreItems: any[] = [];
+  if (activeEntity) activeStoreItems.push(activeEntity);
+  if (activeFrame) activeStoreItems.push(activeFrame);
+  if (activeChatBubble) activeStoreItems.push(activeChatBubble);
+  if (activeTheme) activeStoreItems.push(activeTheme);
+  if (activeRide) activeStoreItems.push(activeRide);
+
+  rawUser.activeStoreItems = activeStoreItems;
+  rawUser.activeItems = activeStoreItems;
+
+  if (includePurchasedList && userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+    try {
+      const now = new Date();
+      const purchasedDocs = await UserStoreItem.find({
+        userId: new mongoose.Types.ObjectId(userIdStr),
+        expiresAt: { $gt: now }
+      }).populate({
+        path: 'storeItemId',
+        populate: { path: 'media' }
+      });
+
+      const purchasedStoreItems = purchasedDocs.map((doc: any) => {
+        const docObj = doc.toObject ? doc.toObject() : doc;
+        const formattedStoreItem = formatStoreItem(docObj.storeItemId);
+        const remainingMs = Math.max(0, new Date(docObj.expiresAt).getTime() - now.getTime());
+        const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+        return {
+          _id: docObj._id,
+          id: docObj._id,
+          userId: docObj.userId,
+          storeItemId: formattedStoreItem,
+          storeItem: formattedStoreItem,
+          type: formattedStoreItem?.type || '',
+          path: formattedStoreItem?.path || '',
+          url: formattedStoreItem?.url || '',
+          inUse: docObj.inUse ?? false,
+          purchasedAt: docObj.purchasedAt,
+          expiresAt: docObj.expiresAt,
+          remainingMs,
+          remainingDays,
+        };
+      });
+
+      rawUser.purchasedStoreItems = purchasedStoreItems;
+      rawUser.purchasedItems = purchasedStoreItems;
+      rawUser.activeStorePurchases = purchasedStoreItems;
+    } catch {
+      rawUser.purchasedStoreItems = rawUser.purchasedStoreItems || [];
+      rawUser.purchasedItems = rawUser.purchasedItems || [];
+      rawUser.activeStorePurchases = rawUser.activeStorePurchases || [];
+    }
+  } else {
+    rawUser.purchasedStoreItems = rawUser.purchasedStoreItems || [];
+    rawUser.purchasedItems = rawUser.purchasedItems || [];
+    rawUser.activeStorePurchases = rawUser.activeStorePurchases || [];
+  }
+
+  return rawUser;
 }

@@ -7,6 +7,7 @@ import CoinHistory from '../../models/CoinHistory';
 import Room from '../../models/Room';
 import AppLogger from '../../api/loaders/logger';
 import { AgencyCommissionService } from './AgencyCommissionService';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 @Service()
 export class GiftService {
@@ -293,8 +294,11 @@ export class GiftService {
       AppLogger.warn(`[GiftService: sendGift] Agency commission skip: ${(err as Error).message}`);
     }
 
-    await updatedSender.populate('profileImage');
-    await updatedReceiver.populate('profileImage');
+    await updatedSender.populate(['profileImage', ...ACTIVE_STORE_POPULATE]);
+    await updatedReceiver.populate(['profileImage', ...ACTIVE_STORE_POPULATE]);
+
+    const formattedSender = await formatUserActiveStoreItems(updatedSender, false);
+    const formattedReceiver = await formatUserActiveStoreItems(updatedReceiver, false);
 
     const toPublicUser = (user: any, extra: Record<string, any> = {}) => ({
       id: user._id,
@@ -302,22 +306,35 @@ export class GiftService {
       userId: user.userId ?? null,
       name: user.name ?? null,
       profileImage: user.profileImage ?? null,
+      activeFrame: user.activeFrame ?? null,
+      frame: user.frame ?? null,
+      activeEntity: user.activeEntity ?? null,
+      entity: user.entity ?? null,
+      activeChatBubble: user.activeChatBubble ?? null,
+      chatBubble: user.chatBubble ?? null,
+      chat_bubble: user.chat_bubble ?? null,
+      activeTheme: user.activeTheme ?? null,
+      theme: user.theme ?? null,
+      activeRide: user.activeRide ?? null,
+      ride: user.ride ?? null,
+      activeStoreItems: user.activeStoreItems ?? [],
+      activeItems: user.activeItems ?? [],
       ...extra
     });
 
     return {
       gift,
       quantity,
-      sender: toPublicUser(updatedSender, {
+      sender: toPublicUser(formattedSender || updatedSender, {
         coins: updatedSender.coins,
         wealthCoins: updatedSender.wealthCoins,
       }),
-      host: toPublicUser(updatedReceiver, {
+      host: toPublicUser(formattedReceiver || updatedReceiver, {
         coins: updatedReceiver.coins,
         beans: updatedReceiver.beans,
         charmCoins: updatedReceiver.charmCoins,
       }),
-      receiver: toPublicUser(updatedReceiver, {
+      receiver: toPublicUser(formattedReceiver || updatedReceiver, {
         coins: updatedReceiver.coins,
         beans: updatedReceiver.beans,
         charmCoins: updatedReceiver.charmCoins,

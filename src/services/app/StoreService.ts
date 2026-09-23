@@ -4,7 +4,7 @@ import UserStoreItem from '../../models/UserStoreItem';
 import User from '../../models/User';
 import mongoose from 'mongoose';
 import { addDays, addMonths, addYears } from 'date-fns';
-import { clearExpiredActiveStoreItems } from '../../utils/activeStorePopulate';
+import { clearExpiredActiveStoreItems, formatStoreItem, ACTIVE_STORE_FIELD_BY_TYPE } from '../../utils/activeStorePopulate';
 
 @Service()
 export class StoreService {
@@ -20,19 +20,21 @@ export class StoreService {
     media: string;
     priceOptions: IStoreItemPrice[];
   }) {
-    return await StoreItem.create({
+    const created = await StoreItem.create({
       name: data.name,
       type: data.type,
       media: new mongoose.Types.ObjectId(data.media),
       priceOptions: data.priceOptions,
     });
+    const populated = await StoreItem.findById(created._id).populate('media');
+    return formatStoreItem(populated || created);
   }
 
   public async updateStoreItem(id: string, data: any) {
     if (data.media) data.media = new mongoose.Types.ObjectId(data.media);
-    const item = await StoreItem.findByIdAndUpdate(id, data, { new: true });
+    const item = await StoreItem.findByIdAndUpdate(id, data, { new: true }).populate('media');
     if (!item) throw new Error('Store item not found');
-    return item;
+    return formatStoreItem(item);
   }
 
   public async getAdminStoreItems(page: number = 1, limit: number = 20, type?: string) {
@@ -43,8 +45,9 @@ export class StoreService {
     }
     const items = await StoreItem.find(query).populate('media').skip(skip).limit(limit).sort({ createdAt: -1 });
     const total = await StoreItem.countDocuments(query);
+    const formatted = items.map(item => formatStoreItem(item));
     return {
-      data: items,
+      data: formatted,
       total,
       page,
       limit,
@@ -69,8 +72,9 @@ export class StoreService {
     const skip = (page - 1) * limit;
     const items = await StoreItem.find(query).populate('media').skip(skip).limit(limit);
     const total = await StoreItem.countDocuments(query);
+    const formatted = items.map(item => formatStoreItem(item));
     return {
-      data: items,
+      data: formatted,
       total,
       page,
       limit,
@@ -92,7 +96,7 @@ export class StoreService {
       throw new Error('quantity must be a positive integer');
     }
 
-    const item = await StoreItem.findById(storeItemId);
+    const item = await StoreItem.findById(storeItemId).populate('media');
     if (!item || !item.isActive) throw new Error('Store item not available');
 
     const priceOption = item.priceOptions[validityIndex];
@@ -115,19 +119,40 @@ export class StoreService {
       now
     );
 
+    // Auto-equip the newly purchased item so it immediately shows in livestreams & profile
+    await this.toggleItemInUse(userId, stackedItem._id.toString(), true);
+
     const populated = await UserStoreItem.findById(stackedItem._id).populate({
       path: 'storeItemId',
       populate: { path: 'media' }
     });
     const purchasedItem = populated || stackedItem;
+    const formattedStoreItem = formatStoreItem((purchasedItem as any).storeItemId || item);
     const remainingMs = Math.max(0, purchasedItem.expiresAt.getTime() - now.getTime());
     const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+
+    const purchasedItemObj = purchasedItem.toObject ? purchasedItem.toObject() : purchasedItem;
+
+    const formattedPurchasedItem = {
+      ...purchasedItemObj,
+      storeItemId: formattedStoreItem,
+      storeItem: formattedStoreItem,
+      type: formattedStoreItem?.type || item.type,
+      path: formattedStoreItem?.path || '',
+      url: formattedStoreItem?.url || '',
+      inUse: true,
+      remainingMs,
+      remainingDays,
+    };
 
     return {
       quantity: purchaseQuantity,
       totalCoinsSpent: totalCoins,
-      items: [purchasedItem],
-      item: purchasedItem,
+      type: formattedStoreItem?.type || item.type,
+      path: formattedStoreItem?.path || '',
+      url: formattedStoreItem?.url || '',
+      items: [formattedPurchasedItem],
+      item: formattedPurchasedItem,
       expiresAt: purchasedItem.expiresAt,
       remainingMs,
       remainingDays,
@@ -196,6 +221,7 @@ export class StoreService {
       userId: new mongoose.Types.ObjectId(userId),
       storeItemId: new mongoose.Types.ObjectId(storeItemId),
       expiresAt: this.addValidity(now, priceOption, quantity),
+      inUse: true,
     });
   }
 
@@ -226,9 +252,15 @@ export class StoreService {
     const now = new Date();
     const paginatedItems = items.slice(skip, skip + limit).map((item: any) => {
       const obj = item.toObject ? item.toObject() : item;
+      const formattedStoreItem = formatStoreItem(obj.storeItemId);
       const remainingMs = Math.max(0, new Date(obj.expiresAt).getTime() - now.getTime());
       return {
         ...obj,
+        storeItemId: formattedStoreItem,
+        storeItem: formattedStoreItem,
+        type: formattedStoreItem?.type || (obj.storeItemId as any)?.type || '',
+        path: formattedStoreItem?.path || '',
+        url: formattedStoreItem?.url || '',
         remainingMs,
         remainingDays: Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
       };
@@ -258,13 +290,13 @@ export class StoreService {
       throw new Error('Purchased item not found or expired');
     }
 
-    const itemType = (userStoreItem.storeItemId as any).type;
+    const itemType = (userStoreItem.storeItemId as any)?.type;
 
-    if (useStatus) {
+    if (useStatus && itemType) {
       // Un-equip other items of the same type
-      const otherItems = await UserStoreItem.find({ userId, inUse: true }).populate('storeItemId');
+      const otherItems = await UserStoreItem.find({ userId, inUse: true, _id: { $ne: userStoreItemId } }).populate('storeItemId');
       for (const other of otherItems) {
-        if ((other.storeItemId as any).type === itemType) {
+        if ((other.storeItemId as any)?.type === itemType) {
           other.inUse = false;
           await other.save();
         }
@@ -276,22 +308,23 @@ export class StoreService {
 
     // Update user profile fields
     const user = await User.findById(userId);
-    if (user) {
-      const activeFieldMap: any = {
-        'entity': 'activeEntity',
-        'frame': 'activeFrame',
-        'chat_bubble': 'activeChatBubble',
-        'theme': 'activeTheme',
-        'ride': 'activeRide'
-      };
-      
-      const field = activeFieldMap[itemType];
+    if (user && itemType) {
+      const field = ACTIVE_STORE_FIELD_BY_TYPE[itemType];
       if (field) {
-        (user as any)[field] = useStatus ? userStoreItem.storeItemId._id : null;
+        (user as any)[field] = useStatus ? (userStoreItem.storeItemId as any)?._id || userStoreItem.storeItemId : null;
         await user.save();
       }
     }
 
-    return userStoreItem;
+    const formattedStoreItem = formatStoreItem(userStoreItem.storeItemId);
+    const userStoreItemObj = userStoreItem.toObject ? userStoreItem.toObject() : userStoreItem;
+    return {
+      ...userStoreItemObj,
+      storeItemId: formattedStoreItem,
+      storeItem: formattedStoreItem,
+      type: formattedStoreItem?.type || itemType || '',
+      path: formattedStoreItem?.path || '',
+      url: formattedStoreItem?.url || '',
+    };
   }
 }

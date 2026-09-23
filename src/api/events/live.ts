@@ -8,7 +8,7 @@ import User from '../../models/User';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 import { emitSocketError } from '../../utils/socketResponse';
-import { ACTIVE_STORE_POPULATE, stripExpiredActiveStoreOnUser } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 interface JoinLiveStreamData {
   channelName: string;
@@ -67,20 +67,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
-      if (userObj) {
-        await stripExpiredActiveStoreOnUser(userObj);
-      }
-
-      const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+      const userJson = await formatUserActiveStoreItems(userObj, true);
       if (userJson) {
         userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
-        userJson.activeFrame = userJson.activeFrame ?? null;
-        userJson.frame = userJson.activeFrame ?? null;
-        userJson.activeEntity = userJson.activeEntity ?? null;
-        userJson.activeChatBubble = userJson.activeChatBubble ?? null;
-        userJson.activeTheme = userJson.activeTheme ?? null;
-        userJson.activeRide = userJson.activeRide ?? null;
       }
 
       const payload = {
@@ -91,7 +81,20 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         room_id: liveStream.roomId ?? null,
         user: userJson || userObj,
         activeFrame: userJson?.activeFrame ?? null,
-        frame: userJson?.activeFrame ?? null,
+        frame: userJson?.frame ?? null,
+        activeEntity: userJson?.activeEntity ?? null,
+        entity: userJson?.entity ?? null,
+        activeChatBubble: userJson?.activeChatBubble ?? null,
+        chatBubble: userJson?.chatBubble ?? null,
+        chat_bubble: userJson?.chat_bubble ?? null,
+        activeTheme: userJson?.activeTheme ?? null,
+        theme: userJson?.theme ?? null,
+        activeRide: userJson?.activeRide ?? null,
+        ride: userJson?.ride ?? null,
+        activeStoreItems: userJson?.activeStoreItems ?? [],
+        activeItems: userJson?.activeItems ?? [],
+        purchasedStoreItems: userJson?.purchasedStoreItems ?? [],
+        purchasedItems: userJson?.purchasedItems ?? [],
         viewerCount: liveStream.viewerCount,
         charmRankingDaily: userJson?.charmRankingDaily,
         totalGiftRevenue: liveStream?.totalGiftRevenue || 0,
@@ -223,22 +226,14 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide')
+        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
-      if (userObj) {
-        await stripExpiredActiveStoreOnUser(userObj);
-      }
-
-      const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+      const userJson = await formatUserActiveStoreItems(userObj, false);
       if (userJson) {
         userJson.userId = userJson.userId ?? null;
         userJson.profileImage = userJson.profileImage ?? null;
-        userJson.activeFrame = userJson.activeFrame ?? null;
-        userJson.frame = userJson.activeFrame ?? null;
-        userJson.activeEntity = userJson.activeEntity ?? null;
-        userJson.activeChatBubble = userJson.activeChatBubble ?? null;
       }
 
       const payload = {
@@ -248,6 +243,19 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         roomId: liveStream?.roomId ?? null,
         room_id: liveStream?.roomId ?? null,
         user: userJson,
+        activeFrame: userJson?.activeFrame ?? null,
+        frame: userJson?.frame ?? null,
+        activeEntity: userJson?.activeEntity ?? null,
+        entity: userJson?.entity ?? null,
+        activeChatBubble: userJson?.activeChatBubble ?? null,
+        chatBubble: userJson?.chatBubble ?? null,
+        chat_bubble: userJson?.chat_bubble ?? null,
+        activeTheme: userJson?.activeTheme ?? null,
+        theme: userJson?.theme ?? null,
+        activeRide: userJson?.activeRide ?? null,
+        ride: userJson?.ride ?? null,
+        activeStoreItems: userJson?.activeStoreItems ?? [],
+        activeItems: userJson?.activeItems ?? [],
         message,
         createdAt: new Date()
       };
@@ -322,7 +330,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         emitSocketError(socket, 'start_game', 'channelName and gameId are required', 'Validation failed', 'VALIDATION_FAILED', callback);
         return;
       }
-      
+
       const game = await mongoose.model('Game').findById(gameId).populate('image');
       if (!game) {
         emitSocketError(socket, 'start_game', 'Game not found', 'Game not found', 'GAME_NOT_FOUND', callback);
@@ -332,10 +340,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       // Update the room setting to reflect the active game
       const liveStream = await Room.findOne({ channelName });
       if (liveStream) {
-         await mongoose.model('RoomSetting').findOneAndUpdate(
-           { hostId: liveStream.hostId },
-           { gameId: new mongoose.Types.ObjectId(gameId) }
-         );
+        await mongoose.model('RoomSetting').findOneAndUpdate(
+          { hostId: liveStream.hostId },
+          { gameId: new mongoose.Types.ObjectId(gameId) }
+        );
       }
 
       const payload = { success: true, type: 'game_started', game, senderId: userId };
@@ -361,10 +369,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       const liveStream = await Room.findOne({ channelName });
       if (liveStream) {
-         await mongoose.model('RoomSetting').findOneAndUpdate(
-           { hostId: liveStream.hostId },
-           { $unset: { gameId: "" } }
-         );
+        await mongoose.model('RoomSetting').findOneAndUpdate(
+          { hostId: liveStream.hostId },
+          { $unset: { gameId: "" } }
+        );
       }
 
       const payload = { success: true, type: 'game_ended', senderId: userId };

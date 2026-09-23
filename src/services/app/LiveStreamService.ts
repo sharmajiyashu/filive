@@ -12,7 +12,7 @@ import config from '../../config';
 import AppLogger from '../../api/loaders/logger';
 import { LevelService } from './LevelService';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
-import { ACTIVE_STORE_POPULATE } from '../../utils/activeStorePopulate';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins';
 
@@ -1371,7 +1371,8 @@ export class LiveStreamService {
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
         populate: [
           { path: 'profileImage' },
-          { path: 'countryId' }
+          { path: 'countryId' },
+          ...ACTIVE_STORE_POPULATE
         ]
       })
       .sort({ status: -1, viewerCount: -1, createdAt: -1 })
@@ -1420,7 +1421,8 @@ export class LiveStreamService {
     let activeStream = await Room.findOne(liveQuery)
       .populate({
         path: 'hostId',
-        populate: { path: 'profileImage' }
+        select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+        populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
       });
 
     if (!activeStream) {
@@ -1433,7 +1435,7 @@ export class LiveStreamService {
         .populate({
           path: 'hostId',
           select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-          populate: { path: 'profileImage' }
+          populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
         });
     }
     return await this.populateRoomWithDailyRank(activeStream, hostId);
@@ -1444,7 +1446,8 @@ export class LiveStreamService {
    */
   public async getRoomDetails(channelName: string, currentUserId?: string) {
     const liveStream = await Room.findOne({ channelName })
-      .populate(this.hostPopulate());
+      .populate(this.hostPopulate())
+      .populate(this.seatPopulate());
     if (!liveStream) {
       throw new Error('Room not found');
     }
@@ -1466,11 +1469,12 @@ export class LiveStreamService {
       .populate({
         path: 'hostId',
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
-        populate: {
-          path: 'profileImage'
-        }
+        populate: [
+          { path: 'profileImage' },
+          { path: 'countryId' },
+          ...ACTIVE_STORE_POPULATE
+        ]
       })
-
       .sort({ endedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -1512,9 +1516,23 @@ export class LiveStreamService {
         const populatedHost = await User.findById(roomObj.hostId)
           .select(HOST_SAFE_SELECT)
           .populate('profileImage')
-          .populate('countryId');
+          .populate('countryId')
+          .populate([...ACTIVE_STORE_POPULATE] as any);
         roomObj.hostId = populatedHost ? (populatedHost.toObject ? populatedHost.toObject() : populatedHost) : roomObj.hostId;
       }
+
+      if (roomObj.hostId._id && (!roomObj.hostId.activeFrame || typeof roomObj.hostId.activeFrame === 'string')) {
+        const populatedHost = await User.findById(roomObj.hostId._id)
+          .select(HOST_SAFE_SELECT)
+          .populate('profileImage')
+          .populate('countryId')
+          .populate([...ACTIVE_STORE_POPULATE] as any);
+        if (populatedHost) {
+          roomObj.hostId = populatedHost.toObject ? populatedHost.toObject() : populatedHost;
+        }
+      }
+
+      roomObj.hostId = await formatUserActiveStoreItems(roomObj.hostId, true);
 
       const host = roomObj.hostId;
       const hostIdStr = host._id ? host._id.toString() : host.toString();
@@ -1555,7 +1573,18 @@ export class LiveStreamService {
     if (Array.isArray(roomObj.seats)) {
       roomObj.seats = await Promise.all(roomObj.seats.map(async (seat: any) => {
         if (!seat?.userId || typeof seat.userId !== 'object') return seat;
-        const seated = seat.userId.toObject ? seat.userId.toObject() : { ...seat.userId };
+        let seated = seat.userId.toObject ? seat.userId.toObject() : { ...seat.userId };
+        if (seated._id && (!seated.activeFrame || typeof seated.activeFrame === 'string')) {
+          const populatedSeated = await User.findById(seated._id)
+            .select(HOST_SAFE_SELECT)
+            .populate('profileImage')
+            .populate('countryId')
+            .populate([...ACTIVE_STORE_POPULATE] as any);
+          if (populatedSeated) {
+            seated = populatedSeated.toObject ? populatedSeated.toObject() : populatedSeated;
+          }
+        }
+        seated = await formatUserActiveStoreItems(seated, true);
         const wealthCoins = seated.wealthCoins || 0;
         const charmCoins = seated.charmCoins || 0;
         const [enriched, richLevelInfo, charmLevelInfo] = await Promise.all([
@@ -1646,9 +1675,11 @@ export class LiveStreamService {
 
     if (currentUserId) {
       const me = await User.findById(currentUserId)
-        .select('name userId profileImage')
-        .populate('profileImage');
-      const meObj = me ? (me.toObject ? me.toObject() : me) : null;
+        .select('name userId profileImage bio isPremium activeFrame activeEntity activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .populate('profileImage')
+        .populate([...ACTIVE_STORE_POPULATE] as any);
+      const meFormatted = await formatUserActiveStoreItems(me, true);
+      const meObj = meFormatted ? (meFormatted.toObject ? meFormatted.toObject() : meFormatted) : null;
       roomObj.currentUser = meObj
         ? {
           id: meObj._id,
@@ -1656,7 +1687,22 @@ export class LiveStreamService {
           name: meObj.name ?? null,
           profileImage: meObj.profileImage ?? null,
           isFollowing: roomObj.hostId?.isFollowing ?? false,
-          isFollowingRoom
+          isFollowingRoom,
+          activeFrame: meObj.activeFrame ?? null,
+          frame: meObj.frame ?? null,
+          activeEntity: meObj.activeEntity ?? null,
+          entity: meObj.entity ?? null,
+          activeChatBubble: meObj.activeChatBubble ?? null,
+          chatBubble: meObj.chatBubble ?? null,
+          chat_bubble: meObj.chat_bubble ?? null,
+          activeTheme: meObj.activeTheme ?? null,
+          theme: meObj.theme ?? null,
+          activeRide: meObj.activeRide ?? null,
+          ride: meObj.ride ?? null,
+          activeStoreItems: meObj.activeStoreItems ?? [],
+          activeItems: meObj.activeItems ?? [],
+          purchasedStoreItems: meObj.purchasedStoreItems ?? [],
+          purchasedItems: meObj.purchasedItems ?? [],
         }
         : null;
     } else {
