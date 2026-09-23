@@ -14,6 +14,7 @@ import { MediaService } from '../common/MediaService';
 import { FirebasePushService } from '../common/FirebasePushService';
 import { MediaType } from '../../constants/enum';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
+import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 @Service()
 export class ChatMessageService {
@@ -548,8 +549,8 @@ export class ChatMessageService {
       .limit(limit)
       .populate({
         path: 'senderId',
-        select: 'name email profileImage userRole userId dob',
-        populate: { path: 'profileImage' }
+        select: 'name email profileImage userRole userId dob activeChatBubble activeFrame activeEntry activeTheme activeRide',
+        populate: [{ path: 'profileImage' }, ...ACTIVE_STORE_POPULATE]
       })
       .populate('medias')
       .populate({
@@ -646,8 +647,8 @@ export class ChatMessageService {
     const populatedMessage = await Message.findById(message._id)
       .populate({
         path: 'senderId',
-        select: 'name email profileImage userRole userId dob',
-        populate: { path: 'profileImage' }
+        select: 'name email profileImage userRole userId dob activeChatBubble activeFrame activeEntry activeTheme activeRide',
+        populate: [{ path: 'profileImage' }, ...ACTIVE_STORE_POPULATE]
       })
       .populate('medias')
       .populate({
