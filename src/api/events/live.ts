@@ -52,15 +52,6 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       const liveStream = await liveStreamService.joinLiveStream(userId, channelName);
       AppLogger.info(`[Socket Event: join_room/join_live] liveStreamService.joinLiveStream returned successfully. viewerCount=${liveStream.viewerCount}`);
 
-      const joinedResponse = {
-        ...liveStream,
-        success: true,
-        type: 'room_joined'
-      };
-
-      socket.emit('live_joined', joinedResponse);
-      socket.emit('room_joined', joinedResponse);
-
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
         .select('name userId profileImage bio location isPremium gender country activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
@@ -72,6 +63,32 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
       }
+
+      const joinedResponse = {
+        ...liveStream,
+        success: true,
+        type: 'room_joined',
+        activeEntry: userJson?.activeEntry ?? null,
+        entry: userJson?.entry ?? null,
+        activeFrame: userJson?.activeFrame ?? null,
+        frame: userJson?.frame ?? null,
+        activeRide: userJson?.activeRide ?? null,
+        ride: userJson?.ride ?? null,
+        activeChatBubble: userJson?.activeChatBubble ?? null,
+        chatBubble: userJson?.chatBubble ?? null,
+        chat_bubble: userJson?.chat_bubble ?? null,
+        activeTheme: userJson?.activeTheme ?? null,
+        theme: userJson?.theme ?? null,
+        activeStoreItems: userJson?.activeStoreItems ?? [],
+        activeItems: userJson?.activeItems ?? [],
+        purchasedStoreItems: userJson?.purchasedStoreItems ?? [],
+        purchasedItems: userJson?.purchasedItems ?? [],
+        currentUser: userJson || liveStream.currentUser || null,
+        user: userJson || liveStream.currentUser || null
+      };
+
+      socket.emit('live_joined', joinedResponse);
+      socket.emit('room_joined', joinedResponse);
 
       const payload = {
         success: true,
@@ -109,7 +126,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_joined', payload);
 
       if (typeof callback === 'function') {
-        callback({ success: true, type: 'SUCCESS', event: 'join_room', data: liveStream });
+        callback({
+          success: true,
+          type: 'SUCCESS',
+          event: 'join_room',
+          data: joinedResponse
+        });
       }
 
       AppLogger.info(`[Socket Event: join_room/join_live] Success. User ${userId} joined room_${channelName}`);

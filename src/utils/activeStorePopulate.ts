@@ -35,7 +35,10 @@ export const ACTIVE_STORE_POPULATE = [
 export function formatStoreItem(item: any) {
   if (!item) return null;
   const raw = item.toObject ? item.toObject() : item;
-  if (typeof raw !== 'object') return raw;
+  if (!raw || typeof raw !== 'object') return null;
+
+  // If it's just an ObjectId without name, return null so it doesn't return raw ObjectId
+  if (!raw.name && !raw.media && !raw.type && !raw.url && !raw.path) return null;
 
   const mediaObj = raw.media ? (raw.media.toObject ? raw.media.toObject() : raw.media) : null;
   const path = (mediaObj && typeof mediaObj === 'object' && (mediaObj.url || mediaObj.path))
@@ -121,7 +124,60 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
     await stripExpiredActiveStoreOnUser(rawUser);
   }
 
-  const activeEntry = formatStoreItem(rawUser.activeEntry || rawUser.entry);
+  // Handle legacy DB fields
+  if (!rawUser.activeEntry && (rawUser as any).activeEntity) {
+    rawUser.activeEntry = (rawUser as any).activeEntity;
+  }
+  if (!rawUser.entry && (rawUser as any).entity) {
+    rawUser.entry = (rawUser as any).entity;
+  }
+
+  // If active fields are unpopulated ObjectIds or strings, fetch them with media
+  try {
+    const StoreItemModel = mongoose.model('StoreItem');
+    for (const [typeKey, fieldName] of Object.entries(ACTIVE_STORE_FIELD_BY_TYPE)) {
+      const val = rawUser[fieldName] || rawUser[typeKey];
+      if (val && (typeof val !== 'object' || !val.name || (!val.media && !val.url && !val.path))) {
+        const sId = val._id || val;
+        if (mongoose.Types.ObjectId.isValid(sId)) {
+          const fetched = await StoreItemModel.findById(sId).populate('media');
+          if (fetched) {
+            rawUser[fieldName] = fetched;
+            rawUser[typeKey] = fetched;
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Fallback: If any active field is still missing, check inUse items from UserStoreItem
+  if (userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+    try {
+      const now = new Date();
+      const inUseDocs = await UserStoreItem.find({
+        userId: new mongoose.Types.ObjectId(userIdStr),
+        inUse: true,
+        expiresAt: { $gt: now }
+      }).populate({
+        path: 'storeItemId',
+        populate: { path: 'media' }
+      });
+
+      for (const doc of inUseDocs) {
+        const itemDoc = (doc as any).storeItemId;
+        if (itemDoc) {
+          const normType = normalizeStoreTypeQuery(itemDoc.type);
+          const field = normType ? ACTIVE_STORE_FIELD_BY_TYPE[normType] : undefined;
+          if (field && (!rawUser[field] || typeof rawUser[field] !== 'object' || !rawUser[field].name)) {
+            rawUser[field] = itemDoc;
+            if (normType) rawUser[normType] = itemDoc;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  const activeEntry = formatStoreItem(rawUser.activeEntry || rawUser.entry || (rawUser as any).activeEntity || (rawUser as any).entity);
   const activeFrame = formatStoreItem(rawUser.activeFrame || rawUser.frame);
   const activeChatBubble = formatStoreItem(rawUser.activeChatBubble || rawUser.chatBubble || rawUser.chat_bubble);
   const activeTheme = formatStoreItem(rawUser.activeTheme || rawUser.theme);
