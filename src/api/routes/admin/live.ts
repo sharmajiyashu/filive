@@ -187,6 +187,49 @@ export default (router: Router) => {
     }
   });
 
+  liveRouter.post('/block', async (req: any, res: Response) => {
+    try {
+      const { channelName, userIdToBlock } = req.body;
+      if (!channelName || !userIdToBlock) {
+        throw new Error('channelName and userIdToBlock are required');
+      }
+      const room = await Room.findOneAndUpdate(
+        { channelName },
+        {
+          $addToSet: { blockedUsers: userIdToBlock },
+          $pull: { viewers: userIdToBlock },
+        },
+        { new: true }
+      );
+      if (!room) {
+        throw new Error('Room not found');
+      }
+      return ResponseWrapper.success(res, room, 'User blocked in room successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  liveRouter.post('/unblock', async (req: any, res: Response) => {
+    try {
+      const { channelName, userIdToUnblock } = req.body;
+      if (!channelName || !userIdToUnblock) {
+        throw new Error('channelName and userIdToUnblock are required');
+      }
+      const room = await Room.findOneAndUpdate(
+        { channelName },
+        { $pull: { blockedUsers: userIdToUnblock } },
+        { new: true }
+      );
+      if (!room) {
+        throw new Error('Room not found');
+      }
+      return ResponseWrapper.success(res, room, 'User unblocked in room successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   liveRouter.get('/audience/:channelName', async (req: any, res: Response) => {
     try {
       let { channelName } = req.params;
@@ -203,7 +246,8 @@ export default (router: Router) => {
         throw new Error('Active room not found');
       }
 
-      const viewersWithIndex = liveStream.viewers.map((user: any, index: number) => ({
+      const validViewers = (liveStream.viewers || []).filter((u: any) => u != null);
+      const viewersWithIndex = validViewers.map((user: any, index: number) => ({
         user,
         joinIndex: index,
       }));
@@ -211,6 +255,9 @@ export default (router: Router) => {
       viewersWithIndex.sort((a: any, b: any) => {
         const uA = a.user;
         const uB = b.user;
+        if (!uA && !uB) return 0;
+        if (!uA) return 1;
+        if (!uB) return -1;
         if (uA.isPremium && !uB.isPremium) return -1;
         if (!uA.isPremium && uB.isPremium) return 1;
         const levelA = uA.wealthCoins || 0;
@@ -219,7 +266,7 @@ export default (router: Router) => {
         return a.joinIndex - b.joinIndex;
       });
 
-      const hostIdStr = liveStream.hostId.toString();
+      const hostIdStr = liveStream.hostId ? liveStream.hostId.toString() : '';
       const sortedUsers = viewersWithIndex.map((item: any) => {
         const userObj = item.user.toObject ? item.user.toObject() : item.user;
         return {
