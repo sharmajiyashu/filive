@@ -212,6 +212,7 @@ export class UserService {
     country?: string;
     status?: string;
     role?: string;
+    authProvider?: string;
     startDate?: string;
     endDate?: string;
   }) {
@@ -227,6 +228,25 @@ export class UserService {
         query.isPremium = true;
       } else if (params.category === 'normal' || params.category === 'real') {
         query.isPremium = false;
+      }
+    }
+
+    // Auth Provider / Registration Type filter
+    if (params.authProvider && params.authProvider !== 'all') {
+      if (params.authProvider === 'google') {
+        query.$or = [{ authProvider: 'google' }, { googleId: { $exists: true, $ne: '' } }];
+      } else if (params.authProvider === 'facebook') {
+        query.$or = [{ authProvider: 'facebook' }, { facebookId: { $exists: true, $ne: '' } }];
+      } else if (params.authProvider === 'email') {
+        query.$or = [
+          { authProvider: 'email' },
+          { email: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false } }
+        ];
+      } else if (params.authProvider === 'phone') {
+        query.$or = [
+          { authProvider: 'phone' },
+          { mobile: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false } }
+        ];
       }
     }
 
@@ -336,8 +356,25 @@ export class UserService {
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
         const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
 
+        let authProvider = userObj.authProvider;
+        if (!authProvider) {
+          if (userObj.googleId) authProvider = 'google';
+          else if (userObj.facebookId) authProvider = 'facebook';
+          else if (userObj.email && !userObj.mobile) authProvider = 'email';
+          else if (userObj.mobile) authProvider = 'phone';
+          else authProvider = 'phone';
+        }
+
+        let loginType = 'Phone';
+        if (authProvider === 'google') loginType = 'Google';
+        else if (authProvider === 'facebook') loginType = 'Facebook';
+        else if (authProvider === 'email') loginType = 'Email';
+        else if (authProvider === 'phone') loginType = 'Phone';
+
         return attachUserCountryAndAge({
           ...userObj,
+          authProvider,
+          loginType,
           roleBadge,
           userType: userObj.isPremium ? 'VIP' : 'Normal',
           status: isOnline ? 'Online' : 'Offline',

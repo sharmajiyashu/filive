@@ -56,6 +56,21 @@ export class AppSettingService {
     payment_gateway_razorpay_merchant_id: 'RKaMsbocngrNr4',
     payment_gateway_razorpay_key_id: 'rzp_live_TOLcZZUrGcgCad',
     payment_gateway_razorpay_key_secret: 'l2iC9Y61NpDsaec0FROTkqsr',
+
+    // Social Auth & Login Settings (Google & Facebook)
+    google_login_enabled: true,
+    google_client_id: process.env.GOOGLE_CLIENT_ID || '',
+    google_client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+    google_android_client_id: process.env.GOOGLE_ANDROID_CLIENT_ID || '',
+    google_ios_client_id: process.env.GOOGLE_IOS_CLIENT_ID || '',
+
+    facebook_login_enabled: true,
+    facebook_app_id: process.env.FACEBOOK_APP_ID || '',
+    facebook_app_secret: process.env.FACEBOOK_APP_SECRET || '',
+    facebook_client_token: process.env.FACEBOOK_CLIENT_TOKEN || '',
+
+    phone_login_enabled: true,
+    email_login_enabled: true,
   };
 
   async getSettings() {

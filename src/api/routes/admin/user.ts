@@ -35,6 +35,7 @@ export default (router: Router) => {
       const country = req.query.country?.toString();
       const status = req.query.status?.toString();
       const role = req.query.role?.toString();
+      const authProvider = req.query.authProvider?.toString();
       const startDate = req.query.startDate?.toString();
       const endDate = req.query.endDate?.toString();
 
@@ -46,6 +47,7 @@ export default (router: Router) => {
         country,
         status,
         role,
+        authProvider,
         startDate,
         endDate,
       });

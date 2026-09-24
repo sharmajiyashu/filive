@@ -102,6 +102,10 @@ export interface IUser extends Document {
   deviceBan: boolean;
   blockReason?: string;
   blockedUntil?: Date;
+  authProvider?: 'phone' | 'email' | 'google' | 'facebook' | 'apple';
+  googleId?: string;
+  facebookId?: string;
+  socialProfile?: any;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -216,6 +220,10 @@ const UserSchema: Schema = new Schema(
     deviceBan: { type: Boolean, default: false },
     blockReason: { type: String },
     blockedUntil: { type: Date },
+    authProvider: { type: String, enum: ['phone', 'email', 'google', 'facebook', 'apple'], default: 'phone' },
+    googleId: { type: String, sparse: true, index: true },
+    facebookId: { type: String, sparse: true, index: true },
+    socialProfile: { type: Schema.Types.Mixed },
   },
   {
     timestamps: true,

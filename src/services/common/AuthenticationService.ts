@@ -1,11 +1,13 @@
 import { Container, Inject, Service } from "typedi";
 import mongoose from "mongoose";
+import axios from "axios";
 import User, { IUser } from '../../models/User';
 import Follow from '../../models/Follow';
 import bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import config from "../../config";
 import { EmailService } from "./emailService";
+import { AppSettingService } from "./AppSettingService";
 import { CONSTANTS } from "../../config/constants";
 import { addMinutes } from "date-fns";
 import AppLogger from '../../api/loaders/logger';
@@ -18,6 +20,7 @@ export class AuthenticationService {
     constructor(
         @Inject('mongoConnection') private mongoConnection: typeof mongoose,
         @Inject() private emailService: EmailService,
+        @Inject() private appSettingService: AppSettingService,
     ) { }
 
     private generateToken(userId: string, role: string): string {
@@ -119,6 +122,7 @@ export class AuthenticationService {
             ...data,
             password: hashedPassword,
             userRole: 'user',
+            authProvider: 'email',
         });
 
         // Send OTP via email
@@ -270,6 +274,7 @@ export class AuthenticationService {
                 otp,
                 otpExpires,
                 userRole: 'user',
+                authProvider: 'phone',
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 referredBy: referrerObjId
@@ -283,6 +288,9 @@ export class AuthenticationService {
             if (!user.countryId && resolvedCountry?.countryId) {
                 user.countryId = resolvedCountry.countryId;
                 user.country = resolvedCountry.country;
+            }
+            if (!user.authProvider) {
+                user.authProvider = 'phone';
             }
             await user.save();
         }
@@ -447,6 +455,411 @@ export class AuthenticationService {
         }
     }
 
+    /**
+     * Google Login & Signup Verification
+     */
+    async googleAuth(payload: {
+        idToken?: string;
+        accessToken?: string;
+        email?: string;
+        name?: string;
+        googleId?: string;
+        photoUrl?: string;
+        countryId?: string;
+        countryCode?: string;
+        referredBy?: string;
+        extension?: string;
+        ipCountry?: string;
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        const settings = await this.appSettingService.getSettings();
+        if (settings.google_login_enabled === false) {
+            throw new Error('Google login is currently disabled by administrator');
+        }
+
+        let resolvedGoogleId = payload.googleId;
+        let resolvedEmail = payload.email?.toLowerCase().trim();
+        let resolvedName = payload.name;
+        let resolvedPhotoUrl = payload.photoUrl;
+
+        // Verify ID token via Google TokenInfo API if provided
+        if (payload.idToken && payload.idToken.trim() !== '') {
+            try {
+                const response = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(payload.idToken)}`, {
+                    timeout: 8000,
+                });
+                const gData = response.data;
+                if (gData && (gData.sub || gData.user_id)) {
+                    resolvedGoogleId = gData.sub || gData.user_id;
+                    resolvedEmail = gData.email ? gData.email.toLowerCase().trim() : resolvedEmail;
+                    resolvedName = gData.name || gData.given_name || resolvedName;
+                    resolvedPhotoUrl = gData.picture || resolvedPhotoUrl;
+                }
+            } catch (err: any) {
+                AppLogger.warn(`Google tokeninfo verification failed: ${err?.response?.data?.error_description || err?.message}`);
+                // Fall back to accessToken if available
+                if (payload.accessToken) {
+                    try {
+                        const userinfoRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+                            headers: { Authorization: `Bearer ${payload.accessToken}` },
+                            timeout: 8000,
+                        });
+                        const uData = userinfoRes.data;
+                        if (uData && uData.sub) {
+                            resolvedGoogleId = uData.sub;
+                            resolvedEmail = uData.email ? uData.email.toLowerCase().trim() : resolvedEmail;
+                            resolvedName = uData.name || resolvedName;
+                            resolvedPhotoUrl = uData.picture || resolvedPhotoUrl;
+                        }
+                    } catch (e: any) {
+                        AppLogger.warn(`Google userinfo fallback failed: ${e?.message}`);
+                    }
+                }
+            }
+        } else if (payload.accessToken && payload.accessToken.trim() !== '') {
+            try {
+                const userinfoRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${payload.accessToken}` },
+                    timeout: 8000,
+                });
+                const uData = userinfoRes.data;
+                if (uData && uData.sub) {
+                    resolvedGoogleId = uData.sub;
+                    resolvedEmail = uData.email ? uData.email.toLowerCase().trim() : resolvedEmail;
+                    resolvedName = uData.name || resolvedName;
+                    resolvedPhotoUrl = uData.picture || resolvedPhotoUrl;
+                }
+            } catch (e: any) {
+                AppLogger.warn(`Google userinfo via accessToken failed: ${e?.message}`);
+            }
+        }
+
+        if (!resolvedGoogleId && !resolvedEmail) {
+            throw new Error('Unable to authenticate with Google. Invalid or expired token.');
+        }
+
+        // Look for existing user by Google ID or by Email
+        const searchConditions: any[] = [];
+        if (resolvedGoogleId) {
+            searchConditions.push({ googleId: resolvedGoogleId });
+        }
+        if (resolvedEmail) {
+            searchConditions.push({ email: resolvedEmail });
+        }
+
+        let user = await User.findOne({ $or: searchConditions })
+            .populate('profileImage')
+            .populate('countryId');
+
+        let isNewUser = false;
+
+        if (user) {
+            await this.assertUserNotBlocked(user);
+
+            // Update user details if needed
+            let hasChanges = false;
+            if (resolvedGoogleId && !user.googleId) {
+                user.googleId = resolvedGoogleId;
+                hasChanges = true;
+            }
+            if (!user.authProvider) {
+                user.authProvider = 'google';
+                hasChanges = true;
+            }
+            if ((!user.name || user.name === 'User') && resolvedName) {
+                user.name = resolvedName;
+                hasChanges = true;
+            }
+            if (!user.isVerified) {
+                user.isVerified = true;
+                hasChanges = true;
+            }
+
+            user.lastLoginAt = new Date();
+            await user.save();
+        } else {
+            // New user registration via Google
+            isNewUser = true;
+
+            const resolvedCountry = await resolveCountryFromSignals({
+                countryId: payload.countryId,
+                countryCode: payload.countryCode,
+                extension: payload.extension,
+                ipCountry: payload.ipCountry,
+            });
+
+            let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
+            if (payload.referredBy && payload.referredBy.trim() !== '') {
+                const refStr = payload.referredBy.trim();
+                let referrerUser = null;
+                if (mongoose.Types.ObjectId.isValid(refStr)) {
+                    referrerUser = await User.findById(refStr);
+                }
+                if (!referrerUser) {
+                    const searchNum = Number(refStr);
+                    const searchConds: any[] = [
+                        { referralCode: refStr },
+                        { referCode: refStr }
+                    ];
+                    if (!isNaN(searchNum)) {
+                        searchConds.push({ userId: searchNum });
+                    }
+                    referrerUser = await User.findOne({ $or: searchConds });
+                }
+                if (referrerUser) {
+                    referrerObjId = referrerUser._id;
+                }
+            }
+
+            user = await User.create({
+                name: resolvedName || 'Google User',
+                email: resolvedEmail || undefined,
+                googleId: resolvedGoogleId,
+                authProvider: 'google',
+                userRole: 'user',
+                isVerified: true,
+                countryId: resolvedCountry?.countryId,
+                country: resolvedCountry?.country,
+                lastLoginAt: new Date(),
+                socialProfile: {
+                    provider: 'google',
+                    id: resolvedGoogleId,
+                    photoUrl: resolvedPhotoUrl,
+                }
+            });
+
+            await ensureUserReferralCode(user);
+
+            // Process referral reward
+            if (referrerObjId) {
+                try {
+                    const { CoinService } = require('../app/CoinService');
+                    const coinService: any = Container.get(CoinService);
+                    await coinService.processReferralReward(referrerObjId.toString(), user._id.toString());
+                } catch (err) {
+                    AppLogger.error(`Error rewarding referrer ${referrerObjId}: ${err}`);
+                }
+            }
+        }
+
+        const token = this.generateToken(user._id.toString(), user.userRole);
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+        const { referralCode } = await ensureUserReferralCode(user);
+        const deepLink = await getReferralDeepLink(referralCode);
+
+        return {
+            token,
+            isNewUser,
+            user: {
+                ...user.toObject(),
+                referralCode,
+                referCode: referralCode,
+                deepLink,
+                followersCount,
+                followingCount,
+            } as any,
+        };
+    }
+
+    /**
+     * Facebook Login & Signup Verification
+     */
+    async facebookAuth(payload: {
+        accessToken: string;
+        email?: string;
+        name?: string;
+        facebookId?: string;
+        photoUrl?: string;
+        countryId?: string;
+        countryCode?: string;
+        referredBy?: string;
+        extension?: string;
+        ipCountry?: string;
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        const settings = await this.appSettingService.getSettings();
+        if (settings.facebook_login_enabled === false) {
+            throw new Error('Facebook login is currently disabled by administrator');
+        }
+
+        let resolvedFacebookId = payload.facebookId;
+        let resolvedEmail = payload.email?.toLowerCase().trim();
+        let resolvedName = payload.name;
+        let resolvedPhotoUrl = payload.photoUrl;
+
+        // Verify Facebook Access Token via Graph API
+        if (payload.accessToken && payload.accessToken.trim() !== '') {
+            try {
+                const fbUrl = `https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${encodeURIComponent(payload.accessToken)}`;
+                const response = await axios.get(fbUrl, { timeout: 8000 });
+                const fbData = response.data;
+                if (fbData && fbData.id) {
+                    resolvedFacebookId = fbData.id;
+                    resolvedName = fbData.name || resolvedName;
+                    resolvedEmail = fbData.email ? fbData.email.toLowerCase().trim() : resolvedEmail;
+                    resolvedPhotoUrl = fbData.picture?.data?.url || resolvedPhotoUrl;
+                }
+            } catch (err: any) {
+                AppLogger.warn(`Facebook graph API verification failed: ${err?.response?.data?.error?.message || err?.message}`);
+                if (!resolvedFacebookId) {
+                    throw new Error('Invalid or expired Facebook access token.');
+                }
+            }
+        }
+
+        if (!resolvedFacebookId && !resolvedEmail) {
+            throw new Error('Unable to authenticate with Facebook. Invalid token or credentials.');
+        }
+
+        // Look for existing user by Facebook ID or by Email
+        const searchConditions: any[] = [];
+        if (resolvedFacebookId) {
+            searchConditions.push({ facebookId: resolvedFacebookId });
+        }
+        if (resolvedEmail) {
+            searchConditions.push({ email: resolvedEmail });
+        }
+
+        let user = await User.findOne({ $or: searchConditions })
+            .populate('profileImage')
+            .populate('countryId');
+
+        let isNewUser = false;
+
+        if (user) {
+            await this.assertUserNotBlocked(user);
+
+            // Update user details if needed
+            let hasChanges = false;
+            if (resolvedFacebookId && !user.facebookId) {
+                user.facebookId = resolvedFacebookId;
+                hasChanges = true;
+            }
+            if (!user.authProvider) {
+                user.authProvider = 'facebook';
+                hasChanges = true;
+            }
+            if ((!user.name || user.name === 'User') && resolvedName) {
+                user.name = resolvedName;
+                hasChanges = true;
+            }
+            if (!user.isVerified) {
+                user.isVerified = true;
+                hasChanges = true;
+            }
+
+            user.lastLoginAt = new Date();
+            await user.save();
+        } else {
+            // New user registration via Facebook
+            isNewUser = true;
+
+            const resolvedCountry = await resolveCountryFromSignals({
+                countryId: payload.countryId,
+                countryCode: payload.countryCode,
+                extension: payload.extension,
+                ipCountry: payload.ipCountry,
+            });
+
+            let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
+            if (payload.referredBy && payload.referredBy.trim() !== '') {
+                const refStr = payload.referredBy.trim();
+                let referrerUser = null;
+                if (mongoose.Types.ObjectId.isValid(refStr)) {
+                    referrerUser = await User.findById(refStr);
+                }
+                if (!referrerUser) {
+                    const searchNum = Number(refStr);
+                    const searchConds: any[] = [
+                        { referralCode: refStr },
+                        { referCode: refStr }
+                    ];
+                    if (!isNaN(searchNum)) {
+                        searchConds.push({ userId: searchNum });
+                    }
+                    referrerUser = await User.findOne({ $or: searchConds });
+                }
+                if (referrerUser) {
+                    referrerObjId = referrerUser._id;
+                }
+            }
+
+            user = await User.create({
+                name: resolvedName || 'Facebook User',
+                email: resolvedEmail || undefined,
+                facebookId: resolvedFacebookId,
+                authProvider: 'facebook',
+                userRole: 'user',
+                isVerified: true,
+                countryId: resolvedCountry?.countryId,
+                country: resolvedCountry?.country,
+                lastLoginAt: new Date(),
+                socialProfile: {
+                    provider: 'facebook',
+                    id: resolvedFacebookId,
+                    photoUrl: resolvedPhotoUrl,
+                }
+            });
+
+            await ensureUserReferralCode(user);
+
+            // Process referral reward
+            if (referrerObjId) {
+                try {
+                    const { CoinService } = require('../app/CoinService');
+                    const coinService: any = Container.get(CoinService);
+                    await coinService.processReferralReward(referrerObjId.toString(), user._id.toString());
+                } catch (err) {
+                    AppLogger.error(`Error rewarding referrer ${referrerObjId}: ${err}`);
+                }
+            }
+        }
+
+        const token = this.generateToken(user._id.toString(), user.userRole);
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+        const { referralCode } = await ensureUserReferralCode(user);
+        const deepLink = await getReferralDeepLink(referralCode);
+
+        return {
+            token,
+            isNewUser,
+            user: {
+                ...user.toObject(),
+                referralCode,
+                referCode: referralCode,
+                deepLink,
+                followersCount,
+                followingCount,
+            } as any,
+        };
+    }
+
+    /**
+     * Get Client Safe Social Authentication Settings for Mobile App
+     */
+    async getSocialAuthSettings() {
+        const settings = await this.appSettingService.getSettings();
+        return {
+            google: {
+                enabled: settings.google_login_enabled !== false,
+                clientId: settings.google_client_id || '',
+                androidClientId: settings.google_android_client_id || '',
+                iosClientId: settings.google_ios_client_id || '',
+            },
+            facebook: {
+                enabled: settings.facebook_login_enabled !== false,
+                appId: settings.facebook_app_id || '',
+                clientToken: settings.facebook_client_token || '',
+            },
+            phone: {
+                enabled: settings.phone_login_enabled !== false,
+            },
+            email: {
+                enabled: settings.email_login_enabled !== false,
+            },
+        };
+    }
+
     async logout(userId: string, fcmToken?: string): Promise<void> {
         const user = await User.findById(userId);
         if (!user) return;
@@ -457,4 +870,5 @@ export class AuthenticationService {
         }
     }
 }
+
 

@@ -101,15 +101,51 @@ export class RankingService {
       let rankTag: string | null = null;
       let tagObj: { type: 'daily' | 'weekly' | 'monthly'; rank: number; label: string; text: string } | null = null;
 
-      if (dailyRank) {
-        rankTag = `Daily No. ${dailyRank}`;
-        tagObj = { type: 'daily', rank: dailyRank, label: `Daily No. ${dailyRank}`, text: `Daily No. ${dailyRank}` };
-      } else if (weeklyRank) {
-        rankTag = `Weekly No. ${weeklyRank}`;
-        tagObj = { type: 'weekly', rank: weeklyRank, label: `Weekly No. ${weeklyRank}`, text: `Weekly No. ${weeklyRank}` };
-      } else if (monthlyRank) {
-        rankTag = `Monthly No. ${monthlyRank}`;
-        tagObj = { type: 'monthly', rank: monthlyRank, label: `Monthly No. ${monthlyRank}`, text: `Monthly No. ${monthlyRank}` };
+      if (period === 'daily') {
+        if (weeklyRank) {
+          rankTag = `Weekly No. ${weeklyRank}`;
+          tagObj = { type: 'weekly', rank: weeklyRank, label: `Weekly No. ${weeklyRank}`, text: `Weekly No. ${weeklyRank}` };
+        } else if (monthlyRank) {
+          rankTag = `Monthly No. ${monthlyRank}`;
+          tagObj = { type: 'monthly', rank: monthlyRank, label: `Monthly No. ${monthlyRank}`, text: `Monthly No. ${monthlyRank}` };
+        } else if (dailyRank) {
+          rankTag = `Daily No. ${dailyRank}`;
+          tagObj = { type: 'daily', rank: dailyRank, label: `Daily No. ${dailyRank}`, text: `Daily No. ${dailyRank}` };
+        }
+      } else if (period === 'weekly') {
+        if (dailyRank) {
+          rankTag = `Daily No. ${dailyRank}`;
+          tagObj = { type: 'daily', rank: dailyRank, label: `Daily No. ${dailyRank}`, text: `Daily No. ${dailyRank}` };
+        } else if (monthlyRank) {
+          rankTag = `Monthly No. ${monthlyRank}`;
+          tagObj = { type: 'monthly', rank: monthlyRank, label: `Monthly No. ${monthlyRank}`, text: `Monthly No. ${monthlyRank}` };
+        } else if (weeklyRank) {
+          rankTag = `Weekly No. ${weeklyRank}`;
+          tagObj = { type: 'weekly', rank: weeklyRank, label: `Weekly No. ${weeklyRank}`, text: `Weekly No. ${weeklyRank}` };
+        }
+      } else if (period === 'monthly') {
+        if (weeklyRank) {
+          rankTag = `Weekly No. ${weeklyRank}`;
+          tagObj = { type: 'weekly', rank: weeklyRank, label: `Weekly No. ${weeklyRank}`, text: `Weekly No. ${weeklyRank}` };
+        } else if (dailyRank) {
+          rankTag = `Daily No. ${dailyRank}`;
+          tagObj = { type: 'daily', rank: dailyRank, label: `Daily No. ${dailyRank}`, text: `Daily No. ${dailyRank}` };
+        } else if (monthlyRank) {
+          rankTag = `Monthly No. ${monthlyRank}`;
+          tagObj = { type: 'monthly', rank: monthlyRank, label: `Monthly No. ${monthlyRank}`, text: `Monthly No. ${monthlyRank}` };
+        }
+      } else {
+        // alltime
+        if (weeklyRank) {
+          rankTag = `Weekly No. ${weeklyRank}`;
+          tagObj = { type: 'weekly', rank: weeklyRank, label: `Weekly No. ${weeklyRank}`, text: `Weekly No. ${weeklyRank}` };
+        } else if (dailyRank) {
+          rankTag = `Daily No. ${dailyRank}`;
+          tagObj = { type: 'daily', rank: dailyRank, label: `Daily No. ${dailyRank}`, text: `Daily No. ${dailyRank}` };
+        } else if (monthlyRank) {
+          rankTag = `Monthly No. ${monthlyRank}`;
+          tagObj = { type: 'monthly', rank: monthlyRank, label: `Monthly No. ${monthlyRank}`, text: `Monthly No. ${monthlyRank}` };
+        }
       }
 
       const isVip = Boolean(user.isPremium);
