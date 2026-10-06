@@ -57,7 +57,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       socket.emit('call_initiated', callerPayload);
       io.to(`user_${receiverId}`).emit('incoming_call', hostPayload);
 
-      // Start a 45-second auto-cut timeout for the call
+      // Start a 60-second auto-cut timeout for the call (matches 60s UI countdown)
       const callIdStr = call._id.toString().trim();
       registerCallTimeout(callIdStr, async () => {
         try {
@@ -87,7 +87,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         } finally {
           callTimeouts.delete(callIdStr);
         }
-      }, 45000);
+      }, 60000);
 
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'initiate_call', data: callerPayload });
@@ -148,11 +148,12 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       const callerId = (call.callerId as any)._id?.toString() || call.callerId.toString();
       const receiverId = (call.receiverId as any)._id?.toString() || call.receiverId.toString();
-      const callerSummary = { ...(await callService.buildAfterCallSummary(call, callerId)), success: true, type: 'call_rejected' };
-      const hostSummary = { ...(await callService.buildAfterCallSummary(call, receiverId)), success: true, type: 'call_rejected' };
+      const eventName = call.status === 'cancelled' ? 'call_cancelled' : 'call_rejected';
+      const callerSummary = { ...(await callService.buildAfterCallSummary(call, callerId)), success: true, type: eventName };
+      const hostSummary = { ...(await callService.buildAfterCallSummary(call, receiverId)), success: true, type: eventName };
 
-      io.to(`user_${callerId}`).emit('call_rejected', callerSummary);
-      io.to(`user_${receiverId}`).emit('call_rejected', hostSummary);
+      io.to(`user_${callerId}`).emit(eventName, callerSummary);
+      io.to(`user_${receiverId}`).emit(eventName, hostSummary);
 
       if (typeof callback === 'function') {
         const viewerSummary = userId === callerId ? callerSummary : hostSummary;

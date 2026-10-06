@@ -94,7 +94,7 @@ export class UserService {
 
     const total = await User.countDocuments(query);
     const userDocs = await User.find(query)
-      .select('userId name email mobile profileImage bio location isPremium gender dob selfIntroduce height nationality country countryId maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute lastLoginAt createdAt referralCode referCode')
+      .select('userId name email mobile profileImage bio location isPremium gender dob selfIntroduce height nationality country countryId maritalStatus enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute lastLoginAt createdAt referralCode referCode wealthCoins charmCoins coins')
       .populate('profileImage')
       .populate('countryId')
       .sort(sortOptions)
@@ -107,6 +107,11 @@ export class UserService {
       const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
       const voiceCallPrice = Number(uObj.voiceCallPrice || uObj.audioCallChargePerMinute || 0);
       const videoCallPrice = Number(uObj.videoCallPrice || uObj.videoCallChargePerMinute || 0);
+      const wealthCoins = uObj.wealthCoins !== undefined ? Number(uObj.wealthCoins) : Number(uObj.coins || 0);
+      const charmCoins = Number(uObj.charmCoins || 0);
+      const richLevelInfo = await this.levelService.getLevelInfoForCoins(wealthCoins, 'rich');
+      const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+
       return attachUserCountryAndAge({
         ...uObj,
         isOnline,
@@ -119,7 +124,12 @@ export class UserService {
         videoRatePerMinute: videoCallPrice,
         ratePerMinute: videoCallPrice || voiceCallPrice,
         referralCode: refCode,
-        referCode: refCode
+        referCode: refCode,
+        wealthCoins,
+        charmCoins,
+        richLevelInfo,
+        charmLevelInfo,
+        levelInfo: richLevelInfo,
       });
     }));
 

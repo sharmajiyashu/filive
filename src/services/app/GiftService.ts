@@ -129,11 +129,27 @@ export class GiftService {
       throw new Error('Quantity must be a positive number');
     }
 
-    if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(giftId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
-      throw new Error('Invalid sender, receiver, or gift ID');
+    if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(giftId)) {
+      throw new Error('Invalid sender or gift ID');
     }
 
-    if (senderId === receiverId) {
+    // Resolve receiver (accepts Mongo ObjectId string or numeric userId string)
+    let receiver = null;
+    if (mongoose.Types.ObjectId.isValid(receiverId)) {
+      receiver = await User.findById(receiverId);
+    }
+    if (!receiver) {
+      const parsedNum = Number(receiverId);
+      if (!isNaN(parsedNum)) {
+        receiver = await User.findOne({ userId: parsedNum });
+      }
+    }
+    if (!receiver) {
+      throw new Error('Receiver profile not found');
+    }
+
+    const actualReceiverId = receiver._id.toString();
+    if (senderId === actualReceiverId) {
       throw new Error('Self-gifting is not allowed');
     }
 
@@ -157,7 +173,7 @@ export class GiftService {
 
       // Audience can send only to host. Host cannot send to self (already checked by self-gifting).
       if (senderId !== hostId) {
-        if (receiverId !== hostId) {
+        if (actualReceiverId !== hostId) {
           throw new Error('Audience can send gifts only to the Live Host');
         }
       }
@@ -181,17 +197,17 @@ export class GiftService {
 
       if (isHost) {
         // Host can send gifts to any user sitting on a seat
-        if (!isUserSeated(receiverId)) {
+        if (!isUserSeated(actualReceiverId)) {
           throw new Error('Host can only send gifts to users sitting on a seat');
         }
       } else if (isSeated) {
         // Seated user can send gifts to Host and other seated users
-        if (receiverId !== hostId && !isUserSeated(receiverId)) {
+        if (actualReceiverId !== hostId && !isUserSeated(actualReceiverId)) {
           throw new Error('Seated users can only send gifts to the Host or other seated users');
         }
       } else {
         // Audience can send gifts to Host and seated users
-        if (receiverId !== hostId && !isUserSeated(receiverId)) {
+        if (actualReceiverId !== hostId && !isUserSeated(actualReceiverId)) {
           throw new Error('Audience can only send gifts to the Host or users sitting on a seat');
         }
       }
@@ -211,15 +227,10 @@ export class GiftService {
     const price = gift.price;
     const totalPrice = price * quantity;
 
-    // 4. Find sender and receiver
+    // 4. Find sender
     const sender = await User.findById(senderId);
     if (!sender) {
       throw new Error('Sender profile not found');
-    }
-
-    const receiver = await User.findById(receiverId);
-    if (!receiver) {
-      throw new Error('Receiver profile not found');
     }
 
     // 5. Deduct sender recharge coins and credit receiver beans atomically
@@ -233,7 +244,7 @@ export class GiftService {
     }
 
     const updatedReceiver = await User.findByIdAndUpdate(
-      receiverId,
+      actualReceiverId,
       { $inc: { beans: totalPrice, charmCoins: totalPrice } },
       { new: true }
     );
@@ -257,7 +268,7 @@ export class GiftService {
 
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(senderId),
-      relatedUserId: new mongoose.Types.ObjectId(receiverId),
+      relatedUserId: new mongoose.Types.ObjectId(actualReceiverId),
       amount: -totalPrice,
       type: 'gift_sent',
       wallet: 'coins',
@@ -269,7 +280,7 @@ export class GiftService {
     });
 
     await CoinHistory.create({
-      userId: new mongoose.Types.ObjectId(receiverId),
+      userId: new mongoose.Types.ObjectId(actualReceiverId),
       relatedUserId: new mongoose.Types.ObjectId(senderId),
       amount: totalPrice,
       type: 'charm_received',
@@ -286,7 +297,7 @@ export class GiftService {
     try {
       const agencyCommissionService = Container.get(AgencyCommissionService);
       await agencyCommissionService.tryRecordVerifiedHostEarning({
-        hostUserId: receiverId,
+        hostUserId: actualReceiverId,
         senderUserId: senderId,
         beansAmount: totalPrice,
       });

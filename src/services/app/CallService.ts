@@ -316,6 +316,20 @@ export class CallService {
    * Returns true if the user is in an initiated or accepted call.
    */
   public async isUserBusy(userId: string): Promise<boolean> {
+    const ringTimeoutCutoff = new Date(Date.now() - 90 * 1000);
+    try {
+      await Call.updateMany(
+        {
+          $or: [{ callerId: userId }, { receiverId: userId }],
+          status: 'initiated',
+          createdAt: { $lt: ringTimeoutCutoff }
+        },
+        {
+          $set: { status: 'missed', endedAt: new Date() }
+        }
+      );
+    } catch (_) {}
+
     const activeCall = await Call.findOne({
       $or: [
         { callerId: userId, status: { $in: ['initiated', 'accepted'] } },
@@ -506,21 +520,24 @@ export class CallService {
   /**
    * Rejects an incoming call request
    */
-  public async rejectCall(receiverId: string, callId: string) {
-    AppLogger.info(`[CallService: rejectCall] receiverId=${receiverId}, callId=${callId}`);
+  public async rejectCall(userId: string, callId: string) {
+    AppLogger.info(`[CallService: rejectCall] userId=${userId}, callId=${callId}`);
 
     const call = await Call.findById(callId);
     if (!call) throw new Error('Call session not found');
 
-    if (call.receiverId.toString() !== receiverId) {
-      throw new Error('Unauthorized to reject this call');
+    const isCaller = call.callerId.toString() === userId;
+    const isReceiver = call.receiverId.toString() === userId;
+
+    if (!isCaller && !isReceiver) {
+      throw new Error('Unauthorized to reject or cancel this call');
     }
 
     if (call.status !== 'initiated') {
-      throw new Error(`Call cannot be rejected in status: ${call.status}`);
+      return call;
     }
 
-    call.status = 'rejected';
+    call.status = isCaller ? 'cancelled' : 'rejected';
     call.endedAt = new Date();
     await call.save();
 

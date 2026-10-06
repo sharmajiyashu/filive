@@ -368,11 +368,34 @@ export default (router: Router) => {
       const richLevelInfo = await levelService.getLevelInfoForCoins(richCoins, 'rich');
       const charmLevelInfo = await levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
+      const richLevelNum = richLevelInfo?.currentLevel?.levelNumber || 1;
+      const richName = richLevelInfo?.currentLevel?.name || 'Bronze Explorer';
+      const charmLevelNum = charmLevelInfo?.currentLevel?.levelNumber || 1;
+      const charmName = charmLevelInfo?.currentLevel?.name || 'Rising Star';
+
       const userObj = await attachUserCountryAndAge({
         ...user.toObject(),
         levelInfo: richLevelInfo,
         richLevelInfo,
-        charmLevelInfo
+        charmLevelInfo,
+        wealthCoins: richCoins,
+        charmCoins,
+        wealthLevel: {
+          levelNumber: richLevelNum,
+          name: typeof richName === 'string' ? richName : ((richName as any)?.en || 'Bronze Explorer'),
+          minCoins: richLevelInfo?.currentLevel?.minCoins ?? 0,
+          maxCoins: richLevelInfo?.currentLevel?.maxCoins ?? 0,
+          color: richLevelInfo?.currentLevel?.color ?? '#CD7F32',
+          progressPercentage: richLevelInfo?.progressPercentage ?? 0,
+        },
+        charmLevel: {
+          levelNumber: charmLevelNum,
+          name: typeof charmName === 'string' ? charmName : ((charmName as any)?.en || 'Rising Star'),
+          minCoins: charmLevelInfo?.currentLevel?.minCoins ?? 0,
+          maxCoins: charmLevelInfo?.currentLevel?.maxCoins ?? 0,
+          color: charmLevelInfo?.currentLevel?.color ?? '#FF1F65',
+          progressPercentage: charmLevelInfo?.progressPercentage ?? 0,
+        },
       });
       userObj.album = await withDefaultAlbum(userObj.album || []);
 

@@ -1,3 +1,4 @@
+import FriendRequest from '../../models/FriendRequest';
 import { Service } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
@@ -46,15 +47,22 @@ export class ProfileService {
 
     const formattedProfile = await formatUserActiveStoreItems(profile, true);
 
-    const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
-    const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
-    const myFollowing = await Follow.find({ followerId: userId, status: 'accepted' }).select('followingId');
+    const followersCount = await Follow.countDocuments({ followingId: userId, status: { $ne: 'rejected' } });
+    const followingCount = await Follow.countDocuments({ followerId: userId, status: { $ne: 'rejected' } });
+    const myFollowing = await Follow.find({ followerId: userId, status: { $ne: 'rejected' } }).select('followingId');
     const myFollowingIds = myFollowing.map(f => f.followingId);
-    const friendsCount = await Follow.countDocuments({
+    const mutualFriendsCount = await Follow.countDocuments({
       followingId: userId,
       followerId: { $in: myFollowingIds },
-      status: 'accepted'
+      status: { $ne: 'rejected' }
     });
+    const acceptedRequestsCount = await FriendRequest.countDocuments({
+      $or: [
+        { senderId: userId, status: 'accepted' },
+        { receiverId: userId, status: 'accepted' }
+      ]
+    });
+    const friendsCount = Math.max(mutualFriendsCount, acceptedRequestsCount);
 
     const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
@@ -261,15 +269,22 @@ export class ProfileService {
 
     const formattedUpdatedUser = await formatUserActiveStoreItems(updatedUser, true);
 
-    const followersCount = await Follow.countDocuments({ followingId: userId, status: 'accepted' });
-    const followingCount = await Follow.countDocuments({ followerId: userId, status: 'accepted' });
-    const myFollowing = await Follow.find({ followerId: userId, status: 'accepted' }).select('followingId');
+    const followersCount = await Follow.countDocuments({ followingId: userId, status: { $ne: 'rejected' } });
+    const followingCount = await Follow.countDocuments({ followerId: userId, status: { $ne: 'rejected' } });
+    const myFollowing = await Follow.find({ followerId: userId, status: { $ne: 'rejected' } }).select('followingId');
     const myFollowingIds = myFollowing.map(f => f.followingId);
-    const friendsCount = await Follow.countDocuments({
+    const mutualFriendsCount = await Follow.countDocuments({
       followingId: userId,
       followerId: { $in: myFollowingIds },
-      status: 'accepted'
+      status: { $ne: 'rejected' }
     });
+    const acceptedRequestsCount = await FriendRequest.countDocuments({
+      $or: [
+        { senderId: userId, status: 'accepted' },
+        { receiverId: userId, status: 'accepted' }
+      ]
+    });
+    const friendsCount = Math.max(mutualFriendsCount, acceptedRequestsCount);
 
     const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 

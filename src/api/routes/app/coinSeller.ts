@@ -262,6 +262,60 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/coin-seller/ranking:
+   *   get:
+   *     summary: Get ranked coin sellers with period filters (daily, weekly, monthly, alltime)
+   *     tags: [Coin Seller]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: period
+   *         schema:
+   *           type: string
+   *           enum: [daily, weekly, monthly, alltime]
+   *           default: monthly
+   *       - in: query
+   *         name: country
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Coin sellers ranking fetched successfully
+   */
+  sellerRouter.get('/ranking', async (req: any, res: Response) => {
+    try {
+      const currentUserId = req.user?.id || req.user?._id;
+      const period = req.query.period?.toString();
+      const country = req.query.country?.toString();
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '20');
+
+      const result = await coinSellerService.getCoinSellerRanking({
+        currentUserId,
+        period,
+        country,
+        page,
+        limit
+      });
+      return ResponseWrapper.success(res, result, 'Coin seller ranking fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/coin-seller/packages:
    *   get:
    *     summary: Get active coin seller recharge plans/packages

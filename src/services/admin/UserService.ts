@@ -342,7 +342,7 @@ export class UserService {
           Follow.countDocuments({ followerId: userObj._id, status: 'accepted' }),
         ]);
 
-        const { level, levelInfo } = await getUserCountryAndLevels(userObj, levelService);
+        const { level, levelInfo, charmLevel, charmLevelInfo } = await getUserCountryAndLevels(userObj, levelService);
 
         const isOnline = userObj.lastLoginAt
           ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
@@ -355,6 +355,10 @@ export class UserService {
         const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1);
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
         const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
+
+        const charmLevelNum = typeof charmLevel === 'number' ? charmLevel : (typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 1);
+        const charmNameVal = charmLevelInfo?.currentLevel?.name || charmLevelInfo?.name;
+        const charmNameStr = typeof charmNameVal === 'string' ? charmNameVal : (typeof charmNameVal === 'object' && charmNameVal?.en ? charmNameVal.en : 'Rising Star');
 
         let authProvider = userObj.authProvider;
         if (!authProvider) {
@@ -382,7 +386,23 @@ export class UserService {
           wealthLevel: {
             levelNumber: levelNum,
             name: levelNameStr,
+            minCoins: levelInfo?.currentLevel?.minCoins ?? 0,
+            maxCoins: levelInfo?.currentLevel?.maxCoins ?? 0,
+            color: levelInfo?.currentLevel?.color ?? '#CD7F32',
+            progressPercentage: levelInfo?.progressPercentage ?? 0,
           },
+          charmLevel: {
+            levelNumber: charmLevelNum,
+            name: charmNameStr,
+            minCoins: charmLevelInfo?.currentLevel?.minCoins ?? 0,
+            maxCoins: charmLevelInfo?.currentLevel?.maxCoins ?? 0,
+            color: charmLevelInfo?.currentLevel?.color ?? '#FF1F65',
+            progressPercentage: charmLevelInfo?.progressPercentage ?? 0,
+          },
+          wealthCoins: userObj.wealthCoins || userObj.coins || 0,
+          charmCoins: userObj.charmCoins || 0,
+          richLevelInfo: levelInfo,
+          charmLevelInfo: charmLevelInfo,
           followersCount,
           followingCount,
           friendsCount,

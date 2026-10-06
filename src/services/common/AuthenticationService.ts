@@ -301,7 +301,7 @@ export class AuthenticationService {
         return { otp }; // Return for testing/dev purposes if needed
     }
 
-    async userVerifyOTP(mobile: string, otp: string): Promise<{ token: string; user: IUser }> {
+    async userVerifyOTP(mobile: string, otp: string): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
         const user = await User.findOne({
             mobile,
             otp,
@@ -316,6 +316,7 @@ export class AuthenticationService {
 
         // Clear OTP after successful verification
         const isNewUserVerification = !!user.referredBy;
+        const isNewUser = (!user.lastLoginAt) || isNewUserVerification || (user.name === 'User' && !user.dob && !user.profileImage);
         const referrerId = user.referredBy ? user.referredBy.toString() : null;
 
         user.otp = undefined;
@@ -343,6 +344,7 @@ export class AuthenticationService {
 
         return {
             token,
+            isNewUser,
             user: {
                 ...user.toObject(),
                 referralCode,

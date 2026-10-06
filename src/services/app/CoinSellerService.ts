@@ -504,25 +504,25 @@ export class CoinSellerService {
       query.$and = andConditions;
     }
 
-    const total = await User.countDocuments(query);
-    const sellers = await User.find(query)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Fetch all active matching sellers to calculate performance & rank accurately
+    const allSellers = await User.find(query)
       .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt')
       .populate('profileImage')
       .populate('countryId')
       .populate('coinSellerPaymentMethods.qrCode')
-      .skip(skip)
-      .limit(limit)
       .lean();
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const total = allSellers.length;
 
-    const list = await Promise.all(
-      sellers.map(async (seller) => {
+    // Calculate 30-day deals and buyer metrics for ranking
+    const sellerMetrics = await Promise.all(
+      allSellers.map(async (seller) => {
         const sellerObjectId = seller._id;
         const countryObj = await resolveCountryObject(seller as any);
 
-        // 30 days deals calculation
         const deals30DaysAgg = await CoinHistory.aggregate([
           {
             $match: {
@@ -536,7 +536,6 @@ export class CoinSellerService {
         ]);
         const dealsLast30Days = deals30DaysAgg[0]?.totalCoinsSold || 0;
 
-        // Unique buyers count
         const uniqueCustomers = await CoinHistory.distinct('relatedUserId', {
           userId: sellerObjectId,
           type: 'transfer',
@@ -544,7 +543,42 @@ export class CoinSellerService {
         });
         const buyersCount = uniqueCustomers.length;
 
-        // Format deals number (e.g. 183.9M, 1.2K, 500)
+        return {
+          seller,
+          countryObj,
+          dealsLast30Days,
+          buyersCount,
+        };
+      })
+    );
+
+    // Sort sellers by 30-day sales performance descending, then balance, then newest
+    sellerMetrics.sort((a, b) => {
+      if (b.dealsLast30Days !== a.dealsLast30Days) {
+        return b.dealsLast30Days - a.dealsLast30Days;
+      }
+      const balanceA = a.seller.coinSellerCoins || 0;
+      const balanceB = b.seller.coinSellerCoins || 0;
+      if (balanceB !== balanceA) {
+        return balanceB - balanceA;
+      }
+      return new Date(b.seller.createdAt || 0).getTime() - new Date(a.seller.createdAt || 0).getTime();
+    });
+
+    // Paginate sorted rankings
+    const paginatedItems = sellerMetrics.slice(skip, skip + limit);
+
+    const list = await Promise.all(
+      paginatedItems.map(async (item, index) => {
+        const { seller, countryObj, dealsLast30Days, buyersCount } = item;
+        const rank = skip + index + 1;
+
+        let badge = 'Active Seller';
+        if (rank === 1) badge = '#1 Top Gold Seller';
+        else if (rank === 2) badge = '#2 Silver Seller';
+        else if (rank === 3) badge = '#3 Bronze Seller';
+        else if (rank <= 10) badge = 'Senior Seller';
+
         let dealsFormatted = dealsLast30Days.toString();
         if (dealsLast30Days >= 1_000_000) {
           dealsFormatted = (dealsLast30Days / 1_000_000).toFixed(1) + 'M';
@@ -552,9 +586,12 @@ export class CoinSellerService {
           dealsFormatted = (dealsLast30Days / 1_000).toFixed(1) + 'K';
         }
 
-        // Get or Auto-Create Chat between current user and seller
+        const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+        const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+        const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+
         let chatId: string | null = null;
-        if (params.currentUserId) {
+        if (params.currentUserId && params.currentUserId !== seller._id.toString()) {
           try {
             const chat = await this.chatService.getOrCreateSingleChat(params.currentUserId, seller._id.toString());
             chatId = chat ? chat._id.toString() : null;
@@ -567,16 +604,199 @@ export class CoinSellerService {
           _id: seller._id,
           userId: seller.userId,
           name: seller.name || 'Seller',
-          profileImage: seller.profileImage || null,
+          profileImage: toPlainObject(seller.profileImage) || null,
           mobile: seller.mobile || '',
           whatsapp: seller.whatsapp || seller.mobile || '',
+          whatsappUrl,
           chatId,
           country: seller.country || countryObj?.name || countryObj?.code || 'IND',
           countryObject: countryObj || null,
-          badge: 'Senior Seller',
+          rank,
+          badge,
           buyersCount,
           dealsLast30Days,
           dealsLast30DaysFormatted: dealsFormatted,
+          paymentMethods: seller.coinSellerPaymentMethods ? {
+            upiId: seller.coinSellerPaymentMethods.upiId || '',
+            qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
+            bankDetails: seller.coinSellerPaymentMethods.bankDetails || null,
+            acceptedMethods: seller.coinSellerPaymentMethods.acceptedMethods || [],
+            selectedGateways: seller.coinSellerPaymentMethods.selectedGateways || seller.coinSellerPaymentMethods.acceptedMethods || [],
+            paymentInstructions: seller.coinSellerPaymentMethods.paymentInstructions || ''
+          } : null,
+        };
+      })
+    );
+
+    return {
+      sellers: list,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  /**
+   * Get dedicated CoinSeller Ranking with period filters (daily, weekly, monthly, alltime)
+   */
+  async getCoinSellerRanking(params: {
+    currentUserId?: string;
+    period?: string;
+    country?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const period = (params.period || 'monthly').toLowerCase();
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.max(1, Math.min(100, params.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const query: any = { isCoinseller: true, isBlocked: false, isCoinsellerActive: { $ne: false } };
+
+    if (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all') {
+      const targetCountry = params.country.trim();
+      const countryConditions: any[] = [];
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
+
+      const matchingCountries = await Country.find({ $or: countryConditions });
+      const countryObjIds = matchingCountries.map(c => c._id);
+      const countryNames = matchingCountries.map(c => c.name);
+
+      const userCountryConditions: any[] = [
+        { country: { $regex: new RegExp(targetCountry, 'i') } },
+        { nationality: { $regex: new RegExp(targetCountry, 'i') } }
+      ];
+      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
+        userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+      }
+      if (countryObjIds.length > 0) {
+        userCountryConditions.push({ countryId: { $in: countryObjIds } });
+      }
+      if (countryNames.length > 0) {
+        userCountryConditions.push({ country: { $in: countryNames } });
+        userCountryConditions.push({ nationality: { $in: countryNames } });
+      }
+      query.$or = userCountryConditions;
+    }
+
+    let startDate: Date | null = null;
+    const now = new Date();
+    if (period === 'daily') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    } else if (period === 'weekly') {
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      startDate = new Date(now.getFullYear(), now.getMonth(), diff, 0, 0, 0, 0);
+    } else if (period === 'monthly') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    const allSellers = await User.find(query)
+      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt')
+      .populate('profileImage')
+      .populate('countryId')
+      .populate('coinSellerPaymentMethods.qrCode')
+      .lean();
+
+    const rankedSellers = await Promise.all(
+      allSellers.map(async (seller) => {
+        const sellerObjectId = seller._id;
+        const countryObj = await resolveCountryObject(seller as any);
+
+        const matchQuery: any = {
+          userId: sellerObjectId,
+          type: 'transfer',
+          amount: { $lt: 0 }
+        };
+        if (startDate) {
+          matchQuery.createdAt = { $gte: startDate };
+        }
+
+        const salesAgg = await CoinHistory.aggregate([
+          { $match: matchQuery },
+          { $group: { _id: null, totalCoinsSold: { $sum: { $abs: '$amount' } } } }
+        ]);
+        const periodDeals = salesAgg[0]?.totalCoinsSold || 0;
+
+        const uniqueCustomers = await CoinHistory.distinct('relatedUserId', matchQuery);
+        const buyersCount = uniqueCustomers.length;
+
+        return {
+          seller,
+          countryObj,
+          periodDeals,
+          buyersCount
+        };
+      })
+    );
+
+    rankedSellers.sort((a, b) => {
+      if (b.periodDeals !== a.periodDeals) {
+        return b.periodDeals - a.periodDeals;
+      }
+      return (b.seller.coinSellerCoins || 0) - (a.seller.coinSellerCoins || 0);
+    });
+
+    const total = rankedSellers.length;
+    const paginatedRankings = rankedSellers.slice(skip, skip + limit);
+
+    const rankings = await Promise.all(
+      paginatedRankings.map(async (item, index) => {
+        const { seller, countryObj, periodDeals, buyersCount } = item;
+        const rank = skip + index + 1;
+
+        let badge = 'Active Seller';
+        if (rank === 1) badge = '#1 Top Gold Seller';
+        else if (rank === 2) badge = '#2 Silver Seller';
+        else if (rank === 3) badge = '#3 Bronze Seller';
+        else if (rank <= 10) badge = 'Senior Seller';
+
+        let dealsFormatted = periodDeals.toString();
+        if (periodDeals >= 1_000_000) {
+          dealsFormatted = (periodDeals / 1_000_000).toFixed(1) + 'M';
+        } else if (periodDeals >= 1_000) {
+          dealsFormatted = (periodDeals / 1_000).toFixed(1) + 'K';
+        }
+
+        const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+        const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+        const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+
+        let chatId: string | null = null;
+        if (params.currentUserId && params.currentUserId !== seller._id.toString()) {
+          try {
+            const chat = await this.chatService.getOrCreateSingleChat(params.currentUserId, seller._id.toString());
+            chatId = chat ? chat._id.toString() : null;
+          } catch (err) {
+            chatId = null;
+          }
+        }
+
+        return {
+          _id: seller._id,
+          userId: seller.userId,
+          name: seller.name || 'Seller',
+          profileImage: toPlainObject(seller.profileImage) || null,
+          mobile: seller.mobile || '',
+          whatsapp: seller.whatsapp || seller.mobile || '',
+          whatsappUrl,
+          chatId,
+          country: seller.country || countryObj?.name || countryObj?.code || 'IND',
+          countryObject: countryObj || null,
+          rank,
+          badge,
+          buyersCount,
+          periodDeals,
+          periodDealsFormatted: dealsFormatted,
+          deals: periodDeals,
+          dealsFormatted,
           paymentMethods: seller.coinSellerPaymentMethods ? {
             upiId: seller.coinSellerPaymentMethods.upiId || '',
             qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
@@ -589,7 +809,8 @@ export class CoinSellerService {
     );
 
     return {
-      sellers: list,
+      period,
+      rankings,
       pagination: {
         total,
         page,

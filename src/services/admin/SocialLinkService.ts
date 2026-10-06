@@ -4,10 +4,81 @@ import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class SocialLinkService {
+  private async ensureDefaultPresets(): Promise<void> {
+    const count = await SocialLink.countDocuments();
+    if (count === 0) {
+      const presets = [
+        {
+          name: 'WhatsApp',
+          platformKey: 'whatsapp',
+          handle: '+91 98765 43210',
+          url: 'https://wa.me/919876543210',
+          actionText: 'CHAT',
+          color: '#25D366',
+          order: 1,
+          isActive: true,
+        },
+        {
+          name: 'Instagram',
+          platformKey: 'instagram',
+          handle: '@filiveofficial',
+          url: 'https://instagram.com/filiveofficial',
+          actionText: 'FOLLOW',
+          color: '#E4405F',
+          order: 2,
+          isActive: true,
+        },
+        {
+          name: 'Telegram',
+          platformKey: 'telegram',
+          handle: '@filiveofficial',
+          url: 'https://t.me/filiveofficial',
+          actionText: 'JOIN',
+          color: '#0088CC',
+          order: 3,
+          isActive: true,
+        },
+        {
+          name: 'Facebook',
+          platformKey: 'facebook',
+          handle: '@filiveofficial',
+          url: 'https://facebook.com/filiveofficial',
+          actionText: 'FOLLOW',
+          color: '#1877F2',
+          order: 4,
+          isActive: true,
+        },
+        {
+          name: 'YouTube',
+          platformKey: 'youtube',
+          handle: '@filiveofficial',
+          url: 'https://youtube.com/@filiveofficial',
+          actionText: 'VISIT',
+          color: '#FF0000',
+          order: 5,
+          isActive: true,
+        },
+        {
+          name: 'LinkedIn',
+          platformKey: 'linkedin',
+          handle: '@filiveofficial',
+          url: 'https://linkedin.com/company/filive',
+          actionText: 'FOLLOW',
+          color: '#0A66C2',
+          order: 6,
+          isActive: true,
+        },
+      ];
+      await SocialLink.insertMany(presets);
+      AppLogger.info('[SocialLinkService: ensureDefaultPresets] Initialized default social presets');
+    }
+  }
+
   /**
    * Get all social links for Admin panel (sorted by order, then createdAt)
    */
   public async getAllSocialLinks(): Promise<ISocialLink[]> {
+    await this.ensureDefaultPresets();
     return await SocialLink.find().sort({ order: 1, createdAt: 1 });
   }
 
@@ -15,6 +86,7 @@ export class SocialLinkService {
    * Get only active social links for Mobile App (sorted by order, then createdAt)
    */
   public async getActiveSocialLinks(): Promise<ISocialLink[]> {
+    await this.ensureDefaultPresets();
     return await SocialLink.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
   }
 
