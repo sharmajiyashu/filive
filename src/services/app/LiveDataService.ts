@@ -26,11 +26,11 @@ export class LiveDataService {
     let startDate: Date;
     let endDate: Date;
 
+    const cleanDate = (queryDate || '').trim();
+
     if (type === 'monthly') {
-      if (queryDate && /^\d{4}-\d{2}$/.test(queryDate)) {
-        monthStr = queryDate;
-      } else if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
-        monthStr = queryDate.substring(0, 7);
+      if (/^\d{4}-\d{2}/.test(cleanDate)) {
+        monthStr = cleanDate.substring(0, 7);
       } else {
         monthStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
       }
@@ -40,8 +40,8 @@ export class LiveDataService {
       startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
       endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else {
-      if (queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate)) {
-        dateStr = queryDate;
+      if (/^\d{4}-\d{2}-\d{2}/.test(cleanDate)) {
+        dateStr = cleanDate.substring(0, 10);
       } else {
         dateStr = this.localDateStr(now);
       }
@@ -92,18 +92,31 @@ export class LiveDataService {
   }
 
   private resolveGiftContext(
-    history: { type?: string; contextType?: string; channelName?: string; description?: string },
-    roomsByChannel: Map<string, 'livestream' | 'party_room'>
+    history: { type?: string; contextType?: string; channelName?: string; description?: string; createdAt?: Date },
+    roomsByChannel: Map<string, 'livestream' | 'party_room'>,
+    userPartyRoomDates?: { start: number; end: number }[],
+    userLiveStreamDates?: { start: number; end: number }[]
   ): 'livestream' | 'party_room' | 'call' | undefined {
     if (history.type === 'call_income') {
       return 'call';
     }
 
     const contextType = this.normalizeContextType(history.contextType);
-    if (contextType === 'live_stream' || contextType === 'livestream' || contextType === 'live') {
+    if (
+      contextType === 'live_stream' ||
+      contextType === 'livestream' ||
+      contextType === 'live' ||
+      contextType === 'live_streaming' ||
+      contextType === 'video_stream'
+    ) {
       return 'livestream';
     }
-    if (contextType === 'party_room' || contextType === 'party') {
+    if (
+      contextType === 'party_room' ||
+      contextType === 'party' ||
+      contextType === 'partyroom' ||
+      contextType === 'audio_room'
+    ) {
       return 'party_room';
     }
     if (
@@ -111,30 +124,61 @@ export class LiveDataService {
       contextType === 'video_call' ||
       contextType === 'voice_call' ||
       contextType === 'voice' ||
-      contextType === 'video'
+      contextType === 'video' ||
+      contextType === 'call'
     ) {
       return 'call';
     }
 
-    if (history.channelName) {
-      const roomType = roomsByChannel.get(history.channelName);
-      if (roomType) {
-        return roomType;
+    const channelName = (history.channelName || '').toString().trim();
+    if (channelName) {
+      const directMatch = roomsByChannel.get(channelName) || roomsByChannel.get(channelName.toLowerCase());
+      if (directMatch) {
+        return directMatch;
+      }
+      if (/party/i.test(channelName)) {
+        return 'party_room';
+      }
+      if (/live|stream/i.test(channelName)) {
+        return 'livestream';
+      }
+      if (/call/i.test(channelName)) {
+        return 'call';
       }
     }
 
     const description = history.description || '';
-    if (/during live_stream|during live stream|during livestream|during live\b/i.test(description)) {
+    if (/during live_stream|during live stream|during livestream|during live\b|in live stream/i.test(description)) {
       return 'livestream';
     }
-    if (/during party_room|during party room|during party\b/i.test(description)) {
+    if (/during party_room|during party room|during party\b|in party room/i.test(description)) {
       return 'party_room';
     }
-    if (/during audio_call|during video_call|during voice_call|during voice call|during video call/i.test(description)) {
+    if (/during audio_call|during video_call|during voice_call|during voice call|during video call|during call/i.test(description)) {
       return 'call';
     }
 
-    return undefined;
+    // Timestamp-based heuristic fallback if user hosted rooms during createdAt
+    if (history.createdAt) {
+      const t = new Date(history.createdAt).getTime();
+      if (userPartyRoomDates && userPartyRoomDates.some(range => t >= range.start - 60000 && t <= range.end + 60000)) {
+        return 'party_room';
+      }
+      if (userLiveStreamDates && userLiveStreamDates.some(range => t >= range.start - 60000 && t <= range.end + 60000)) {
+        return 'livestream';
+      }
+    }
+
+    // If still unresolved but user has party room history, fallback to party_room or livestream
+    if (userPartyRoomDates && userPartyRoomDates.length > 0 && (!userLiveStreamDates || userLiveStreamDates.length === 0)) {
+      return 'party_room';
+    }
+    if (userLiveStreamDates && userLiveStreamDates.length > 0 && (!userPartyRoomDates || userPartyRoomDates.length === 0)) {
+      return 'livestream';
+    }
+
+    // Default general gift income to livestream if received by host
+    return 'livestream';
   }
 
   public async recordMicTime(hostUserId: string, micUserId: string, seconds: number, at: Date = new Date()) {
@@ -199,6 +243,9 @@ export class LiveDataService {
     } else {
       inc.liveDurationSeconds = durationSeconds;
       inc.liveViewers = audienceIds.length;
+      if (audienceIds.length) {
+        addToSet.audienceUserIds = { $each: audienceIds.map(id => new mongoose.Types.ObjectId(id)) };
+      }
     }
 
     const update: any = { $set: { month: monthStr } };
@@ -313,20 +360,49 @@ export class LiveDataService {
       createdAt: { $gte: startDate, $lte: endDate }
     });
 
+    // 1. Fetch hosted rooms to get timing ranges and fallback metrics
+    const hostedRooms = await Room.find({
+      hostId: userObjectId,
+      $or: [
+        { startedAt: { $lte: endDate, $gte: startDate } },
+        { startedAt: { $lte: endDate }, endedAt: { $gte: startDate } },
+        { status: 'live', startedAt: { $lte: endDate } },
+        { createdAt: { $gte: startDate, $lte: endDate } }
+      ]
+    }).select('roomType status startedAt endedAt joinedUsers viewers seats hostId channelName createdAt updatedAt');
+
+    const userPartyRoomDates: { start: number; end: number }[] = [];
+    const userLiveStreamDates: { start: number; end: number }[] = [];
+
+    hostedRooms.forEach(room => {
+      const start = (room.startedAt || room.createdAt || new Date()).getTime();
+      const end = (room.status === 'live' ? now : (room.endedAt || room.updatedAt || room.startedAt || new Date())).getTime();
+      if (room.roomType === 'party_room') {
+        userPartyRoomDates.push({ start, end });
+      } else {
+        userLiveStreamDates.push({ start, end });
+      }
+    });
+
+    // 2. Fetch gift history for user (only received beans)
     const giftHistory = await CoinHistory.find({
       userId: userObjectId,
       type: { $in: ['gift_received', 'charm_received', 'call_income'] },
       createdAt: { $gte: startDate, $lte: endDate }
-    }).select('relatedUserId channelName amount type contextType description');
+    }).select('relatedUserId channelName amount type contextType description createdAt');
 
     const channelNames = this.uniqueIdStrings(
       giftHistory.map(h => h.channelName).filter((name): name is string => !!name)
     );
     const roomsByChannel = new Map<string, 'livestream' | 'party_room'>();
     if (channelNames.length) {
-      const rooms = await Room.find({ channelName: { $in: channelNames } }).select('channelName roomType');
+      const rooms = await Room.find({
+        channelName: { $in: channelNames }
+      }).select('channelName roomType');
       rooms.forEach(room => {
-        roomsByChannel.set(room.channelName, room.roomType === 'party_room' ? 'party_room' : 'livestream');
+        const typeKey = room.roomType === 'party_room' ? 'party_room' : 'livestream';
+        roomsByChannel.set(room.channelName, typeKey);
+        roomsByChannel.set(room.channelName.toLowerCase(), typeKey);
       });
     }
 
@@ -339,18 +415,12 @@ export class LiveDataService {
     giftHistory.forEach(history => {
       const senderId = history.relatedUserId?.toString();
       const amount = Math.abs(history.amount || 0);
-      const giftContext = this.resolveGiftContext(history, roomsByChannel);
+      const giftContext = this.resolveGiftContext(history, roomsByChannel, userPartyRoomDates, userLiveStreamDates);
 
       if (history.type === 'call_income' || giftContext === 'call') {
         if (isHost && senderId && senderId !== userId) {
           callGiftSenders.add(senderId);
         }
-        return;
-      }
-
-      if (giftContext === 'livestream') {
-        liveBeansIncome += amount;
-        if (senderId && senderId !== userId) liveGiftSenders.add(senderId);
         return;
       }
 
@@ -360,67 +430,62 @@ export class LiveDataService {
         return;
       }
 
-      // Unresolved charm/gift rows stay out of Live/Party/Call income (chat or unknown).
+      // Default all other received gifts to livestream
+      liveBeansIncome += amount;
+      if (senderId && senderId !== userId) liveGiftSenders.add(senderId);
     });
 
-    const hostedRooms = await Room.find({
-      hostId: userObjectId,
-      startedAt: { $lte: endDate }
-    }).select('roomType status startedAt endedAt joinedUsers seats hostId');
-
+    // 3. Live Stream stats aggregation
     const liveViewerIds = new Set<string>();
-    let liveDurationSeconds = 0;
+    let liveDurationFromRooms = 0;
 
     hostedRooms.forEach(room => {
       if (room.roomType === 'party_room') return;
-      const endedAt = room.status === 'live' ? now : room.endedAt;
-      if (room.status !== 'live' && (!endedAt || endedAt < startDate)) return;
-      if (room.startedAt > endDate) return;
+      const roomStart = room.startedAt || room.createdAt || new Date();
+      const roomEnd = room.status === 'live' ? now : (room.endedAt || room.updatedAt || roomStart);
+      if (room.status !== 'live' && roomEnd < startDate) return;
+      if (roomStart > endDate) return;
 
-      liveDurationSeconds += this.clipDurationSeconds(room.startedAt, endedAt, startDate, endDate);
+      liveDurationFromRooms += this.clipDurationSeconds(roomStart, roomEnd, startDate, endDate);
+
       (room.joinedUsers || []).forEach(id => {
-        if (id.toString() !== userId) liveViewerIds.add(id.toString());
+        if (id && id.toString() !== userId) liveViewerIds.add(id.toString());
+      });
+      (room.viewers || []).forEach(id => {
+        if (id && id.toString() !== userId) liveViewerIds.add(id.toString());
       });
     });
 
-    let roomOwnerSeconds = logs.reduce((sum, log) => sum + (log.roomOwnerSeconds || 0), 0);
-    let totalMicSeconds = logs.reduce((sum, log) => sum + (log.totalMicSeconds || 0), 0);
-    const micUserIds = new Set<string>(
-      logs.flatMap(log => (log.micUserIds || []).map(id => id.toString()))
-    );
-    const audienceUserIds = new Set<string>(
-      logs.flatMap(log => (log.audienceUserIds || []).map(id => id.toString()))
-    );
-    const secondsByDate = new Map<string, number>();
-    logs.forEach(log => {
-      secondsByDate.set(log.date, (secondsByDate.get(log.date) || 0) + (log.roomOwnerSeconds || 0));
-    });
+    const liveDurationFromLogs = logs.reduce((sum, log) => sum + (log.liveDurationSeconds || 0), 0);
+    const liveDurationSeconds = Math.max(liveDurationFromRooms, liveDurationFromLogs);
+    const loggedLiveViewers = logs.reduce((sum, log) => sum + (log.liveViewers || 0), 0);
+    const totalLiveViewersCount = Math.max(liveViewerIds.size, loggedLiveViewers);
 
-    const logsHavePartyActivity = logs.some(log =>
-      (log.roomOwnerSeconds || 0) > 0 ||
-      (log.totalMicSeconds || 0) > 0 ||
-      (log.micUserIds || []).length > 0 ||
-      (log.audienceUserIds || []).length > 0
-    );
+    // 4. Party Room stats aggregation
+    let partyRoomOwnerSecondsFromRooms = 0;
+    let totalMicSecondsFromRooms = 0;
+    const micUserIds = new Set<string>();
+    const audienceUserIds = new Set<string>();
+    const partySecondsByDate = new Map<string, number>();
 
-    const addPartyRoomActivity = (room: typeof hostedRooms[number], sessionEnd: Date) => {
-      if (!room.startedAt || room.startedAt > endDate) {
-        return;
-      }
-      if (sessionEnd < startDate) {
-        return;
-      }
+    hostedRooms.forEach(room => {
+      if (room.roomType !== 'party_room') return;
+      const roomStart = room.startedAt || room.createdAt || new Date();
+      const roomEnd = room.status === 'live' ? now : (room.endedAt || room.updatedAt || roomStart);
+      if (room.status !== 'live' && roomEnd < startDate) return;
+      if (roomStart > endDate) return;
 
-      const partySeconds = this.clipDurationSeconds(room.startedAt, sessionEnd, startDate, endDate);
-      roomOwnerSeconds += partySeconds;
+      const partySeconds = this.clipDurationSeconds(roomStart, roomEnd, startDate, endDate);
+      partyRoomOwnerSecondsFromRooms += partySeconds;
 
-      const activityDate = this.localDateStr(sessionEnd);
-      if (activityDate >= this.localDateStr(startDate) && activityDate <= this.localDateStr(endDate)) {
-        secondsByDate.set(activityDate, (secondsByDate.get(activityDate) || 0) + partySeconds);
-      }
+      const activityDate = this.localDateStr(roomEnd);
+      partySecondsByDate.set(activityDate, (partySecondsByDate.get(activityDate) || 0) + partySeconds);
 
       (room.joinedUsers || []).forEach(id => {
-        if (id.toString() !== userId) audienceUserIds.add(id.toString());
+        if (id && id.toString() !== userId) audienceUserIds.add(id.toString());
+      });
+      (room.viewers || []).forEach(id => {
+        if (id && id.toString() !== userId) audienceUserIds.add(id.toString());
       });
 
       (room.seats || []).forEach(seat => {
@@ -429,30 +494,32 @@ export class LiveDataService {
         if (seat.occupiedAt) {
           const occupiedAt = new Date(seat.occupiedAt);
           if (occupiedAt <= endDate) {
-            totalMicSeconds += this.clipDurationSeconds(occupiedAt, sessionEnd, startDate, endDate);
+            totalMicSecondsFromRooms += this.clipDurationSeconds(occupiedAt, roomEnd, startDate, endDate);
           }
         }
       });
-    };
+    });
 
-    const livePartyRoom = hostedRooms.find(room => room.roomType === 'party_room' && room.status === 'live');
-    if (livePartyRoom) {
-      addPartyRoomActivity(livePartyRoom, now);
-    }
+    // Merge with LiveDataLog
+    const roomOwnerSecondsFromLogs = logs.reduce((sum, log) => sum + (log.roomOwnerSeconds || 0), 0);
+    const totalMicSecondsFromLogs = logs.reduce((sum, log) => sum + (log.totalMicSeconds || 0), 0);
+    const roomOwnerSeconds = Math.max(partyRoomOwnerSecondsFromRooms, roomOwnerSecondsFromLogs);
+    const totalMicSeconds = Math.max(totalMicSecondsFromRooms, totalMicSecondsFromLogs);
 
-    if (!logsHavePartyActivity) {
-      hostedRooms.forEach(room => {
-        if (room.roomType !== 'party_room' || room.status === 'live') {
-          return;
-        }
-        const endedAt = room.endedAt || room.startedAt;
-        if (!endedAt) {
-          return;
-        }
-        addPartyRoomActivity(room, endedAt);
+    logs.forEach(log => {
+      (log.micUserIds || []).forEach(id => micUserIds.add(id.toString()));
+      (log.audienceUserIds || []).forEach(id => {
+        if (id.toString() !== userId) audienceUserIds.add(id.toString());
       });
-    }
+      if (log.roomOwnerSeconds) {
+        partySecondsByDate.set(log.date, Math.max(partySecondsByDate.get(log.date) || 0, log.roomOwnerSeconds));
+      }
+    });
 
+    const userOnMicCount = Math.max(micUserIds.size, logs.reduce((sum, log) => sum + (log.userOnMicCount || 0), 0));
+    const audienceCount = Math.max(audienceUserIds.size, logs.reduce((sum, log) => sum + (log.audienceCount || 0), 0));
+
+    // 5. Calls and Totals
     const loggedReports = logs.reduce((sum, log) => sum + (log.reportsCount || 0), 0);
     const loggedNewFans = logs.reduce((sum, log) => sum + (log.newFansCount || 0), 0);
 
@@ -471,8 +538,9 @@ export class LiveDataService {
     const eDayMinHours = Number(await this.appSettingService.getSettingValue('e_day_min_hours') ?? 1);
     const liveEHours = this.secondsToEHours(liveDurationSeconds);
     const partyEHours = this.secondsToEHours(roomOwnerSeconds);
+
     const partyEDay = type === 'monthly'
-      ? Array.from(secondsByDate.values()).filter(seconds => this.secondsToEHours(seconds) >= eDayMinHours).length
+      ? Array.from(partySecondsByDate.values()).filter(seconds => this.secondsToEHours(seconds) >= eDayMinHours).length
       : (partyEHours >= eDayMinHours ? 1 : 0);
 
     const summaryBeansIncome = totalCallIncome + liveBeansIncome + partyBeansIncome;
@@ -521,7 +589,7 @@ export class LiveDataService {
       liveStreamData: {
         liveBeansIncome,
         eHours: liveEHours,
-        viewers: liveViewerIds.size,
+        viewers: totalLiveViewersCount,
         liveDuration: this.formatSecondsToHHMMSS(liveDurationSeconds),
         liveDurationSeconds,
         giftSenders: liveGiftSenders.size
@@ -535,8 +603,8 @@ export class LiveDataService {
         totalMicHour: this.formatSecondsToHHMMSS(totalMicSeconds),
         totalMicSeconds,
         eDay: partyEDay,
-        userOnMic: micUserIds.size,
-        audience: audienceUserIds.size,
+        userOnMic: userOnMicCount,
+        audience: audienceCount,
         giftSenders: partyGiftSenders.size
       },
 
@@ -564,7 +632,7 @@ export class LiveDataService {
     const giftHistory = await CoinHistory.find({
       type: { $in: ['gift_received', 'charm_received', 'call_income'] },
       createdAt: { $gte: startDate, $lte: endDate }
-    }).select('channelName amount type contextType description');
+    }).select('channelName amount type contextType description createdAt');
 
     const channelNames = this.uniqueIdStrings(
       giftHistory.map(h => h.channelName).filter((name): name is string => !!name)
@@ -573,7 +641,9 @@ export class LiveDataService {
     if (channelNames.length) {
       const rooms = await Room.find({ channelName: { $in: channelNames } }).select('channelName roomType');
       rooms.forEach(room => {
-        roomsByChannel.set(room.channelName, room.roomType === 'party_room' ? 'party_room' : 'livestream');
+        const typeKey = room.roomType === 'party_room' ? 'party_room' : 'livestream';
+        roomsByChannel.set(room.channelName, typeKey);
+        roomsByChannel.set(room.channelName.toLowerCase(), typeKey);
       });
     }
 
@@ -590,13 +660,11 @@ export class LiveDataService {
         }
         return;
       }
-      if (giftContext === 'livestream') {
-        liveBeansIncome += amount;
-        return;
-      }
       if (giftContext === 'party_room') {
         partyBeansIncome += amount;
+        return;
       }
+      liveBeansIncome += amount;
     });
 
     const callAgg = await Call.aggregate([
@@ -668,3 +736,4 @@ export class LiveDataService {
     return updated;
   }
 }
+

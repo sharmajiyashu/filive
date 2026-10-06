@@ -152,11 +152,11 @@ export class RankingService {
       const isPremium = Boolean(user.isPremium);
       const vipBadge = isVip
         ? {
-            isVip: true,
-            level: 1,
-            name: 'VIP',
-            badge: 'VIP',
-          }
+          isVip: true,
+          level: 1,
+          name: 'VIP',
+          badge: 'VIP',
+        }
         : null;
 
       populatedRankList.push({
@@ -265,7 +265,8 @@ export class RankingService {
     return {
       $or: [
         { type: 'gift_received' },
-        { type: 'charm_received', description: { $regex: /received gift/i } },
+        { type: 'charm_received' },
+        { type: 'transfer', description: { $regex: /received gift/i } },
       ]
     };
   }

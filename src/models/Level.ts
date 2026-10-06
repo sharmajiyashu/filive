@@ -9,6 +9,7 @@ export interface ILevel extends Document {
   color: string;
   image?: mongoose.Types.ObjectId | any;
   media?: any;
+  imageUrl?: string | null;
   rangeText?: string;
   levelRange?: string;
   createdAt: Date;

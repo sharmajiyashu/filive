@@ -15,8 +15,20 @@ export class LevelService {
     const levels = await Level.find({ type }).populate('image').sort({ levelNumber: 1 });
 
     if (levels.length === 0) {
+      const defaultColor = type === 'rich' ? '#CD7F32' : '#FFB6C1';
       return {
-        currentLevel: null,
+        currentLevel: {
+          levelNumber: 1,
+          type,
+          name: `${type === 'rich' ? 'Rich' : 'Charm'} Level 1`,
+          minCoins: 0,
+          maxCoins: 5000,
+          color: defaultColor,
+          image: null,
+          imageUrl: null,
+          levelRange: '1-5',
+          rangeText: '1-5',
+        },
         nextLevel: null,
         progressPercentage: 0,
       };
@@ -55,12 +67,14 @@ export class LevelService {
     const currentObj = currentLevel.toObject ? currentLevel.toObject() : { ...currentLevel };
     currentObj.levelRange = getLevelRangeText(currentObj.levelNumber);
     currentObj.rangeText = getLevelRangeText(currentObj.levelNumber);
+    currentObj.imageUrl = currentObj.image?.url || (typeof currentObj.image === 'string' ? currentObj.image : null);
 
     let nextObj = null;
     if (nextLevel) {
       nextObj = nextLevel.toObject ? nextLevel.toObject() : { ...nextLevel };
       nextObj.levelRange = getLevelRangeText(nextObj.levelNumber);
       nextObj.rangeText = getLevelRangeText(nextObj.levelNumber);
+      nextObj.imageUrl = nextObj.image?.url || (typeof nextObj.image === 'string' ? nextObj.image : null);
     }
 
     return {

@@ -27,6 +27,7 @@ import liveData from './liveData';
 import reaction from './reaction';
 import paymentMethod from './paymentMethod';
 import banner from './banner';
+import socialLink from './socialLink';
 
 export default (router: Router): Router => {
   profile(router);
@@ -57,6 +58,7 @@ export default (router: Router): Router => {
   reaction(router);
   paymentMethod(router);
   banner(router);
+  socialLink(router);
   return router;
 };
 

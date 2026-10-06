@@ -30,6 +30,7 @@ import banner from './banner';
 import call from './call';
 import liveData from './liveData';
 import supportChat from './supportChat';
+import socialLink from './socialLink';
 
 export default (router: Router): Router => {
   auth(router);
@@ -63,6 +64,7 @@ export default (router: Router): Router => {
   call(router);
   liveData(router);
   supportChat(router);
+  socialLink(router);
   return router;
 };
 
