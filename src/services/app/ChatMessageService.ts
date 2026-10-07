@@ -710,6 +710,27 @@ export class ChatMessageService {
       rawMessage.frame = rawMessage.senderId.frame ?? null;
     }
 
+    const socketPayload = {
+      success: true,
+      type: 'new_message',
+      event: 'new_message',
+      ...(rawMessage || populatedMessage),
+      chatId: data.chatId,
+    };
+
+    const io = this.getSocketIo();
+    if (io) {
+      io.to(`chat_${data.chatId}`).emit('new_message', socketPayload);
+      for (const p of otherParticipants) {
+        if (p.userId) {
+          io.to(`user_${p.userId.toString()}`).emit('new_message', socketPayload);
+          io.to(`user_${p.userId.toString()}`).emit('chat_message_received', socketPayload);
+        }
+      }
+      io.to('support_admins').emit('new_support_message', socketPayload);
+      io.to('support_admins').emit('new_message', socketPayload);
+    }
+
     return rawMessage || populatedMessage;
   }
 

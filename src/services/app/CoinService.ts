@@ -505,11 +505,30 @@ export class CoinService {
       audienceRaw
     );
 
-    const keyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) || config.razorpay.keyId || 'rzp_live_TOLcZZUrGcgCad';
-    const keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) || config.razorpay.keySecret || 'l2iC9Y61NpDsaec0FROTkqsr';
+    const razorpayMode = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_mode')) || 'production';
+    let keyId = '';
+    let keySecret = '';
+
+    if (razorpayMode === 'sandbox' || razorpayMode === 'test') {
+      keyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_test_key_id')) ||
+        (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) ||
+        config.razorpay.keyId ||
+        'rzp_test_1DP5mmOlF5G5ag';
+      keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_test_key_secret')) ||
+        (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) ||
+        config.razorpay.keySecret ||
+        '';
+    } else {
+      keyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) ||
+        config.razorpay.keyId ||
+        'rzp_live_TOLcZZUrGcgCad';
+      keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) ||
+        config.razorpay.keySecret ||
+        'l2iC9Y61NpDsaec0FROTkqsr';
+    }
 
     if (!keyId || !keySecret) {
-      throw new Error('Razorpay API keys are not configured on the server');
+      throw new Error(`Razorpay API keys are not configured on the server for ${razorpayMode} mode`);
     }
 
     const razorpay = new Razorpay({
@@ -518,11 +537,17 @@ export class CoinService {
     });
 
     const user = await User.findById(userId);
-    const amountInPaise = Math.round(pkg.price * 100);
+    const amountInPaise = Math.round(Number(pkg.price) * 100);
+
+    if (amountInPaise <= 0) {
+      throw new Error('Coin package price must be greater than zero');
+    }
+
+    const currency = (pkg as any).currency || 'INR';
 
     const options = {
       amount: amountInPaise,
-      currency: 'INR',
+      currency: currency.toUpperCase(),
       receipt: `rcg_${userId.toString().slice(-6)}_${Date.now()}`,
       notes: {
         userId: userId.toString(),
@@ -530,6 +555,7 @@ export class CoinService {
         packageName: pkg.name,
         coins: pkg.coins,
         rechargeAudience: audience,
+        environment: razorpayMode,
       },
     };
 
@@ -550,6 +576,7 @@ export class CoinService {
       amount: order.amount,
       currency: order.currency,
       audience,
+      mode: razorpayMode,
       package: {
         id: pkg._id,
         name: pkg.name,
@@ -574,8 +601,21 @@ export class CoinService {
     razorpaySignature: string,
     audienceRaw?: string
   ) {
-    const keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) || config.razorpay.keySecret || 'l2iC9Y61NpDsaec0FROTkqsr';
-    if (!keySecret) throw new Error('Razorpay secret key is not configured');
+    const razorpayMode = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_mode')) || 'production';
+    let keySecret = '';
+
+    if (razorpayMode === 'sandbox' || razorpayMode === 'test') {
+      keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_test_key_secret')) ||
+        (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) ||
+        config.razorpay.keySecret ||
+        '';
+    } else {
+      keySecret = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_secret')) ||
+        config.razorpay.keySecret ||
+        'l2iC9Y61NpDsaec0FROTkqsr';
+    }
+
+    if (!keySecret) throw new Error(`Razorpay secret key is not configured for ${razorpayMode} mode`);
 
     const generatedSignature = crypto
       .createHmac('sha256', keySecret)
@@ -593,7 +633,15 @@ export class CoinService {
 
     let audience = audienceRaw ? this.normalizeAudience(audienceRaw) : undefined;
     try {
-      const razorpayKeyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) || config.razorpay.keyId;
+      let razorpayKeyId = '';
+      if (razorpayMode === 'sandbox' || razorpayMode === 'test') {
+        razorpayKeyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_test_key_id')) ||
+          (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) ||
+          config.razorpay.keyId ||
+          '';
+      } else {
+        razorpayKeyId = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_key_id')) || config.razorpay.keyId;
+      }
       const razorpayKeySecret = keySecret;
       if (razorpayKeyId && razorpayKeySecret) {
         const razorpay = new Razorpay({ key_id: razorpayKeyId, key_secret: razorpayKeySecret });
