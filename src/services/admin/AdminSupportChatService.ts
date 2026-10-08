@@ -591,6 +591,15 @@ export class AdminSupportChatService {
         userId: supportUser._id.toString(),
         readBySupport: true
       });
+      io.to('support_admins').emit('chat_read_update', {
+        chatId,
+        userId: supportUser._id.toString(),
+        readBySupport: true
+      });
+      io.to('support_admins').emit('support_chat_read', {
+        chatId,
+        userId: supportUser._id.toString()
+      });
     }
 
     return { success: true, chatId };
@@ -602,33 +611,49 @@ export class AdminSupportChatService {
   public async getSupportStats() {
     const supportUser = await this.resolveSupportUser();
     const supportUserId = supportUser._id;
+    const supportUserIdStr = supportUserId.toString();
 
-    const totalThreads = await Chat.countDocuments({
+    const supportChats = await Chat.find({
       'participants.userId': supportUserId,
       type: 'private'
-    });
+    }).select('_id');
+    const supportChatIds = supportChats.map(c => c._id);
+    const totalThreads = supportChatIds.length;
 
-    // Unread messages
+    // Unread messages only in support chats
     const unreadMessages = await Message.countDocuments({
+      chatId: { $in: supportChatIds },
       senderId: { $ne: supportUserId },
       'seenBy.userId': { $ne: supportUserId },
       deletedAt: { $exists: false }
     });
 
+    // Unread threads count
+    const unreadThreadChatIds = await Message.distinct('chatId', {
+      chatId: { $in: supportChatIds },
+      senderId: { $ne: supportUserId },
+      'seenBy.userId': { $ne: supportUserId },
+      deletedAt: { $exists: false }
+    });
+    const unreadThreads = unreadThreadChatIds.length;
+
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
     const messagesToday = await Message.countDocuments({
+      chatId: { $in: supportChatIds },
       createdAt: { $gte: startOfToday },
       deletedAt: { $exists: false }
     });
 
     return {
       totalThreads,
+      unreadThreads,
       unreadMessages,
       messagesToday,
+      supportUserId: supportUserIdStr,
       supportEmail: supportUser.email,
-      supportName: supportUser.name
+      supportName: supportUser.name || 'Contact Support'
     };
   }
 }

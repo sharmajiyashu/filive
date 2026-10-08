@@ -15,6 +15,7 @@ import { FirebasePushService } from '../common/FirebasePushService';
 import { MediaType } from '../../constants/enum';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
+import { ChatService } from './ChatService';
 
 @Service()
 export class ChatMessageService {
@@ -710,12 +711,33 @@ export class ChatMessageService {
       rawMessage.frame = rawMessage.senderId.frame ?? null;
     }
 
+    const chatService = Container.get(ChatService);
+    let isSupportChat = false;
+    let isFromSupport = false;
+    try {
+      const supportUser = await chatService.resolveSupportUser();
+      const supportUserIdStr = supportUser?._id ? supportUser._id.toString() : '';
+      if (supportUserIdStr) {
+        isSupportChat = Boolean(chat?.participants?.some((p: any) => {
+          const pId = p.userId?._id ? p.userId._id.toString() : p.userId?.toString();
+          return pId === supportUserIdStr;
+        }));
+        isFromSupport = (userId === supportUserIdStr);
+      }
+    } catch (_) { }
+
+    const msgIdStr = message._id.toString();
     const socketPayload = {
       success: true,
       type: 'new_message',
       event: 'new_message',
       ...(rawMessage || populatedMessage),
+      id: msgIdStr,
+      _id: msgIdStr,
       chatId: data.chatId,
+      senderIdStr: userId,
+      isFromSupport,
+      isSupportChat
     };
 
     const io = this.getSocketIo();
@@ -723,12 +745,15 @@ export class ChatMessageService {
       io.to(`chat_${data.chatId}`).emit('new_message', socketPayload);
       for (const p of otherParticipants) {
         if (p.userId) {
-          io.to(`user_${p.userId.toString()}`).emit('new_message', socketPayload);
-          io.to(`user_${p.userId.toString()}`).emit('chat_message_received', socketPayload);
+          const pId = p.userId?._id ? p.userId._id.toString() : p.userId.toString();
+          io.to(`user_${pId}`).emit('new_message', socketPayload);
+          io.to(`user_${pId}`).emit('chat_message_received', socketPayload);
         }
       }
-      io.to('support_admins').emit('new_support_message', socketPayload);
-      io.to('support_admins').emit('new_message', socketPayload);
+      if (isSupportChat) {
+        io.to('support_admins').emit('new_support_message', socketPayload);
+        io.to('support_admins').emit('new_message', socketPayload);
+      }
     }
 
     return rawMessage || populatedMessage;

@@ -192,27 +192,9 @@ export default (socket: AuthenticatedSocket, io: Server) => {
                 convertedAttachments
             );
 
-            // Broadcast the new message to the room
             const messageData = savedMessage && (savedMessage as any).toObject ? (savedMessage as any).toObject() : savedMessage;
-            const senderUser = messageData?.senderId || messageData?.sender;
-            const messagePayload = {
-                success: true,
-                type: 'new_message',
-                ...messageData,
-                sender: senderUser,
-                activeChatBubble: messageData?.activeChatBubble || senderUser?.activeChatBubble || null,
-                chatBubble: messageData?.chatBubble || senderUser?.chatBubble || null,
-                chat_bubble: messageData?.chat_bubble || senderUser?.chat_bubble || null,
-                activeFrame: messageData?.activeFrame || senderUser?.activeFrame || null,
-                frame: messageData?.frame || senderUser?.frame || null,
-            };
-            io.to(`chat_${chatId}`).emit('new_message', messagePayload);
-
-            // Notify support admins
-            io.to('support_admins').emit('new_support_message', messagePayload);
-
             if (typeof callback === 'function') {
-                callback({ success: true, type: 'SUCCESS', event: 'send_message', data: messagePayload });
+                callback({ success: true, type: 'SUCCESS', event: 'send_message', data: messageData });
             }
         } catch (error: any) {
             emitSocketError(socket, 'send_message', error, 'Message send failed', undefined, callback);
