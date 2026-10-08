@@ -28,6 +28,7 @@ import reaction from './reaction';
 import paymentMethod from './paymentMethod';
 import banner from './banner';
 import socialLink from './socialLink';
+import vip from './vip';
 
 export default (router: Router): Router => {
   profile(router);
@@ -59,6 +60,7 @@ export default (router: Router): Router => {
   paymentMethod(router);
   banner(router);
   socialLink(router);
+  vip(router);
   return router;
 };
 

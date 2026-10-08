@@ -31,6 +31,7 @@ import call from './call';
 import liveData from './liveData';
 import supportChat from './supportChat';
 import socialLink from './socialLink';
+import vip from './vip';
 
 export default (router: Router): Router => {
   auth(router);
@@ -65,6 +66,7 @@ export default (router: Router): Router => {
   liveData(router);
   supportChat(router);
   socialLink(router);
+  vip(router);
   return router;
 };
 

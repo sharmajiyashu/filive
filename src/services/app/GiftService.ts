@@ -82,7 +82,7 @@ export class GiftService {
 
   public async getActiveGifts(type?: string) {
     const query: any = { isActive: true };
-    if (type) {
+    if (type && type !== 'undefined' && type !== 'null' && type.trim() !== '' && mongoose.Types.ObjectId.isValid(type)) {
       query.type = new mongoose.Types.ObjectId(type);
     }
     return await Gift.find(query).populate('media').populate('type').sort({ price: 1 });

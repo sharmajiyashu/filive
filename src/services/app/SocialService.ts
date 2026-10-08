@@ -2,9 +2,12 @@ import { Service } from 'typedi';
 import Follow from '../../models/Follow';
 import FriendRequest from '../../models/FriendRequest';
 import User from '../../models/User';
+import { LevelService } from './LevelService';
 
 @Service()
 export class SocialService {
+  constructor(private levelService: LevelService) { }
+
   public async sendFollowRequest(followerId: string, followingId: string) {
     if (followerId === followingId) throw new Error('You cannot follow yourself');
 
@@ -84,13 +87,36 @@ export class SocialService {
       .populate({
         path: 'followerId',
         match: followerMatch,
-        select: 'userId name email mobile profileImage bio isPremium location country',
+        select: 'userId name email mobile profileImage bio isPremium location country gender wealthCoins charmCoins coins',
         populate: { path: 'profileImage' }
       });
 
     const validFollowers = rawFollowers.filter(f => f.followerId !== null);
     const total = validFollowers.length;
-    const paginatedFollowers = validFollowers.slice((page - 1) * limit, page * limit);
+    const paginatedFollowers = await Promise.all(
+      validFollowers.slice((page - 1) * limit, page * limit).map(async (f: any) => {
+        const fObj = f.toObject ? f.toObject() : f;
+        const u = fObj.followerId;
+        if (u) {
+          const wealthCoins = u.wealthCoins !== undefined ? Number(u.wealthCoins) : Number(u.coins || 0);
+          const charmCoins = Number(u.charmCoins || 0);
+          const [richLevelInfo, charmLevelInfo] = await Promise.all([
+            this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
+            this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+          ]);
+          fObj.followerId = {
+            ...u,
+            wealthCoins,
+            charmCoins,
+            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            richLevelInfo,
+            charmLevelInfo,
+          };
+        }
+        return fObj;
+      })
+    );
 
     return {
       followers: paginatedFollowers,
@@ -123,13 +149,36 @@ export class SocialService {
       .populate({
         path: 'followingId',
         match: followingMatch,
-        select: 'userId name email mobile profileImage bio isPremium location country',
+        select: 'userId name email mobile profileImage bio isPremium location country gender wealthCoins charmCoins coins',
         populate: { path: 'profileImage' }
       });
 
     const validFollowing = rawFollowing.filter(f => f.followingId !== null);
     const total = validFollowing.length;
-    const paginatedFollowing = validFollowing.slice((page - 1) * limit, page * limit);
+    const paginatedFollowing = await Promise.all(
+      validFollowing.slice((page - 1) * limit, page * limit).map(async (f: any) => {
+        const fObj = f.toObject ? f.toObject() : f;
+        const u = fObj.followingId;
+        if (u) {
+          const wealthCoins = u.wealthCoins !== undefined ? Number(u.wealthCoins) : Number(u.coins || 0);
+          const charmCoins = Number(u.charmCoins || 0);
+          const [richLevelInfo, charmLevelInfo] = await Promise.all([
+            this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
+            this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+          ]);
+          fObj.followingId = {
+            ...u,
+            wealthCoins,
+            charmCoins,
+            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            richLevelInfo,
+            charmLevelInfo,
+          };
+        }
+        return fObj;
+      })
+    );
 
     return {
       following: paginatedFollowing,
@@ -154,7 +203,7 @@ export class SocialService {
     })
       .populate({
         path: 'followerId',
-        select: 'name email profileImage bio isPremium location country',
+        select: 'userId name email mobile profileImage bio isPremium location country gender wealthCoins charmCoins coins',
         populate: { path: 'profileImage' }
       })
       .skip((page - 1) * limit)
@@ -166,8 +215,33 @@ export class SocialService {
       status: 'accepted'
     });
 
+    const formattedFriends = await Promise.all(
+      friends.map(async (f: any) => {
+        const fObj = f.toObject ? f.toObject() : f;
+        const u = fObj.followerId;
+        if (u) {
+          const wealthCoins = u.wealthCoins !== undefined ? Number(u.wealthCoins) : Number(u.coins || 0);
+          const charmCoins = Number(u.charmCoins || 0);
+          const [richLevelInfo, charmLevelInfo] = await Promise.all([
+            this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
+            this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+          ]);
+          fObj.followerId = {
+            ...u,
+            wealthCoins,
+            charmCoins,
+            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            richLevelInfo,
+            charmLevelInfo,
+          };
+        }
+        return fObj;
+      })
+    );
+
     return {
-      friends,
+      friends: formattedFriends,
       pagination: {
         total,
         page,

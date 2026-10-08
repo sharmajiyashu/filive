@@ -2,6 +2,7 @@ import { Service, Inject, Container } from 'typedi';
 import mongoose from 'mongoose';
 import Call from '../../models/Call';
 import User from '../../models/User';
+import Room from '../../models/Room';
 import CoinHistory from '../../models/CoinHistory';
 import config from '../../config';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
@@ -333,7 +334,7 @@ export class CallService {
           $set: { status: 'missed', endedAt: new Date() }
         }
       );
-    } catch (_) {}
+    } catch (_) { }
 
     const activeCall = await Call.findOne({
       $or: [
@@ -868,6 +869,37 @@ export class CallService {
       .populate('profileImage')
       .populate('countryId');
 
+    const hostObjectIds = hosts.map((h: any) => h._id);
+
+    const [activeCalls, activeRooms] = await Promise.all([
+      Call.find({
+        status: { $in: ['initiated', 'accepted'] },
+        $or: [
+          { callerId: { $in: hostObjectIds } },
+          { receiverId: { $in: hostObjectIds } },
+        ],
+      }).select('callerId receiverId status'),
+      Room.find({
+        hostId: { $in: hostObjectIds },
+        status: 'live',
+      }).select('hostId status'),
+    ]);
+
+    const busyHostSet = new Set<string>();
+    const liveHostSet = new Set<string>();
+
+    activeCalls.forEach((call: any) => {
+      if (call.callerId) busyHostSet.add(call.callerId.toString());
+      if (call.receiverId) busyHostSet.add(call.receiverId.toString());
+    });
+
+    activeRooms.forEach((room: any) => {
+      if (room.hostId) {
+        liveHostSet.add(room.hostId.toString());
+        busyHostSet.add(room.hostId.toString());
+      }
+    });
+
     let io: any;
     try {
       io = Container.get('socket');
@@ -879,6 +911,9 @@ export class CallService {
       const socketOnline = (io && hostId) ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
       const recentLogin = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
       const isOnline = socketOnline || recentLogin;
+      const isBusy = busyHostSet.has(hostId);
+      const isLive = liveHostSet.has(hostId);
+      const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
 
       const voiceCallPrice = Number(hObj.voiceCallPrice || hObj.audioCallChargePerMinute || 0);
       const videoCallPrice = Number(hObj.videoCallPrice || hObj.videoCallChargePerMinute || 0);
@@ -897,11 +932,15 @@ export class CallService {
         videoRatePerMinute: videoCallPrice,
         ratePerMinute: currentRate,
         isOnline,
-        status: isOnline ? 'online' : 'offline',
+        isBusy,
+        isLive,
+        status,
       });
     }));
 
     formattedHosts.sort((a, b) => {
+      if (a.status === 'busy' && b.status !== 'busy') return 1;
+      if (b.status === 'busy' && a.status !== 'busy') return -1;
       if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
       return Math.random() - 0.5;
     });

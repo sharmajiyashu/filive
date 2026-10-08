@@ -8,6 +8,7 @@ import UserVisitor from '../../models/UserVisitor';
 import Block from '../../models/Block';
 import Chat from '../../models/Chat';
 import Room from '../../models/Room';
+import Call from '../../models/Call';
 import FamilyMember from '../../models/FamilyMember';
 import Country from '../../models/Country';
 import mongoose from 'mongoose';
@@ -101,9 +102,44 @@ export class UserService {
       .skip((page - 1) * limit)
       .limit(limit);
 
+    const userObjectIds = userDocs.map((u: any) => u._id);
+
+    const [activeCalls, activeRooms] = await Promise.all([
+      Call.find({
+        status: { $in: ['initiated', 'accepted'] },
+        $or: [
+          { callerId: { $in: userObjectIds } },
+          { receiverId: { $in: userObjectIds } },
+        ],
+      }).select('callerId receiverId status'),
+      Room.find({
+        hostId: { $in: userObjectIds },
+        status: 'live',
+      }).select('hostId status'),
+    ]);
+
+    const busyUserSet = new Set<string>();
+    const liveUserSet = new Set<string>();
+
+    activeCalls.forEach((call: any) => {
+      if (call.callerId) busyUserSet.add(call.callerId.toString());
+      if (call.receiverId) busyUserSet.add(call.receiverId.toString());
+    });
+
+    activeRooms.forEach((room: any) => {
+      if (room.hostId) {
+        liveUserSet.add(room.hostId.toString());
+        busyUserSet.add(room.hostId.toString());
+      }
+    });
+
     const formattedUsers = await Promise.all(userDocs.map(async (u: any) => {
       const uObj = u.toObject ? u.toObject() : u;
+      const uid = uObj._id?.toString();
       const isOnline = uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      const isBusy = busyUserSet.has(uid);
+      const isLive = liveUserSet.has(uid);
+      const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
       const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
       const voiceCallPrice = Number(uObj.voiceCallPrice || uObj.audioCallChargePerMinute || 0);
       const videoCallPrice = Number(uObj.videoCallPrice || uObj.videoCallChargePerMinute || 0);
@@ -115,6 +151,9 @@ export class UserService {
       return attachUserCountryAndAge({
         ...uObj,
         isOnline,
+        isBusy,
+        isLive,
+        status,
         voiceCallPrice,
         videoCallPrice,
         audioCallPrice: voiceCallPrice,
@@ -531,6 +570,14 @@ export class UserService {
       throw new Error('Invalid user ID');
     }
 
+    const viewerId = currentUserId || userId;
+    const requestingUser = await User.findById(viewerId).select('isVip isPremium vipExpiresAt');
+    const now = new Date();
+    const isVip = !!(
+      (requestingUser?.isVip || requestingUser?.isPremium) &&
+      (!requestingUser?.vipExpiresAt || new Date(requestingUser.vipExpiresAt).getTime() > now.getTime())
+    );
+
     const userObjectId = new mongoose.Types.ObjectId(userId);
     let matchQuery: any = { userId: userObjectId };
 
@@ -576,10 +623,27 @@ export class UserService {
     const total = aggregationResult[0]?.metadata[0]?.total || 0;
     const records = aggregationResult[0]?.data || [];
 
+    // If viewer does not have an active VIP plan, hide full visitor profiles
+    if (!isVip) {
+      return {
+        isVip: false,
+        isLocked: true,
+        visitors: [],
+        total,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+        message: 'VIP subscription required to unlock visitor list',
+      };
+    }
+
     // Populate user details for each visitor
     const visitorIds = records.map((r: any) => r._id);
     const users = await User.find({ _id: { $in: visitorIds } })
-      .select('name email profileImage bio isPremium location country')
+      .select('name email profileImage bio isPremium isVip gender location country wealthCoins charmCoins')
       .populate('profileImage');
 
     // Create a map for quick lookup
@@ -588,20 +652,39 @@ export class UserService {
       userMap.set(u._id.toString(), u);
     });
 
-    const formattedVisitors = records
-      .map((r: any) => {
+    const formattedVisitors = await Promise.all(
+      records.map(async (r: any) => {
         const visitorUser = userMap.get(r._id.toString());
         if (!visitorUser) return null;
+
+        const wealthCoins = visitorUser.wealthCoins !== undefined ? Number(visitorUser.wealthCoins) : Number(visitorUser.coins || 0);
+        const charmCoins = Number(visitorUser.charmCoins || 0);
+        const [richLevelInfo, charmLevelInfo] = await Promise.all([
+          this.levelService.getLevelInfoForCoins(wealthCoins, 'rich').catch(() => null),
+          this.levelService.getLevelInfoForCoins(charmCoins, 'charm').catch(() => null),
+        ]);
+
         return {
           ...visitorUser.toObject(),
+          wealthCoins,
+          charmCoins,
+          wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+          charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+          richLevelInfo,
+          charmLevelInfo,
           visitedAt: r.visitedAt,
           createdAt: r.createdAt
         };
       })
-      .filter((v: any) => v !== null);
+    );
+
+    const validVisitors = formattedVisitors.filter((v: any) => v !== null);
 
     return {
-      visitors: formattedVisitors,
+      isVip: true,
+      isLocked: false,
+      visitors: validVisitors,
+      total,
       pagination: {
         total,
         page,
@@ -611,4 +694,5 @@ export class UserService {
     };
   }
 }
+
 

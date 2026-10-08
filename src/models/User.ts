@@ -27,6 +27,9 @@ export interface IUser extends Document {
   fcmTokens?: { token: string; deviceType?: string; updatedAt?: Date }[];
   isVerified: boolean;
   isPremium: boolean;
+  isVip: boolean;
+  vipExpiresAt?: Date;
+  vipPlanId?: mongoose.Types.ObjectId;
   gender?: 'Male' | 'Female' | 'Other';
   dob?: Date;
   selfIntroduce?: string;
@@ -143,6 +146,9 @@ const UserSchema: Schema = new Schema(
     ],
     isVerified: { type: Boolean, default: false },
     isPremium: { type: Boolean, default: false },
+    isVip: { type: Boolean, default: false },
+    vipExpiresAt: { type: Date },
+    vipPlanId: { type: Schema.Types.ObjectId, ref: 'VipPlan' },
     gender: { type: String, enum: ['Male', 'Female', 'Other'] },
     dob: { type: Date },
     selfIntroduce: { type: String },
