@@ -3,6 +3,7 @@ import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { CallService } from '../../services/app/CallService';
 import { GiftService } from '../../services/app/GiftService';
 import { RandomMatchService } from '../../services/app/RandomMatchService';
+import Call from '../../models/Call';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 import { emitSocketError } from '../../utils/socketResponse';
@@ -274,6 +275,52 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift_in_call] Error for user ${userId}: ${error.message}`);
       emitSocketError(socket, 'send_gift_in_call', error, 'Failed to send gift in call', undefined, callback);
+    }
+  });
+
+  // 6. Handle Socket Disconnect during active or ringing calls
+  socket.on('disconnect', async (reason: string) => {
+    AppLogger.info(`[Socket Call Disconnect] userId=${userId}, socketId=${socket.id}, reason=${reason}`);
+    try {
+      // Check if user still has other active sockets in their user room
+      const userRoom = io.sockets.adapter.rooms.get(`user_${userId}`);
+      if (userRoom && userRoom.size > 0) {
+        AppLogger.info(`[Socket Call Disconnect] User ${userId} still has ${userRoom.size} active connections. Skipping call auto-hangup.`);
+        return;
+      }
+
+      // Find any ongoing or initiated calls where this user is caller or receiver
+      const activeCalls = await Call.find({
+        $or: [{ callerId: userId }, { receiverId: userId }],
+        status: { $in: ['initiated', 'accepted'] }
+      });
+
+      for (const call of activeCalls) {
+        const callIdStr = call._id.toString();
+        clearCallTimeout(callIdStr);
+
+        AppLogger.info(`[Socket Call Disconnect] Auto-ending call ${callIdStr} because user ${userId} disconnected`);
+        const callerId = (call.callerId as any)?._id?.toString?.() || call.callerId?.toString?.();
+        const receiverId = (call.receiverId as any)?._id?.toString?.() || call.receiverId?.toString?.();
+        const otherUserId = userId === callerId ? receiverId : callerId;
+
+        if (call.status === 'initiated') {
+          const rejectedCall = await callService.rejectCall(userId, callIdStr);
+          const eventName = rejectedCall.status === 'cancelled' ? 'call_cancelled' : 'call_rejected';
+          const summary = { ...(await callService.buildAfterCallSummary(rejectedCall, otherUserId)), success: true, type: eventName };
+          io.to(`user_${otherUserId}`).emit(eventName, summary);
+        } else if (call.status === 'accepted') {
+          const endedCall = await callService.endCall(userId, callIdStr);
+          const summary = { ...(await callService.buildAfterCallSummary(endedCall, otherUserId)), success: true, type: 'call_ended' };
+          io.to(`user_${otherUserId}`).emit('call_ended', summary);
+
+          const randomMatchService = Container.get(RandomMatchService);
+          if (callerId) await randomMatchService.restoreHostIfNeeded(callerId, io);
+          if (receiverId) await randomMatchService.restoreHostIfNeeded(receiverId, io);
+        }
+      }
+    } catch (err: any) {
+      AppLogger.error(`[Socket Call Disconnect Error] userId=${userId}: ${err.message}`);
     }
   });
 };

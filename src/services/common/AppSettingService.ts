@@ -5,7 +5,17 @@ import AppSetting from '../../models/AppSetting';
 export class AppSettingService {
   private defaultSettings = {
     coin_to_bean_rate: 1,
+    bean_to_coin_rate_other: 0.95,
     min_coin_to_bean_transfer: 100,
+    exchange_rate_base_beans: 10000,
+    call_price_tiers: [
+      { minLevel: 1, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 1–7' },
+      { minLevel: 8, maxLevel: 15, audioPrice: 1500, videoPrice: 3000, label: 'Level 8–15' },
+      { minLevel: 16, maxLevel: 25, audioPrice: 2000, videoPrice: 4000, label: 'Level 16–25' },
+      { minLevel: 26, maxLevel: 35, audioPrice: 2500, videoPrice: 5000, label: 'Level 26–35' },
+      { minLevel: 36, maxLevel: 42, audioPrice: 3000, videoPrice: 6500, label: 'Level 36–42' },
+      { minLevel: 43, maxLevel: 45, audioPrice: 4000, videoPrice: 8000, label: 'Level 43–45' },
+    ],
     marital_statuses: ['single', 'divorced', 'married', 'secret', 'inlove'],
     agency_global_commission_rate: 10,
     agency_use_commission_slabs: true,

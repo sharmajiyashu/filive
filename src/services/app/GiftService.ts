@@ -159,8 +159,12 @@ export class GiftService {
 
     if (channelName) {
       liveStream = await Room.findOne({ channelName, status: 'live' });
-      if (liveStream && !resolvedContext) {
-        resolvedContext = this.contextFromRoomType(liveStream.roomType);
+      if (liveStream) {
+        if (liveStream.roomType === 'party_room') {
+          resolvedContext = 'party_room';
+        } else if (!resolvedContext) {
+          resolvedContext = this.contextFromRoomType(liveStream.roomType);
+        }
       }
     }
 
@@ -311,30 +315,52 @@ export class GiftService {
     const formattedSender = await formatUserActiveStoreItems(updatedSender, false);
     const formattedReceiver = await formatUserActiveStoreItems(updatedReceiver, false);
 
-    const toPublicUser = (user: any, extra: Record<string, any> = {}) => ({
-      id: user._id,
-      _id: user._id,
-      userId: user.userId ?? null,
-      name: user.name ?? null,
-      profileImage: user.profileImage ?? null,
-      activeFrame: user.activeFrame ?? null,
-      frame: user.frame ?? null,
-      activeEntry: user.activeEntry ?? null,
-      entry: user.entry ?? null,
-      activeChatBubble: user.activeChatBubble ?? null,
-      chatBubble: user.chatBubble ?? null,
-      chat_bubble: user.chat_bubble ?? null,
-      activeTheme: user.activeTheme ?? null,
-      theme: user.theme ?? null,
-      activeRide: user.activeRide ?? null,
-      ride: user.ride ?? null,
-      activeStoreItems: user.activeStoreItems ?? [],
-      activeItems: user.activeItems ?? [],
-      ...extra
-    });
+    const toPublicUser = (user: any, extra: Record<string, any> = {}) => {
+      const imgUrl = user?.profileImage?.url
+        ? user.profileImage.url
+        : (typeof user?.profileImage === 'string' ? user.profileImage : null);
+
+      return {
+        id: user._id,
+        _id: user._id,
+        userId: user.userId ?? null,
+        name: user.name ?? null,
+        profileImage: user.profileImage ?? null,
+        profileImageUrl: imgUrl ? { url: imgUrl } : (user?.profileImage?.url ? { url: user.profileImage.url } : null),
+        activeFrame: user.activeFrame ?? null,
+        frame: user.frame ?? null,
+        activeEntry: user.activeEntry ?? null,
+        entry: user.entry ?? null,
+        activeChatBubble: user.activeChatBubble ?? null,
+        chatBubble: user.chatBubble ?? null,
+        chat_bubble: user.chat_bubble ?? null,
+        activeTheme: user.activeTheme ?? null,
+        theme: user.theme ?? null,
+        activeRide: user.activeRide ?? null,
+        ride: user.ride ?? null,
+        activeStoreItems: user.activeStoreItems ?? [],
+        activeItems: user.activeItems ?? [],
+        ...extra
+      };
+    };
+
+    const giftMediaUrl = (gift as any)?.media?.url
+      ? (gift as any).media.url
+      : (typeof (gift as any)?.media === 'string' ? (gift as any).media : '');
+
+    const formattedGift = {
+      id: gift._id,
+      _id: gift._id,
+      name: gift.name,
+      price: gift.price,
+      media: { url: giftMediaUrl },
+      url: giftMediaUrl,
+      type: gift.type,
+      isActive: gift.isActive,
+    };
 
     return {
-      gift,
+      gift: formattedGift,
       quantity,
       sender: toPublicUser(formattedSender || updatedSender, {
         coins: updatedSender.coins,

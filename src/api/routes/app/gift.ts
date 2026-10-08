@@ -49,7 +49,7 @@ export default (router: Router) => {
         if (io) {
           if (channelName) {
             const liveRoom = await Room.findOne({ channelName }).select('roomId');
-            io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', {
+            const eventPayload = {
               channelName,
               roomId: liveRoom?.roomId ?? null,
               room_id: liveRoom?.roomId ?? null,
@@ -59,7 +59,13 @@ export default (router: Router) => {
               gift: result.gift,
               quantity: result.quantity,
               createdAt: new Date(),
-            });
+            };
+            io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', eventPayload);
+            if (actualReceiverId) {
+              io.to(`user_${actualReceiverId}`).emit('gift_sent', eventPayload);
+              io.to(`user_${actualReceiverId}`).emit('personal_gift_received', eventPayload);
+            }
+            io.to(`user_${req.user.id}`).emit('gift_sent', eventPayload);
           } else {
             // Direct/personal gift: Emit to both sender and receiver's private rooms
             const eventPayload = {
@@ -72,6 +78,8 @@ export default (router: Router) => {
             };
             io.to(`user_${req.user.id}`).emit('personal_gift_sent', eventPayload);
             io.to(`user_${actualReceiverId}`).emit('personal_gift_received', eventPayload);
+            io.to(`user_${req.user.id}`).emit('gift_sent', eventPayload);
+            io.to(`user_${actualReceiverId}`).emit('gift_sent', eventPayload);
           }
         }
       } catch (ioError) {

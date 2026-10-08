@@ -262,6 +262,11 @@ export class CallService {
     if (!receiver) throw new Error('Receiver profile not found');
 
     // 2. Validate availability and call price
+    const receiverGender = (receiver.gender || '').toLowerCase();
+    if (receiverGender !== 'female') {
+      throw new Error('Calling is available for Female hosts only.');
+    }
+
     const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
     const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
 

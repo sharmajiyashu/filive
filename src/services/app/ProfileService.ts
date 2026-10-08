@@ -185,8 +185,8 @@ export class ProfileService {
       'voiceCallPrice' in data ||
       'videoCallPrice' in data
     ) {
-      const userGender = data.gender || existingUser.gender;
-      if (userGender !== 'Female') {
+      const userGender = (data.gender || existingUser.gender || '').toLowerCase();
+      if (userGender !== 'female') {
         throw new Error('Call pricing and hosting features are available for Female hosts only.');
       }
     }

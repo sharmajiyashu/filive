@@ -6,6 +6,22 @@ export async function seedSettings() {
     const settings = [
       { key: 'family_creation_charge', value: 3000, description: 'Cost to create a family in coins' },
       { key: 'app_name', value: 'Filive', description: 'Application name' },
+      { key: 'coin_to_bean_rate', value: 1, description: 'Coin to Bean exchange rate for Self conversion (1 Bean = X Coins)' },
+      { key: 'bean_to_coin_rate_other', value: 0.95, description: 'Bean to Coin exchange rate for Other user transfer (10,000 Beans = 9,500 Coins)' },
+      { key: 'min_coin_to_bean_transfer', value: 100, description: 'Minimum beans required for exchange' },
+      { key: 'exchange_rate_base_beans', value: 10000, description: 'Base beans amount displayed in exchange rate banner' },
+      {
+        key: 'call_price_tiers',
+        value: [
+          { minLevel: 1, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 1–7' },
+          { minLevel: 8, maxLevel: 15, audioPrice: 1500, videoPrice: 3000, label: 'Level 8–15' },
+          { minLevel: 16, maxLevel: 25, audioPrice: 2000, videoPrice: 4000, label: 'Level 16–25' },
+          { minLevel: 26, maxLevel: 35, audioPrice: 2500, videoPrice: 5000, label: 'Level 26–35' },
+          { minLevel: 36, maxLevel: 42, audioPrice: 3000, videoPrice: 6500, label: 'Level 36–42' },
+          { minLevel: 43, maxLevel: 45, audioPrice: 4000, videoPrice: 8000, label: 'Level 43–45' },
+        ],
+        description: 'Level-based audio and video call price options and tiers'
+      },
       {
         key: 'marital_statuses',
         value: ['single', 'divorced', 'married', 'secret', 'inlove'],

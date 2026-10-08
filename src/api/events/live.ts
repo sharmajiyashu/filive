@@ -492,6 +492,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       };
       AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
+      if (actualReceiverId) {
+        io.to(`user_${actualReceiverId}`).emit('gift_sent', payload);
+        io.to(`user_${actualReceiverId}`).emit('personal_gift_received', payload);
+      }
+      io.to(`user_${userId}`).emit('gift_sent', payload);
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'send_gift', data: payload });
       }

@@ -52,4 +52,32 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * @swagger
+   * /app/settings/call-prices:
+   *   get:
+   *     summary: Get level-wise audio and video call price tiers
+   *     tags: [Settings]
+   *     responses:
+   *       200:
+   *         description: Call price tiers
+   */
+  settingsRouter.get('/call-prices', async (req: Request, res: Response) => {
+    try {
+      const setting = await AppSetting.findOne({ key: 'call_price_tiers' });
+      const defaultTiers = [
+        { minLevel: 1, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 1–7' },
+        { minLevel: 8, maxLevel: 15, audioPrice: 1500, videoPrice: 3000, label: 'Level 8–15' },
+        { minLevel: 16, maxLevel: 25, audioPrice: 2000, videoPrice: 4000, label: 'Level 16–25' },
+        { minLevel: 26, maxLevel: 35, audioPrice: 2500, videoPrice: 5000, label: 'Level 26–35' },
+        { minLevel: 36, maxLevel: 42, audioPrice: 3000, videoPrice: 6500, label: 'Level 36–42' },
+        { minLevel: 43, maxLevel: 45, audioPrice: 4000, videoPrice: 8000, label: 'Level 43–45' },
+      ];
+      const tiers = setting?.value || defaultTiers;
+      return ResponseWrapper.success(res, tiers, 'Call price tiers fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

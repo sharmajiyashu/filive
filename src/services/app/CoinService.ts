@@ -1,4 +1,4 @@
-import { Service, Inject } from 'typedi';
+import { Service, Inject, Container } from 'typedi';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import qs from 'querystring';
@@ -94,6 +94,12 @@ export class CoinService {
     const user = await User.findById(userId).select('beans');
     if (!user) throw new Error('User not found');
 
+    const appSettingService = Container.get(AppSettingService);
+    const coinToBeanRateSelf = Number(await appSettingService.getSettingValue('coin_to_bean_rate') ?? 1);
+    const coinToBeanRateOther = Number(await appSettingService.getSettingValue('bean_to_coin_rate_other') ?? 0.95);
+    const minCoinToBeanTransfer = Number(await appSettingService.getSettingValue('min_coin_to_bean_transfer') ?? 100);
+    const exchangeRateBaseBeans = Number(await appSettingService.getSettingValue('exchange_rate_base_beans') ?? 10000);
+
     const totalBeans = user.beans || 0;
     const withdrawableBeans = totalBeans;
     const beansToBeConfirmed = 0;
@@ -102,6 +108,10 @@ export class CoinService {
       totalBeans,
       withdrawableBeans,
       beansToBeConfirmed,
+      coinToBeanRateSelf,
+      coinToBeanRateOther,
+      minCoinToBeanTransfer,
+      exchangeRateBaseBeans,
     };
   }
 
@@ -468,6 +478,13 @@ export class CoinService {
       const user = await User.findById(userId).select('isCoinseller');
       if (!user?.isCoinseller) {
         throw new Error('Only coin sellers can recharge seller packages');
+      }
+    }
+
+    if (transactionId) {
+      const existing = await CoinHistory.findOne({ transactionId });
+      if (existing) {
+        throw new Error('This transaction has already been processed');
       }
     }
 

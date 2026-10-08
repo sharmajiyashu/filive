@@ -577,14 +577,16 @@ export default (router: Router) => {
         ? String(isMineParam).toLowerCase() === 'true' || isMineParam === true
         : undefined;
 
-      const roomType: 'livestream' | 'party_room' | 'all' =
-        (roomTypeParam === 'party_room' || roomTypeParam === 'party')
-          ? 'party_room'
-          : (roomTypeParam === 'livestream' || roomTypeParam === 'live')
-            ? 'livestream'
-            : (roomTypeParam === 'all' || isMine === true || isFollowingRoom === true || !roomTypeParam)
-              ? 'all'
-              : 'livestream';
+      let roomType: 'livestream' | 'party_room' | 'all' = 'livestream';
+      if (roomTypeParam === 'party_room' || roomTypeParam === 'party') {
+        roomType = 'party_room';
+      } else if (roomTypeParam === 'livestream' || roomTypeParam === 'live') {
+        roomType = 'livestream';
+      } else if (roomTypeParam === 'all') {
+        roomType = 'all';
+      } else if ((isMine === true || isFollowingRoom === true) && !roomTypeParam) {
+        roomType = 'all';
+      }
 
       const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType, {
         isFollowingRoom,

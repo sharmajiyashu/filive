@@ -412,11 +412,12 @@ export default (router: Router) => {
    */
   coinRouter.post('/convert-beans-to-coins', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { beansAmount, targetUserId } = req.body;
+      const { beansAmount } = req.body;
+      const targetId = req.body.targetUserId || req.body.userId;
       const result = await coinSellerService.convertBeansToCoins(
         req.user.id,
         Number(beansAmount),
-        targetUserId ? Number(targetUserId) : undefined
+        targetId ? Number(targetId) : undefined
       );
       return ResponseWrapper.success(res, result, result.message || 'Beans converted to coins successfully');
     } catch (error: any) {

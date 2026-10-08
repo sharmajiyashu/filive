@@ -263,19 +263,20 @@ export class CoinSellerService {
     }
 
     const appSettingService = Container.get(AppSettingService);
-    const coinToBeanRate = await appSettingService.getSettingValue('coin_to_bean_rate') || 1;
-    const minTransfer = await appSettingService.getSettingValue('min_coin_to_bean_transfer') || 100;
+    const coinToBeanRateSelf = Number(await appSettingService.getSettingValue('coin_to_bean_rate') ?? 1);
+    const coinToBeanRateOther = Number(await appSettingService.getSettingValue('bean_to_coin_rate_other') ?? 0.95);
+    const minTransfer = Number(await appSettingService.getSettingValue('min_coin_to_bean_transfer') ?? 100);
 
     if (beansAmount < minTransfer) {
       throw new Error(`Minimum transfer amount is ${minTransfer} beans`);
     }
 
-    const coinsToCredit = Math.floor(beansAmount / coinToBeanRate);
+    const isTransfer = sender._id.toString() !== recipient._id.toString();
+    const effectiveRate = isTransfer ? coinToBeanRateOther : coinToBeanRateSelf;
+    const coinsToCredit = Math.floor(beansAmount * effectiveRate);
     if (coinsToCredit <= 0) {
       throw new Error('Converted coins value is too low');
     }
-
-    const isTransfer = sender._id.toString() !== recipient._id.toString();
     const isRecipientCoinseller = Boolean(recipient.isCoinseller);
     const transferTarget = !isTransfer
       ? 'self'

@@ -116,7 +116,8 @@ export class LiveStreamService {
     }
 
     // Live stream: Female only. Party room: both Male and Female can host.
-    if (normalizedRoomType === 'livestream' && hostUser.gender !== 'Female') {
+    const hostGender = (hostUser.gender || '').toLowerCase();
+    if (normalizedRoomType === 'livestream' && hostGender !== 'female') {
       throw new Error('Go Live streaming feature is restricted to Female hosts only.');
     }
 
