@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "seed": "ts-node ./src/seeders/runSeeders.ts",
+    "seed:vip": "ts-node ./src/seeders/seedVipOnly.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",

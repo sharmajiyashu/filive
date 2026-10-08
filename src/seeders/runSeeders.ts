@@ -30,6 +30,7 @@ import { seedMusic } from './MusicSeeder';
 import { seedPaymentMethods } from './PaymentMethodSeeder';
 import { seedRegionalRankingUsers } from './RegionalRankingSeeder';
 import { seedSocialLinks } from './SocialLinkSeeder';
+import { seedVipPlans } from './VipPlanSeeder';
 
 async function main() {
   try {
@@ -43,6 +44,7 @@ async function main() {
     await adminSeed();
     await seedUsers();
     await seedCoinPackages();
+    await seedVipPlans();
     await seedCountries();
     await seedLanguages();
     await seedCareers();
