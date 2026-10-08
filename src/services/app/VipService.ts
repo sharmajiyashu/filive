@@ -168,15 +168,17 @@ export class VipService {
     );
 
     // Record Coin History transaction
-    await CoinHistory.create({
-      userId,
-      amount: plan.coinPrice,
-      type: 'debit',
-      category: 'vip_purchase',
-      description: `Purchased ${plan.name} for ${plan.coinPrice} coins`,
-      referenceId: plan._id.toString(),
-      referenceModel: 'VipPlan',
-    });
+    try {
+      await CoinHistory.create({
+        userId: new mongoose.Types.ObjectId(userId),
+        amount: plan.coinPrice,
+        type: 'other',
+        wallet: 'coins',
+        description: `Purchased ${plan.name} for ${plan.coinPrice} coins`,
+      });
+    } catch (historyErr) {
+      console.warn('Failed to record CoinHistory for VIP purchase:', historyErr);
+    }
 
     const daysRemaining = Math.max(0, Math.ceil((newExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
