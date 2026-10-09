@@ -7,6 +7,7 @@ import CoinHistory from '../../models/CoinHistory';
 import Room from '../../models/Room';
 import AppLogger from '../../api/loaders/logger';
 import { AgencyCommissionService } from './AgencyCommissionService';
+import { AppSettingService } from '../common/AppSettingService';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
 @Service()
@@ -275,7 +276,23 @@ export class GiftService {
       throw new Error('Sender profile not found');
     }
 
-    // 5. Deduct sender recharge coins and credit receiver beans atomically
+    // 5. Calculate platform gift commission cut
+    let giftCommissionPercent = 20;
+    try {
+      const appSettingService = Container.get(AppSettingService);
+      const rawPct = await appSettingService.getSettingValue('gift_commission_percent');
+      const numPct = Number(rawPct);
+      if (!isNaN(numPct) && numPct >= 0 && numPct <= 100) {
+        giftCommissionPercent = numPct;
+      }
+    } catch (err) {
+      AppLogger.warn(`[GiftService: sendGift] Could not load gift_commission_percent, using default 20%: ${(err as Error).message}`);
+    }
+
+    const commissionAmount = Math.round((totalPrice * giftCommissionPercent) / 100);
+    const hostBeansEarned = Math.max(0, totalPrice - commissionAmount);
+
+    // 6. Deduct sender recharge coins and credit receiver beans atomically (remaining after commission cut)
     const updatedSender = await User.findOneAndUpdate(
       { _id: senderId, coins: { $gte: totalPrice } },
       { $inc: { coins: -totalPrice, wealthCoins: totalPrice } },
@@ -287,7 +304,7 @@ export class GiftService {
 
     const updatedReceiver = await User.findByIdAndUpdate(
       actualReceiverId,
-      { $inc: { beans: totalPrice, charmCoins: totalPrice } },
+      { $inc: { beans: hostBeansEarned, charmCoins: totalPrice } },
       { new: true }
     );
     if (!updatedReceiver) {
@@ -324,24 +341,24 @@ export class GiftService {
     await CoinHistory.create({
       userId: new mongoose.Types.ObjectId(actualReceiverId),
       relatedUserId: new mongoose.Types.ObjectId(senderId),
-      amount: totalPrice,
+      amount: hostBeansEarned,
       type: 'charm_received',
       wallet: 'beans',
-      description: `Received gift '${gift.name}' x${quantity} from viewer${duringLabel}`,
+      description: `Received gift '${gift.name}' x${quantity} from viewer${duringLabel} (${hostBeansEarned} beans after ${giftCommissionPercent}% platform commission cut)`,
       channelName: channelName || undefined,
       contextType: resolvedContext || undefined,
       giftId: gift._id,
       quantity
     });
 
-    AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}`);
+    AppLogger.info(`[GiftService: sendGift] Transfer complete. Gift '${gift.name}' x${quantity} sent. Total Price=${totalPrice}, Platform Commission=${commissionAmount} (${giftCommissionPercent}%), Host Beans=${hostBeansEarned}`);
 
     try {
       const agencyCommissionService = Container.get(AgencyCommissionService);
       await agencyCommissionService.tryRecordVerifiedHostEarning({
         hostUserId: actualReceiverId,
         senderUserId: senderId,
-        beansAmount: totalPrice,
+        beansAmount: hostBeansEarned,
       });
     } catch (err) {
       AppLogger.warn(`[GiftService: sendGift] Agency commission skip: ${(err as Error).message}`);

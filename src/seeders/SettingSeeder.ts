@@ -68,6 +68,11 @@ export async function seedSettings() {
         description: 'Reward in coins for each user invited/referred'
       },
       {
+        key: 'gift_commission_percent',
+        value: 20,
+        description: 'Gift commission platform cut percentage (remaining % goes to host as beans)'
+      },
+      {
         key: 'deep_link_base_url',
         value: 'https://filive.app/invite',
         description: 'Base URL for invitation deep links'

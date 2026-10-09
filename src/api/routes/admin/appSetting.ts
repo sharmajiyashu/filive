@@ -173,6 +173,9 @@ export default (router: Router) => {
           if (payload.exchange_rate_base_beans !== undefined) {
             payload.exchange_rate_base_beans = Number(payload.exchange_rate_base_beans);
           }
+          if (payload.gift_commission_percent !== undefined) {
+            payload.gift_commission_percent = Number(payload.gift_commission_percent);
+          }
 
           const result = await appSettingService.updateSettings(payload);
           return ResponseWrapper.success(res, result, 'Settings updated successfully');
