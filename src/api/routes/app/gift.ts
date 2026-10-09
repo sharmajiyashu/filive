@@ -11,6 +11,15 @@ export default (router: Router) => {
 
   router.use('/gift', appAuthMiddleware, giftRouter);
 
+  giftRouter.get('/types', async (req: any, res: Response) => {
+    try {
+      const result = await giftService.getGiftTypes();
+      return ResponseWrapper.success(res, result, 'Gift types fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   giftRouter.get('/list', async (req: any, res: Response) => {
     try {
       const type = req.query.type?.toString();

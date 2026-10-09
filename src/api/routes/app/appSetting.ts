@@ -24,7 +24,7 @@ export default (router: Router) => {
    */
   settingsRouter.get('/', async (req: Request, res: Response) => {
     try {
-      const [settings, countries, languages, careers, hobbies, giftTypes] = await Promise.all([
+      let [settings, countries, languages, careers, hobbies, giftTypes] = await Promise.all([
         AppSetting.find(),
         Country.find({ isActive: true }).sort({ name: 1 }),
         Language.find({ isActive: true }).sort({ name: 1 }),
@@ -32,6 +32,18 @@ export default (router: Router) => {
         Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 }),
         GiftType.find({ isActive: true }).sort({ name: 1 })
       ]);
+
+      if (!giftTypes || giftTypes.length === 0) {
+        const defaultTypes = ['Love', 'Popular', 'Normal', 'VIP', 'Luxury'];
+        for (const typeName of defaultTypes) {
+          await GiftType.findOneAndUpdate(
+            { name: typeName },
+            { name: typeName, isActive: true },
+            { upsert: true, new: true }
+          );
+        }
+        giftTypes = await GiftType.find({ isActive: true }).sort({ name: 1 });
+      }
 
       const settingsMap = settings.reduce((acc: any, curr) => {
         acc[curr.key] = curr.value;
