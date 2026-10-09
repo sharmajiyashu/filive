@@ -670,6 +670,46 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /admin/users/coinsellers/{id}:
+   *   put:
+   *     summary: Update Coin Trader details (WhatsApp, mobile, name, country)
+   *     tags: [Admin - Users]
+   */
+  userRouter.put('/coinsellers/:id', async (req: any, res: Response) => {
+    try {
+      const rawId = req.params.id;
+      let targetUser = null;
+      if (mongoose.Types.ObjectId.isValid(rawId)) {
+        targetUser = await User.findById(rawId);
+      }
+      if (!targetUser) {
+        const num = Number(rawId);
+        if (!isNaN(num)) {
+          targetUser = await User.findOne({ userId: num });
+        }
+      }
+      if (!targetUser) {
+        throw new Error('Coin Trader not found');
+      }
+
+      const { whatsapp, mobile, name, countryId, countryCode, country } = req.body;
+      const updateData: any = {};
+      if (whatsapp !== undefined) updateData.whatsapp = typeof whatsapp === 'string' ? whatsapp.trim() : whatsapp;
+      if (mobile !== undefined) updateData.mobile = typeof mobile === 'string' ? mobile.trim() : mobile;
+      if (name !== undefined) updateData.name = typeof name === 'string' ? name.trim() : name;
+      if (countryId !== undefined) updateData.countryId = countryId;
+      if (countryCode !== undefined) updateData.countryCode = countryCode;
+      if (country !== undefined) updateData.country = country;
+
+      const user = await userService.updateUserProfile(targetUser._id.toString(), updateData);
+      return ResponseWrapper.success(res, user, 'Coin Trader updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /admin/users/{id}/coinseller:
    *   put:
    *     summary: Toggle coin seller status
