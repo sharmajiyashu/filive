@@ -189,14 +189,14 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       if (call.status === 'cancelled') {
         callerSummary.type = 'call_cancelled';
         hostSummary.type = 'call_cancelled';
-        socket.emit('call_cancelled', callerSummary);
+        io.to(`user_${callerId}`).emit('call_cancelled', callerSummary);
         io.to(`user_${receiverId}`).emit('call_cancelled', hostSummary);
         AppLogger.info(`[Socket Event: end_call] Call cancelled by caller. ID=${callId}`);
       } else if (call.status === 'rejected') {
         callerSummary.type = 'call_ended';
         hostSummary.type = 'call_ended';
-        socket.emit('call_ended', hostSummary);
         io.to(`user_${callerId}`).emit('call_ended', callerSummary);
+        io.to(`user_${receiverId}`).emit('call_ended', hostSummary);
         AppLogger.info(`[Socket Event: end_call] Call ended (rejected by receiver via end_call). ID=${callId}`);
       } else {
         callerSummary.type = 'call_ended';

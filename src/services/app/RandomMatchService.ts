@@ -162,7 +162,7 @@ export class RandomMatchService {
     );
     if (!host) throw new Error('Host profile not found');
 
-    if (host.gender !== 'Female') {
+    if ((host.gender || '').toLowerCase() !== 'female') {
       throw new Error('Only female hosts can enable random call availability');
     }
 
@@ -222,7 +222,7 @@ export class RandomMatchService {
       return { data: [], total: 0 };
     }
 
-    const hosts = await User.find({ _id: { $in: hostIds }, gender: 'Female' })
+    const hosts = await User.find({ _id: { $in: hostIds }, gender: { $regex: /^female$/i } })
       .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
       .populate('profileImage')
       .populate('countryId');
@@ -429,11 +429,14 @@ export class RandomMatchService {
     const aRate = callType === 'voice' ? userA.voiceCallPrice || 0 : userA.videoCallPrice || 0;
     const bRate = callType === 'voice' ? userB.voiceCallPrice || 0 : userB.videoCallPrice || 0;
 
+    const isAFemale = (userA.gender || '').toLowerCase() === 'female';
+    const isBFemale = (userB.gender || '').toLowerCase() === 'female';
+
     // Prefer female host with calling enabled
-    if (userA.gender === 'Female' && aCanHost && (userB.coins || 0) >= aRate) {
+    if (isAFemale && aCanHost && (userB.coins || 0) >= aRate) {
       callerId = userBId;
       hostId = userAId;
-    } else if (userB.gender === 'Female' && bCanHost && (userA.coins || 0) >= bRate) {
+    } else if (isBFemale && bCanHost && (userA.coins || 0) >= bRate) {
       callerId = userAId;
       hostId = userBId;
     } else if (aCanHost && (userB.coins || 0) >= aRate) {
@@ -464,7 +467,7 @@ export class RandomMatchService {
     try {
       const query: any = {
         _id: { $ne: new mongoose.Types.ObjectId(callerId) },
-        gender: 'Female',
+        gender: { $regex: /^female$/i },
         status: { $ne: 'banned' },
         isBanned: { $ne: true }
       };
@@ -504,7 +507,7 @@ export class RandomMatchService {
     const host = await User.findById(hostId).select(
       'gender enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice'
     );
-    if (!host || host.gender !== 'Female') {
+    if (!host || (host.gender || '').toLowerCase() !== 'female') {
       this.availableHosts.delete(hostId);
       return false;
     }
