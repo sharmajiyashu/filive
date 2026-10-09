@@ -1383,19 +1383,30 @@ export class LiveStreamService {
     const total = await Room.countDocuments(query);
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
-    const mappedStreams = await Promise.all(
-      streams.map(async (stream: any) => {
-        const streamObj = await this.populateRoomWithDailyRank(stream, userId);
-        const hostIdStr = streamObj.hostId && (streamObj.hostId._id ? streamObj.hostId._id.toString() : streamObj.hostId.toString());
-        const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
-        const isFollowingRoom = Boolean(streamObj.isFollowingRoom);
-        return {
-          ...streamObj,
-          isMine,
-          isFollowingRoom
-        };
-      })
-    );
+    const mappedStreams = (
+      await Promise.all(
+        streams.map(async (stream: any) => {
+          const streamObj = await this.populateRoomWithDailyRank(stream, userId);
+          const hostObj = streamObj.hostId;
+          const hostGender = (hostObj?.gender || '').toLowerCase();
+          // Filter male hosts from default live stream feed (female only)
+          if (hostGender && hostGender === 'male') {
+            return null;
+          }
+          const hostIdStr =
+            hostObj &&
+            (hostObj._id ? hostObj._id.toString() : hostObj.toString());
+          const isMine =
+            userId && hostIdStr ? hostIdStr === userId.toString() : false;
+          const isFollowingRoom = Boolean(streamObj.isFollowingRoom);
+          return {
+            ...streamObj,
+            isMine,
+            isFollowingRoom,
+          };
+        })
+      )
+    ).filter((s): s is NonNullable<typeof s> => s !== null);
 
     return {
       streams: mappedStreams,

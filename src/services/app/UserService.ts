@@ -32,7 +32,10 @@ export class UserService {
     country?: string,
     type?: string
   ) {
-    let query: any = { userRole: 'user' };
+    let query: any = {
+      userRole: 'user',
+      gender: { $regex: /^female$/i },
+    };
 
     if (currentUserId) {
       const blockedRelations = await Block.find({
@@ -46,9 +49,8 @@ export class UserService {
         rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
       );
 
-      if (excludedUserIds.length > 0) {
-        query._id = { $nin: excludedUserIds };
-      }
+      const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
+      query._id = { $nin: ninIds };
     }
 
     // Type filter: online or new
