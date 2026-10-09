@@ -81,11 +81,49 @@ export class GiftService {
   // ----------------------------------------------------
 
   public async getActiveGifts(type?: string) {
-    const query: any = { isActive: true };
-    if (type && type !== 'undefined' && type !== 'null' && type.trim() !== '' && mongoose.Types.ObjectId.isValid(type)) {
-      query.type = new mongoose.Types.ObjectId(type);
+    // 1. Fetch all active types
+    let allTypes = await GiftType.find({ isActive: { $ne: false } }).sort({ name: 1 });
+    if (!allTypes || allTypes.length === 0) {
+      const defaultTypes = ['Love', 'Popular', 'Normal', 'VIP', 'Luxury'];
+      for (const typeName of defaultTypes) {
+        await GiftType.findOneAndUpdate(
+          { name: typeName },
+          { name: typeName, isActive: true },
+          { upsert: true, new: true }
+        );
+      }
+      allTypes = await GiftType.find({ isActive: { $ne: false } }).sort({ name: 1 });
     }
-    return await Gift.find(query).populate('media').populate('type').sort({ price: 1 });
+
+    // 2. Sort types: Love first, other categories next
+    const loveTypes = allTypes.filter(t => t.name.trim().toLowerCase().includes('love'));
+    const otherTypes = allTypes.filter(t => !t.name.trim().toLowerCase().includes('love'));
+    const sortedTypes = [...loveTypes, ...otherTypes];
+
+    const defaultLoveTypeId = sortedTypes.length > 0 ? sortedTypes[0]._id.toString() : '';
+
+    // 3. Determine query filter for gifts
+    const query: any = { isActive: true };
+    const cleanType = (type || '').trim();
+
+    if (cleanType && cleanType !== 'undefined' && cleanType !== 'null' && cleanType.toLowerCase() !== 'all') {
+      if (mongoose.Types.ObjectId.isValid(cleanType)) {
+        query.type = new mongoose.Types.ObjectId(cleanType);
+      }
+    } else if (cleanType === '') {
+      // If empty string requested, fetch all gifts
+    } else if (defaultLoveTypeId && mongoose.Types.ObjectId.isValid(defaultLoveTypeId)) {
+      // If type parameter was completely omitted, default to Love category
+      query.type = new mongoose.Types.ObjectId(defaultLoveTypeId);
+    }
+
+    const gifts = await Gift.find(query).populate('media').populate('type').sort({ price: 1 });
+
+    return {
+      types: sortedTypes,
+      activeTypeId: defaultLoveTypeId,
+      gifts,
+    };
   }
 
   private normalizeGiftContext(
