@@ -322,7 +322,8 @@ export class CallService {
    * Returns true if the user is in an initiated or accepted call.
    */
   public async isUserBusy(userId: string): Promise<boolean> {
-    const ringTimeoutCutoff = new Date(Date.now() - 90 * 1000);
+    const ringTimeoutCutoff = new Date(Date.now() - 60 * 1000);
+    const staleAcceptedCutoff = new Date(Date.now() - 2 * 3600 * 1000); // 2 hours
     try {
       await Call.updateMany(
         {
@@ -332,6 +333,16 @@ export class CallService {
         },
         {
           $set: { status: 'missed', endedAt: new Date() }
+        }
+      );
+      await Call.updateMany(
+        {
+          $or: [{ callerId: userId }, { receiverId: userId }],
+          status: 'accepted',
+          createdAt: { $lt: staleAcceptedCutoff }
+        },
+        {
+          $set: { status: 'ended', endedAt: new Date() }
         }
       );
     } catch (_) { }
@@ -829,7 +840,7 @@ export class CallService {
   public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video', country?: string) {
     let query: any = {
       userRole: 'user',
-      gender: 'Female',
+      gender: { $regex: /^female$/i },
     };
 
     if (callType === 'voice') {
