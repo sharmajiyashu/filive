@@ -451,54 +451,86 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Handle gift sending via sockets
-  socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }, callback?: any) => {
+  socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; receiverIds?: string[]; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }, callback?: any) => {
     AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
-      const { channelName, giftId, receiverId, contextType, quantity } = data || {};
+      const { channelName, giftId, receiverId, receiverIds, contextType, quantity } = data || {};
       if (!giftId) {
         emitSocketError(socket, 'send_gift', 'giftId is required', 'Validation failed', 'GIFT_ID_REQUIRED', callback);
         return;
       }
 
-      let actualReceiverId = receiverId;
-      if (!actualReceiverId && channelName) {
+      // Collect target receiver IDs
+      const targetReceiverIds: string[] = [];
+      if (Array.isArray(receiverIds) && receiverIds.length > 0) {
+        for (const id of receiverIds) {
+          if (id && String(id).trim() && String(id).trim() !== String(userId)) {
+            targetReceiverIds.push(String(id).trim());
+          }
+        }
+      } else if (receiverId && String(receiverId).trim()) {
+        targetReceiverIds.push(String(receiverId).trim());
+      } else if (channelName) {
         const liveStream = await Room.findOne({ channelName, status: 'live' });
         if (liveStream) {
-          actualReceiverId = liveStream.hostId.toString();
+          targetReceiverIds.push(liveStream.hostId.toString());
         }
       }
 
-      if (!actualReceiverId) {
-        emitSocketError(socket, 'send_gift', 'receiverId is required', 'Validation failed', 'RECEIVER_ID_REQUIRED', callback);
+      if (targetReceiverIds.length === 0) {
+        emitSocketError(socket, 'send_gift', 'receiverId or receiverIds are required', 'Validation failed', 'RECEIVER_ID_REQUIRED', callback);
         return;
       }
 
       const parsedQuantity = quantity ? Number(quantity) : 1;
-      const result = await giftService.sendGift(userId, channelName, giftId, actualReceiverId, contextType, parsedQuantity);
+      const sentPayloads: any[] = [];
+      const errors: string[] = [];
 
-      const liveRoom = channelName ? await Room.findOne({ channelName }).select('roomId') : null;
-      const payload = {
-        success: true,
-        type: 'gift_sent',
-        channelName: channelName || null,
-        roomId: liveRoom?.roomId ?? null,
-        room_id: liveRoom?.roomId ?? null,
-        sender: result.sender,
-        host: result.host,
-        receiver: result.receiver,
-        gift: result.gift,
-        quantity: result.quantity,
-        createdAt: new Date()
-      };
-      AppLogger.info(`[Socket Event: send_gift] Success. Gift sent in rooms live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
-      if (actualReceiverId) {
-        io.to(`user_${actualReceiverId}`).emit('gift_sent', payload);
-        io.to(`user_${actualReceiverId}`).emit('personal_gift_received', payload);
+      for (const targetId of targetReceiverIds) {
+        try {
+          const result = await giftService.sendGift(userId, channelName, giftId, targetId, contextType, parsedQuantity);
+          const liveRoom = channelName ? await Room.findOne({ channelName }).select('roomId') : null;
+          const payload = {
+            success: true,
+            type: 'gift_sent',
+            channelName: channelName || null,
+            roomId: liveRoom?.roomId ?? null,
+            room_id: liveRoom?.roomId ?? null,
+            sender: result.sender,
+            host: result.host,
+            receiver: result.receiver,
+            gift: result.gift,
+            quantity: result.quantity,
+            createdAt: new Date()
+          };
+
+          sentPayloads.push(payload);
+
+          // Emit sockets
+          io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);
+          if (targetId) {
+            io.to(`user_${targetId}`).emit('gift_sent', payload);
+            io.to(`user_${targetId}`).emit('personal_gift_received', payload);
+          }
+          io.to(`user_${userId}`).emit('gift_sent', payload);
+        } catch (err: any) {
+          AppLogger.error(`[Socket Event: send_gift] Gift failed for receiverId=${targetId}: ${err.message}`);
+          errors.push(err.message);
+        }
       }
-      io.to(`user_${userId}`).emit('gift_sent', payload);
+
+      if (sentPayloads.length === 0) {
+        emitSocketError(socket, 'send_gift', errors.join('; ') || 'Failed to send gift', 'Send gift failed', undefined, callback);
+        return;
+      }
+
       if (typeof callback === 'function') {
-        callback({ success: true, type: 'SUCCESS', event: 'send_gift', data: payload });
+        callback({
+          success: true,
+          type: 'SUCCESS',
+          event: 'send_gift',
+          data: sentPayloads.length === 1 ? sentPayloads[0] : sentPayloads
+        });
       }
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift] Error for user ${userId}: ${error.message}`);
