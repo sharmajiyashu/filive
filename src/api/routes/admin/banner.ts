@@ -45,8 +45,8 @@ export default (router: Router) => {
       const imageIds: string[] = [];
       for (const file of files) {
         const mediaType = resolveMediaType(file);
-        if (String(mediaType) === 'video') {
-          throw new Error('Only jpeg, jpg, and png images are allowed');
+        if (String(mediaType) === 'video' || String(mediaType) === 'audio' || String(mediaType) === 'document') {
+          throw new Error('Video, audio, and document files are not allowed for banners');
         }
         const uploadResults = await cloudinaryService.uploadMedia(mediaType, [file], 'banners');
         if (!uploadResults[0]) {

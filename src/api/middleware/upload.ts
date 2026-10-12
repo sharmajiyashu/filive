@@ -54,13 +54,13 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
         const isSvga = isSvgaFile(file);
         let maxSize: number;
         if (isImage) {
-            maxSize = 5 * 1024 * 1024; // 5MB
+            maxSize = 10 * 1024 * 1024; // 10MB
         } else if (isGif) {
-            maxSize = 1 * 1024 * 1024; // 1MB for GIFs
+            maxSize = 10 * 1024 * 1024; // 10MB for animated GIFs
         } else if (isSvga) {
-            maxSize = 10 * 1024 * 1024; // 10MB for SVGA animations
+            maxSize = 25 * 1024 * 1024; // 25MB for SVGA animations
         } else if (isSticker) {
-            maxSize = 1 * 1024 * 1024; // 1MB for stickers
+            maxSize = 10 * 1024 * 1024; // 10MB for stickers / SVGs
         } else if (isVideo) {
             maxSize = 50 * 1024 * 1024; // 50MB
         } else if (isAudio) {

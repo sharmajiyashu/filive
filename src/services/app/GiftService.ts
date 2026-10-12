@@ -10,6 +10,8 @@ import { AgencyCommissionService } from './AgencyCommissionService';
 import { AppSettingService } from '../common/AppSettingService';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 
+import Banner from '../../models/Banner';
+
 @Service()
 export class GiftService {
   constructor() { }
@@ -23,6 +25,7 @@ export class GiftService {
     type: string;
     price: number;
     media: string;
+    banner?: string | null;
     showInAllLiveStreams?: boolean | string;
     isComboEnabled?: boolean | string;
   }) {
@@ -32,11 +35,16 @@ export class GiftService {
       ? (data.isComboEnabled === true || data.isComboEnabled === 'true')
       : true;
 
+    const bannerId = data.banner && mongoose.Types.ObjectId.isValid(data.banner)
+      ? new mongoose.Types.ObjectId(data.banner)
+      : null;
+
     return await Gift.create({
       name: data.name,
       type: new mongoose.Types.ObjectId(data.type),
       price: data.price,
       media: new mongoose.Types.ObjectId(data.media),
+      banner: bannerId,
       isActive: true,
       showInAllLiveStreams,
       isComboEnabled,
@@ -51,13 +59,21 @@ export class GiftService {
     if (data.type) {
       data.type = new mongoose.Types.ObjectId(data.type);
     }
+    if (data.banner !== undefined) {
+      data.banner = data.banner && mongoose.Types.ObjectId.isValid(data.banner)
+        ? new mongoose.Types.ObjectId(data.banner)
+        : null;
+    }
     if (data.showInAllLiveStreams !== undefined) {
       data.showInAllLiveStreams = data.showInAllLiveStreams === true || data.showInAllLiveStreams === 'true';
     }
     if (data.isComboEnabled !== undefined) {
       data.isComboEnabled = data.isComboEnabled === true || data.isComboEnabled === 'true';
     }
-    const gift = await Gift.findByIdAndUpdate(id, data, { new: true });
+    const gift = await Gift.findByIdAndUpdate(id, data, { new: true })
+      .populate('media')
+      .populate('type')
+      .populate({ path: 'banner', populate: { path: 'image' } });
     if (!gift) throw new Error('Gift not found');
     return gift;
   }
@@ -71,6 +87,7 @@ export class GiftService {
     const gifts = await Gift.find(query)
       .populate('media')
       .populate('type')
+      .populate({ path: 'banner', populate: { path: 'image' } })
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -133,7 +150,11 @@ export class GiftService {
       query.type = new mongoose.Types.ObjectId(defaultLoveTypeId);
     }
 
-    const gifts = await Gift.find(query).populate('media').populate('type').sort({ price: 1 });
+    const gifts = await Gift.find(query)
+      .populate('media')
+      .populate('type')
+      .populate({ path: 'banner', populate: { path: 'image' } })
+      .sort({ price: 1 });
 
     return {
       types: sortedTypes,
@@ -277,7 +298,9 @@ export class GiftService {
     }
 
     // 3. Find Gift details
-    const gift = await Gift.findById(giftId).populate('media');
+    const gift = await Gift.findById(giftId)
+      .populate('media')
+      .populate({ path: 'banner', populate: { path: 'image' } });
     if (!gift || !gift.isActive) {
       throw new Error('Gift not found or inactive');
     }
@@ -418,6 +441,10 @@ export class GiftService {
       ? (gift as any).media.url
       : (typeof (gift as any)?.media === 'string' ? (gift as any).media : '');
 
+    const giftBannerUrl = (gift as any)?.banner?.image?.url
+      ? (gift as any).banner.image.url
+      : ((gift as any)?.banner?.url || '');
+
     const formattedGift = {
       id: gift._id,
       _id: gift._id,
@@ -426,6 +453,8 @@ export class GiftService {
       media: { url: giftMediaUrl },
       url: giftMediaUrl,
       type: gift.type,
+      banner: (gift as any)?.banner || null,
+      bannerUrl: giftBannerUrl,
       isActive: gift.isActive,
       showInAllLiveStreams: !!gift.showInAllLiveStreams,
       isComboEnabled: gift.isComboEnabled !== false,
