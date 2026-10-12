@@ -44,7 +44,8 @@ export default (router: Router) => {
 
       const methods = await paymentMethodService.getAvailablePaymentMethods(
         countryCode,
-        audience
+        audience,
+        'app'
       );
 
       return ResponseWrapper.success(

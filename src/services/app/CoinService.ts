@@ -414,7 +414,8 @@ export class CoinService {
     userId: string,
     packageId: string,
     gateway: PaymentGatewayKey,
-    audienceRaw?: string
+    audienceRaw?: string,
+    platform: 'app' | 'web' = 'app'
   ) {
     const pkg = await CoinPackage.findById(packageId);
     if (!pkg) throw new Error('Coin package not found');
@@ -445,7 +446,8 @@ export class CoinService {
     await this.paymentMethodService.assertPaymentGatewayAllowed(
       userId,
       gateway,
-      audience
+      audience,
+      platform
     );
 
     return { audience, pkg };
@@ -514,12 +516,18 @@ export class CoinService {
     }
   }
 
-  async createRazorpayOrder(userId: string, packageId: string, audienceRaw?: string) {
+  async createRazorpayOrder(
+    userId: string,
+    packageId: string,
+    audienceRaw?: string,
+    platform: 'app' | 'web' = 'app'
+  ) {
     const { audience, pkg } = await this.prepareRechargeContext(
       userId,
       packageId,
       'razorpay',
-      audienceRaw
+      audienceRaw,
+      platform
     );
 
     const razorpayMode = (await this.appSettingService.getSettingValue('payment_gateway_razorpay_mode')) || 'production';
@@ -956,12 +964,18 @@ export class CoinService {
     return { appId, secretKey, mode, apiVersion, notifyUrl, baseUrl };
   }
 
-  async createCashfreeOrder(userId: string, packageId: string, audienceRaw?: string) {
+  async createCashfreeOrder(
+    userId: string,
+    packageId: string,
+    audienceRaw?: string,
+    platform: 'app' | 'web' = 'app'
+  ) {
     const { audience, pkg } = await this.prepareRechargeContext(
       userId,
       packageId,
       'cashfree',
-      audienceRaw
+      audienceRaw,
+      platform
     );
 
     const { appId, secretKey, mode, apiVersion, notifyUrl, baseUrl } =

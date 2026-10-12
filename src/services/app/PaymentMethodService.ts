@@ -17,7 +17,7 @@ const GATEWAY_SETTING_KEYS: Record<PaymentGatewayKey, string> = {
 export class PaymentMethodService {
   constructor(
     @Inject() private appSettingService: AppSettingService
-  ) {}
+  ) { }
 
   public async resolveUserCountryCode(userId?: string, countryCode?: string): Promise<string | undefined> {
     if (countryCode && countryCode.trim() !== '') {
@@ -40,6 +40,8 @@ export class PaymentMethodService {
         countries: ['IN'],
         targetAudience: 'all' as const,
         isActive: true,
+        showInApp: true,
+        showInWeb: true,
       },
       {
         gateway: 'cashfree' as const,
@@ -47,6 +49,8 @@ export class PaymentMethodService {
         countries: ['IN'],
         targetAudience: 'all' as const,
         isActive: true,
+        showInApp: true,
+        showInWeb: true,
       },
       {
         gateway: 'pandapay' as const,
@@ -54,6 +58,8 @@ export class PaymentMethodService {
         countries: ['IN'],
         targetAudience: 'all' as const,
         isActive: false,
+        showInApp: false,
+        showInWeb: false,
       },
     ];
     for (const method of defaults) {
@@ -66,11 +72,12 @@ export class PaymentMethodService {
   }
 
   /**
-   * Active payment methods for mobile, filtered by country + audience + AppSetting master switch.
+   * Active payment methods, filtered by country + audience + platform (app/web) + AppSetting master switch.
    */
   public async getAvailablePaymentMethods(
     countryCode?: string,
-    audience: 'user' | 'seller' = 'user'
+    audience: 'user' | 'seller' = 'user',
+    platform: 'app' | 'web' = 'app'
   ) {
     await this.ensureDefaults();
     const code = countryCode?.trim().toUpperCase();
@@ -78,6 +85,12 @@ export class PaymentMethodService {
       isActive: true,
       targetAudience: { $in: ['all', audience] },
     };
+
+    if (platform === 'web') {
+      query.showInWeb = { $ne: false };
+    } else {
+      query.showInApp = { $ne: false };
+    }
 
     if (code) {
       query.countries = { $in: [code, 'ALL', '*'] };
@@ -96,6 +109,8 @@ export class PaymentMethodService {
         displayName: method.displayName,
         targetAudience: method.targetAudience,
         countries: method.countries,
+        showInApp: method.showInApp !== false,
+        showInWeb: method.showInWeb !== false,
       });
     }
 
@@ -103,12 +118,13 @@ export class PaymentMethodService {
   }
 
   /**
-   * Throws if gateway is not allowed for this user country + recharge audience.
+   * Throws if gateway is not allowed for this user country + recharge audience + platform.
    */
   public async assertPaymentGatewayAllowed(
     userId: string,
     gateway: PaymentGatewayKey,
-    audience: 'user' | 'seller' = 'user'
+    audience: 'user' | 'seller' = 'user',
+    platform: 'app' | 'web' = 'app'
   ) {
     await this.ensureDefaults();
 
@@ -124,6 +140,14 @@ export class PaymentMethodService {
     const method = await PaymentMethod.findOne({ gateway, isActive: true });
     if (!method) {
       throw new Error(`${gateway} payment method is not available`);
+    }
+
+    if (platform === 'web' && method.showInWeb === false) {
+      throw new Error(`${method.displayName} is not enabled for web payments`);
+    }
+
+    if (platform === 'app' && method.showInApp === false) {
+      throw new Error(`${method.displayName} is not enabled for mobile app payments`);
     }
 
     const audienceOk =

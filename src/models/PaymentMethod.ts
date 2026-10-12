@@ -9,6 +9,8 @@ export interface IPaymentMethod extends Document {
   countries: string[];
   targetAudience: PaymentTargetAudience;
   isActive: boolean;
+  showInApp: boolean;
+  showInWeb: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +31,8 @@ const PaymentMethodSchema: Schema = new Schema(
       default: 'all',
     },
     isActive: { type: Boolean, default: true },
+    showInApp: { type: Boolean, default: true },
+    showInWeb: { type: Boolean, default: true },
   },
   {
     timestamps: true,

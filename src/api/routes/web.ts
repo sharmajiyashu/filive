@@ -3,6 +3,8 @@ import Container from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import Media from '../../models/Media';
+import TeamApplication from '../../models/TeamApplication';
+import ContactMessage from '../../models/ContactMessage';
 import { CoinService } from '../../services/app/CoinService';
 import { PaymentMethodService } from '../../services/app/PaymentMethodService';
 import { ResponseWrapper } from '../responseWrapper';
@@ -93,7 +95,7 @@ export default (router: Router) => {
       }
 
       const user: any = await User.findOne(query)
-        .select('userId name email mobile profileImage profileImageUrl coins country isVerified isBlocked')
+        .select('userId name email mobile profileImage profileImageUrl country isVerified isBlocked')
         .lean();
 
       if (!user) {
@@ -135,7 +137,6 @@ export default (router: Router) => {
           name: displayName,
           avatar: avatarUrl,
           country: user.country || 'Global',
-          coins: user.coins || 0,
           isVerified: user.isVerified || false,
         },
         'User found successfully'
@@ -152,7 +153,7 @@ export default (router: Router) => {
   router.get('/payment-methods', async (req: Request, res: Response) => {
     try {
       const countryCode = req.query.countryCode?.toString() || 'IN';
-      const result = await paymentMethodService.getAvailablePaymentMethods(countryCode, 'user');
+      const result = await paymentMethodService.getAvailablePaymentMethods(countryCode, 'user', 'web');
       return ResponseWrapper.success(res, result, 'Payment methods fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -173,7 +174,7 @@ export default (router: Router) => {
       if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
 
       const resolvedUserId = user._id.toString();
-      const result = await coinService.createRazorpayOrder(resolvedUserId, packageId, 'user');
+      const result = await coinService.createRazorpayOrder(resolvedUserId, packageId, 'user', 'web');
       return ResponseWrapper.success(res, result, 'Razorpay order created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -227,7 +228,7 @@ export default (router: Router) => {
       if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
 
       const resolvedUserId = user._id.toString();
-      const result = await coinService.createCashfreeOrder(resolvedUserId, packageId, 'user');
+      const result = await coinService.createCashfreeOrder(resolvedUserId, packageId, 'user', 'web');
       return ResponseWrapper.success(res, result, 'Cashfree order created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -250,6 +251,69 @@ export default (router: Router) => {
       const resolvedUserId = user._id.toString();
       const result = await coinService.verifyCashfreePayment(resolvedUserId, orderId, packageId, 'user');
       return ResponseWrapper.success(res, result, result.message || 'Payment verified successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * POST /v1/api/web/team-application
+   * Apply to join the team / business inquiry from website
+   */
+  router.post('/team-application', async (req: Request, res: Response) => {
+    try {
+      const { name, email, inquiry_type, inquiryType, audience_size, audienceSize, message } = req.body;
+      if (!name || !email || !message) {
+        return ResponseWrapper.error(res, new Error('Full name, email, and message are required'), 400);
+      }
+
+      const type = (inquiry_type || inquiryType || 'host').toString().toLowerCase();
+      const validTypes = ['host', 'agency', 'partner'];
+      const resolvedType = validTypes.includes(type) ? type : 'host';
+
+      const application = await TeamApplication.create({
+        name: String(name).trim(),
+        email: String(email).trim().toLowerCase(),
+        inquiryType: resolvedType,
+        audienceSize: String(audience_size || audienceSize || '').trim(),
+        message: String(message).trim(),
+        status: 'pending',
+      });
+
+      return ResponseWrapper.success(
+        res,
+        application,
+        'Your application has been received successfully! Our team will reach out soon.'
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * POST /v1/api/web/contact
+   * Submit Contact Us inquiry from website
+   */
+  router.post('/contact', async (req: Request, res: Response) => {
+    try {
+      const { name, email, subject, message } = req.body;
+      if (!name || !email || !message) {
+        return ResponseWrapper.error(res, new Error('Name, email, and message are required'), 400);
+      }
+
+      const contact = await ContactMessage.create({
+        name: String(name).trim(),
+        email: String(email).trim().toLowerCase(),
+        subject: String(subject || '').trim(),
+        message: String(message).trim(),
+        status: 'pending',
+      });
+
+      return ResponseWrapper.success(
+        res,
+        contact,
+        'Thank you! Your message has been sent successfully. Our team will get back to you shortly.'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

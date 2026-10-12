@@ -12,6 +12,8 @@ const DEFAULT_METHODS = [
     countries: ['IN'],
     targetAudience: 'all' as const,
     isActive: true,
+    showInApp: true,
+    showInWeb: true,
   },
   {
     gateway: 'cashfree' as const,
@@ -19,6 +21,8 @@ const DEFAULT_METHODS = [
     countries: ['IN'],
     targetAudience: 'all' as const,
     isActive: true,
+    showInApp: true,
+    showInWeb: true,
   },
   {
     gateway: 'pandapay' as const,
@@ -26,6 +30,8 @@ const DEFAULT_METHODS = [
     countries: ['IN'],
     targetAudience: 'all' as const,
     isActive: false,
+    showInApp: false,
+    showInWeb: false,
   },
 ];
 
@@ -59,6 +65,8 @@ export class PaymentMethodService {
       targetAudience?: PaymentTargetAudience;
       isActive?: boolean | string;
       displayName?: string;
+      showInApp?: boolean | string;
+      showInWeb?: boolean | string;
     }
   ) {
     const allowed: PaymentGatewayKey[] = ['razorpay', 'cashfree', 'pandapay'];
@@ -87,6 +95,20 @@ export class PaymentMethodService {
         typeof data.isActive === 'string'
           ? data.isActive === 'true' || data.isActive === '1'
           : Boolean(data.isActive);
+    }
+
+    if (data.showInApp !== undefined) {
+      update.showInApp =
+        typeof data.showInApp === 'string'
+          ? data.showInApp === 'true' || data.showInApp === '1'
+          : Boolean(data.showInApp);
+    }
+
+    if (data.showInWeb !== undefined) {
+      update.showInWeb =
+        typeof data.showInWeb === 'string'
+          ? data.showInWeb === 'true' || data.showInWeb === '1'
+          : Boolean(data.showInWeb);
     }
 
     if (data.countries !== undefined) {
