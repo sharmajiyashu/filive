@@ -837,6 +837,159 @@ export class AuthenticationService {
     }
 
     /**
+     * Apple Login & Signup Verification
+     */
+    async appleAuth(payload: {
+        identityToken?: string;
+        authorizationCode?: string;
+        email?: string;
+        name?: string;
+        appleId?: string;
+        photoUrl?: string;
+        countryId?: string;
+        countryCode?: string;
+        referredBy?: string;
+        extension?: string;
+        ipCountry?: string;
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        let resolvedAppleId = payload.appleId;
+        let resolvedEmail = payload.email?.toLowerCase().trim();
+        let resolvedName = payload.name;
+        let resolvedPhotoUrl = payload.photoUrl;
+
+        // If identityToken (JWT) is provided, decode payload to extract Apple sub / email
+        if (payload.identityToken && payload.identityToken.trim() !== '') {
+            try {
+                const parts = payload.identityToken.split('.');
+                if (parts.length === 3) {
+                    const decodedPayload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+                    if (decodedPayload.sub) {
+                        resolvedAppleId = decodedPayload.sub;
+                    }
+                    if (decodedPayload.email && !resolvedEmail) {
+                        resolvedEmail = decodedPayload.email.toLowerCase().trim();
+                    }
+                }
+            } catch (err: any) {
+                AppLogger.warn(`Apple identityToken decode error: ${err?.message}`);
+            }
+        }
+
+        if (!resolvedAppleId && !resolvedEmail) {
+            throw new Error('Unable to authenticate with Apple. Invalid or missing Apple user identity.');
+        }
+
+        const searchConditions: any[] = [];
+        if (resolvedAppleId) {
+            searchConditions.push({ appleId: resolvedAppleId });
+        }
+        if (resolvedEmail) {
+            searchConditions.push({ email: resolvedEmail });
+        }
+
+        let user = await User.findOne({ $or: searchConditions })
+            .populate('profileImage')
+            .populate('countryId');
+
+        let isNewUser = false;
+
+        if (user) {
+            await this.assertUserNotBlocked(user);
+
+            if (resolvedAppleId && !user.appleId) {
+                user.appleId = resolvedAppleId;
+            }
+            if (resolvedName && (!user.name || user.name === 'User' || user.name === 'Apple User')) {
+                user.name = resolvedName;
+            }
+            if (!user.authProvider) {
+                user.authProvider = 'apple';
+            }
+            user.lastLoginAt = new Date();
+            await user.save();
+        } else {
+            isNewUser = true;
+
+            const resolvedCountry = await resolveCountryFromSignals({
+                countryId: payload.countryId,
+                countryCode: payload.countryCode,
+                extension: payload.extension,
+                ipCountry: payload.ipCountry,
+            });
+
+            let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
+            if (payload.referredBy && payload.referredBy.trim() !== '') {
+                const refStr = payload.referredBy.trim();
+                let referrerUser = null;
+                if (mongoose.Types.ObjectId.isValid(refStr)) {
+                    referrerUser = await User.findById(refStr);
+                }
+                if (!referrerUser) {
+                    const searchNum = Number(refStr);
+                    const searchConds: any[] = [
+                        { referralCode: refStr },
+                        { referCode: refStr }
+                    ];
+                    if (!isNaN(searchNum)) {
+                        searchConds.push({ userId: searchNum });
+                    }
+                    referrerUser = await User.findOne({ $or: searchConds });
+                }
+                if (referrerUser) {
+                    referrerObjId = referrerUser._id;
+                }
+            }
+
+            user = await User.create({
+                name: resolvedName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'Apple User'),
+                email: resolvedEmail || undefined,
+                appleId: resolvedAppleId,
+                authProvider: 'apple',
+                userRole: 'user',
+                isVerified: true,
+                countryId: resolvedCountry?.countryId,
+                country: resolvedCountry?.country,
+                lastLoginAt: new Date(),
+                referredBy: referrerObjId,
+                socialProfile: {
+                    provider: 'apple',
+                    id: resolvedAppleId,
+                    photoUrl: resolvedPhotoUrl,
+                }
+            });
+
+            if (referrerObjId) {
+                try {
+                    const { CoinService } = require('../app/CoinService');
+                    const coinService: any = Container.get(CoinService);
+                    await coinService.processReferralReward(referrerObjId.toString(), user._id.toString());
+                } catch (err) {
+                    AppLogger.error(`Error rewarding referrer ${referrerObjId}: ${err}`);
+                }
+            }
+        }
+
+        const token = this.generateToken(user._id.toString(), user.userRole);
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+        const { referralCode } = await ensureUserReferralCode(user);
+        const deepLink = await getReferralDeepLink(referralCode);
+
+        return {
+            token,
+            isNewUser,
+            user: {
+                ...user.toObject(),
+                referralCode,
+                referCode: referralCode,
+                deepLink,
+                followersCount,
+                followingCount,
+            } as any,
+        };
+    }
+
+    /**
      * Get Client Safe Social Authentication Settings for Mobile App
      */
     async getSocialAuthSettings() {
@@ -852,6 +1005,9 @@ export class AuthenticationService {
                 enabled: settings.facebook_login_enabled !== false,
                 appId: settings.facebook_app_id || '',
                 clientToken: settings.facebook_client_token || '',
+            },
+            apple: {
+                enabled: true,
             },
             phone: {
                 enabled: settings.phone_login_enabled !== false,

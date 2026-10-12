@@ -6,6 +6,7 @@ import CoinHistory from '../../models/CoinHistory';
 import Follow from '../../models/Follow';
 import LiveDataLog from '../../models/LiveDataLog';
 import Room from '../../models/Room';
+import AgencyHost from '../../models/AgencyHost';
 import { AppSettingService } from '../common/AppSettingService';
 
 @Service()
@@ -266,7 +267,7 @@ export class LiveDataService {
   ) {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const user = await User.findById(userObjectId)
-      .select('name profileImage isVerified userId gender')
+      .select('name profileImage isVerified videoVerificationStatus userRole userId gender')
       .populate('profileImage');
 
     if (!user) {
@@ -551,13 +552,21 @@ export class LiveDataService {
     const isCompleted = completedMinutes >= targetMinutes;
     const progressPercentage = Math.min(100, Math.floor((completedMinutes / targetMinutes) * 100));
 
+    const isAgencyHost = await AgencyHost.exists({ userId: userObjectId, status: { $in: ['ACCEPTED', 'approved'] } });
+    const isVerifiedUser = !!(
+      user.isVerified ||
+      user.videoVerificationStatus === 'approved' ||
+      user.userRole === 'admin' ||
+      isAgencyHost
+    );
+
     return {
       user: {
         id: user._id,
         name: user.name || 'User',
         profileImage: user.profileImage,
-        isVerified: user.isVerified || false,
-        verificationStatus: user.isVerified ? 'Verified' : 'Unverified'
+        isVerified: isVerifiedUser,
+        verificationStatus: isVerifiedUser ? 'Verified' : 'Unverified'
       },
       accountRole,
       type,

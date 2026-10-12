@@ -278,9 +278,53 @@ export default (router: Router) => {
                     ipCountry,
                 });
                 return ResponseWrapper.success(res, result, 'Facebook authentication successful');
+            } else if (provider === 'apple') {
+                const result = await authService.appleAuth({
+                    identityToken: idToken,
+                    authorizationCode: accessToken,
+                    email,
+                    name,
+                    appleId: socialId,
+                    photoUrl,
+                    countryId,
+                    countryCode,
+                    referredBy,
+                    extension,
+                    ipCountry,
+                });
+                return ResponseWrapper.success(res, result, 'Apple authentication successful');
             } else {
-                return ResponseWrapper.error(res, 'Invalid social provider. Supported: google, facebook');
+                return ResponseWrapper.error(res, 'Invalid social provider. Supported: google, facebook, apple');
             }
+        } catch (error: any) {
+            return ResponseWrapper.error(res, error);
+        }
+    });
+
+    /**
+     * @swagger
+     * /app/auth/apple:
+     *   post:
+     *     summary: Apple Login and Sign up
+     *     tags: [Auth]
+     */
+    router.post('/auth/apple', async (req: Request, res: Response) => {
+        try {
+            const { identityToken, idToken, authorizationCode, accessToken, email, name, appleId, photoUrl, countryId, countryCode, referredBy, extension } = req.body;
+            const result = await authService.appleAuth({
+                identityToken: identityToken || idToken,
+                authorizationCode: authorizationCode || accessToken,
+                email,
+                name,
+                appleId,
+                photoUrl,
+                countryId,
+                countryCode,
+                referredBy,
+                extension,
+                ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+            });
+            return ResponseWrapper.success(res, result, 'Apple authentication successful');
         } catch (error: any) {
             return ResponseWrapper.error(res, error);
         }

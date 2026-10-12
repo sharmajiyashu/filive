@@ -6,6 +6,7 @@ import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
 import Country from '../../models/Country';
 import Follow from '../../models/Follow';
+import FriendRequest from '../../models/FriendRequest';
 import { LevelService } from '../app/LevelService';
 import { attachUserCountryAndAge, getUserCountryAndLevels, ageFromDob } from '../../utils/userLookup';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
@@ -29,7 +30,7 @@ export interface RestrictionNotifyResult {
 
 @Service()
 export class UserService {
-  constructor(@Inject() private firebasePushService: FirebasePushService) {}
+  constructor(@Inject() private firebasePushService: FirebasePushService) { }
 
   /**
    * Mobile clients should listen for socket event `account_blocked` and clear session/logout.
@@ -237,15 +238,17 @@ export class UserService {
         query.$or = [{ authProvider: 'google' }, { googleId: { $exists: true, $ne: '' } }];
       } else if (params.authProvider === 'facebook') {
         query.$or = [{ authProvider: 'facebook' }, { facebookId: { $exists: true, $ne: '' } }];
+      } else if (params.authProvider === 'apple') {
+        query.$or = [{ authProvider: 'apple' }, { appleId: { $exists: true, $ne: '' } }];
       } else if (params.authProvider === 'email') {
         query.$or = [
           { authProvider: 'email' },
-          { email: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false } }
+          { email: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false }, appleId: { $exists: false } }
         ];
       } else if (params.authProvider === 'phone') {
         query.$or = [
           { authProvider: 'phone' },
-          { mobile: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false } }
+          { mobile: { $exists: true, $ne: '' }, googleId: { $exists: false }, facebookId: { $exists: false }, appleId: { $exists: false } }
         ];
       }
     }
@@ -336,11 +339,25 @@ export class UserService {
     const populatedUsers = await Promise.all(
       users.map(async (u) => {
         const userObj: any = u;
-        const [followersCount, followingCount, friendsCount] = await Promise.all([
-          Follow.countDocuments({ followingId: userObj._id }),
-          Follow.countDocuments({ followerId: userObj._id }),
-          Follow.countDocuments({ followerId: userObj._id, status: 'accepted' }),
+        const myFollowing = await Follow.find({ followerId: userObj._id, status: { $ne: 'rejected' } }).select('followingId');
+        const myFollowingIds = myFollowing.map((f: any) => f.followingId);
+
+        const [followersCount, followingCount, mutualFriendsCount, acceptedRequestsCount] = await Promise.all([
+          Follow.countDocuments({ followingId: userObj._id, status: { $ne: 'rejected' } }),
+          Follow.countDocuments({ followerId: userObj._id, status: { $ne: 'rejected' } }),
+          Follow.countDocuments({
+            followingId: userObj._id,
+            followerId: { $in: myFollowingIds },
+            status: { $ne: 'rejected' },
+          }),
+          FriendRequest.countDocuments({
+            $or: [
+              { senderId: userObj._id, status: 'accepted' },
+              { receiverId: userObj._id, status: 'accepted' },
+            ],
+          }),
         ]);
+        const friendsCount = Math.max(mutualFriendsCount, acceptedRequestsCount);
 
         const { level, levelInfo, charmLevel, charmLevelInfo } = await getUserCountryAndLevels(userObj, levelService);
 
@@ -364,6 +381,7 @@ export class UserService {
         if (!authProvider) {
           if (userObj.googleId) authProvider = 'google';
           else if (userObj.facebookId) authProvider = 'facebook';
+          else if (userObj.appleId) authProvider = 'apple';
           else if (userObj.email && !userObj.mobile) authProvider = 'email';
           else if (userObj.mobile) authProvider = 'phone';
           else authProvider = 'phone';
@@ -372,6 +390,7 @@ export class UserService {
         let loginType = 'Phone';
         if (authProvider === 'google') loginType = 'Google';
         else if (authProvider === 'facebook') loginType = 'Facebook';
+        else if (authProvider === 'apple') loginType = 'Apple';
         else if (authProvider === 'email') loginType = 'Email';
         else if (authProvider === 'phone') loginType = 'Phone';
 
@@ -677,11 +696,11 @@ export class UserService {
       const country = extras.countryId
         ? await Country.findById(extras.countryId)
         : await Country.findOne({
-            $or: [
-              { code: extras.countryCode },
-              { name: extras.countryCode },
-            ],
-          });
+          $or: [
+            { code: extras.countryCode },
+            { name: extras.countryCode },
+          ],
+        });
       if (!country) {
         throw new Error('Country not found');
       }

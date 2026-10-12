@@ -108,6 +108,7 @@ export interface IUser extends Document {
   authProvider?: 'phone' | 'email' | 'google' | 'facebook' | 'apple';
   googleId?: string;
   facebookId?: string;
+  appleId?: string;
   socialProfile?: any;
   createdAt: Date;
   updatedAt: Date;
@@ -229,6 +230,7 @@ const UserSchema: Schema = new Schema(
     authProvider: { type: String, enum: ['phone', 'email', 'google', 'facebook', 'apple'], default: 'phone' },
     googleId: { type: String, sparse: true, index: true },
     facebookId: { type: String, sparse: true, index: true },
+    appleId: { type: String, sparse: true, index: true },
     socialProfile: { type: Schema.Types.Mixed },
   },
   {

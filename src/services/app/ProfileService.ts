@@ -178,30 +178,19 @@ export class ProfileService {
     const existingUser = await User.findById(userId);
     if (!existingUser) throw new Error('USER_NOT_FOUND');
 
-    // Enforce "My Call Price" & "Go Live" call permissions for Female Hosts only
-    if (
-      'enableVoiceCall' in data ||
-      'enableVideoCall' in data ||
-      'voiceCallPrice' in data ||
-      'videoCallPrice' in data
-    ) {
-      const userGender = (data.gender || existingUser.gender || '').toLowerCase();
-      if (userGender !== 'female') {
-        throw new Error('Call pricing and hosting features are available for Female hosts only.');
-      }
+    if (data.enableVoiceCall !== undefined) {
+      data.enableVoiceCall = data.enableVoiceCall === true || data.enableVoiceCall === 'true';
     }
-
-    if (typeof data.enableVoiceCall === 'string') {
-      data.enableVoiceCall = data.enableVoiceCall === 'true';
+    if (data.enableVideoCall !== undefined) {
+      data.enableVideoCall = data.enableVideoCall === true || data.enableVideoCall === 'true';
     }
-    if (typeof data.enableVideoCall === 'string') {
-      data.enableVideoCall = data.enableVideoCall === 'true';
-    }
-    if (typeof data.voiceCallPrice === 'string') {
+    if (data.voiceCallPrice !== undefined) {
       data.voiceCallPrice = Number(data.voiceCallPrice);
+      data.audioCallChargePerMinute = data.voiceCallPrice;
     }
-    if (typeof data.videoCallPrice === 'string') {
+    if (data.videoCallPrice !== undefined) {
       data.videoCallPrice = Number(data.videoCallPrice);
+      data.videoCallChargePerMinute = data.videoCallPrice;
     }
 
     // Support nested updates for preferences if provided in profile update
@@ -328,7 +317,13 @@ export class ProfileService {
         referCode: referralCode,
         deepLink,
         inviteRewardCoins,
-        career: updatedUser.careerId,
+        voiceCallPrice: Number(updatedUser.voiceCallPrice ?? updatedUser.audioCallChargePerMinute ?? 0),
+        videoCallPrice: Number(updatedUser.videoCallPrice ?? updatedUser.videoCallChargePerMinute ?? 0),
+        audioCallPrice: Number(updatedUser.voiceCallPrice ?? updatedUser.audioCallChargePerMinute ?? 0),
+        audioCallChargePerMinute: Number(updatedUser.voiceCallPrice ?? updatedUser.audioCallChargePerMinute ?? 0),
+        videoCallChargePerMinute: Number(updatedUser.videoCallPrice ?? updatedUser.videoCallChargePerMinute ?? 0),
+        enableVoiceCall: updatedUser.enableVoiceCall ?? true,
+        enableVideoCall: updatedUser.enableVideoCall ?? true,
         followersCount,
         followingCount,
         friendsCount,

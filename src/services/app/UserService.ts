@@ -411,12 +411,24 @@ export class UserService {
     const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
 
+    const voiceCallPrice = Number(userObj.voiceCallPrice ?? userObj.audioCallChargePerMinute ?? 0);
+    const videoCallPrice = Number(userObj.videoCallPrice ?? userObj.videoCallChargePerMinute ?? 0);
+    const enableVoiceCall = userObj.enableVoiceCall !== undefined ? !!userObj.enableVoiceCall : true;
+    const enableVideoCall = userObj.enableVideoCall !== undefined ? !!userObj.enableVideoCall : true;
+
     return {
       user: {
         ...userObj,
         referralCode,
         referCode: referralCode,
         isOnline,
+        voiceCallPrice,
+        videoCallPrice,
+        audioCallPrice: voiceCallPrice,
+        audioCallChargePerMinute: voiceCallPrice,
+        videoCallChargePerMinute: videoCallPrice,
+        enableVoiceCall,
+        enableVideoCall,
         career: user.careerId,
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
@@ -435,9 +447,19 @@ export class UserService {
         followedLiveRooms: followedLiveStreams,
         isBlock
       },
+      voiceCallPrice,
+      videoCallPrice,
+      audioCallPrice: voiceCallPrice,
+      audioCallChargePerMinute: voiceCallPrice,
+      videoCallChargePerMinute: videoCallPrice,
+      enableVoiceCall,
+      enableVideoCall,
       family,
       familyRole,
       groups: groupChats,
+      richLevelInfo,
+      charmLevelInfo,
+      levelInfo: richLevelInfo,
       isBlock,
       isFollowing: isFollowingAuthor,
       isChatCreated,

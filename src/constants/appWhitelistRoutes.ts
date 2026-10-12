@@ -9,6 +9,7 @@ export const appWhitelistRoutes = [
     '/auth/verify-email',
     '/auth/google',
     '/auth/facebook',
+    '/auth/apple',
     '/auth/social-login',
     '/auth/social-settings',
     '/subcategories',
