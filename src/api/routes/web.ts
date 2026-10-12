@@ -2,9 +2,61 @@ import { Router, Request, Response } from 'express';
 import Container from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
+import Media from '../../models/Media';
 import { CoinService } from '../../services/app/CoinService';
 import { PaymentMethodService } from '../../services/app/PaymentMethodService';
 import { ResponseWrapper } from '../responseWrapper';
+
+/**
+ * Smart resolver for User ID input:
+ * Supports:
+ * - "10000028"
+ * - "@user_10000028"
+ * - "user_10000028"
+ * - "#10000028"
+ * - "@10000028"
+ * - MongoDB ObjectId
+ * - Username / email / mobile
+ */
+function buildUserLookupFilter(rawInput: string) {
+  const raw = String(rawInput || '').trim();
+  if (!raw) return null;
+
+  const clean = raw.replace(/^[@#]/, '').trim();
+
+  // Look for any 5+ digit number sequence or user_ prefix number
+  const matchNum = clean.match(/^(?:user[_-]?)?(\d+)$/i) || clean.match(/(\d{4,})/);
+  const numericId = matchNum ? Number(matchNum[1]) : (/^\d+$/.test(raw) ? Number(raw) : null);
+
+  const orList: any[] = [];
+
+  if (numericId && !isNaN(numericId)) {
+    orList.push({ userId: numericId });
+  }
+
+  if (mongoose.Types.ObjectId.isValid(raw)) {
+    orList.push({ _id: new mongoose.Types.ObjectId(raw) });
+  }
+
+  const escapedRaw = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedClean = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  orList.push(
+    { name: { $regex: `^${escapedRaw}$`, $options: 'i' } },
+    { name: { $regex: `^${escapedClean}$`, $options: 'i' } },
+    { email: raw },
+    { mobile: raw },
+    { referralCode: { $regex: `^${escapedClean}$`, $options: 'i' } }
+  );
+
+  return { $or: orList };
+}
+
+async function findUserByFlexibleInput(rawInput: string) {
+  const filter = buildUserLookupFilter(rawInput);
+  if (!filter) return null;
+  return await User.findOne(filter);
+}
 
 export default (router: Router) => {
   const coinService = Container.get(CoinService);
@@ -26,7 +78,7 @@ export default (router: Router) => {
 
   /**
    * GET /v1/api/web/user/lookup
-   * Lookup user by numeric userId (e.g. 100238475), MongoDB _id, or username
+   * Lookup user by numeric userId (e.g. 10000028, @user_10000028), MongoDB _id, or username
    */
   router.get('/user/lookup', async (req: Request, res: Response) => {
     try {
@@ -35,24 +87,14 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, new Error('User ID is required'), 400);
       }
 
-      let query: any = {};
-      if (/^\d+$/.test(raw)) {
-        query = { userId: Number(raw) };
-      } else if (mongoose.Types.ObjectId.isValid(raw)) {
-        query = { _id: raw };
-      } else {
-        query = {
-          $or: [
-            { name: { $regex: `^${raw}$`, $options: 'i' } },
-            { email: raw },
-            { mobile: raw },
-          ],
-        };
+      const query = buildUserLookupFilter(raw);
+      if (!query) {
+        return ResponseWrapper.error(res, new Error('Invalid User ID format'), 400);
       }
 
-      const user = await User.findOne(query)
-        .populate('profileImage', 'url mimetype')
-        .select('userId name email mobile profileImage coins country isVerified isBlocked');
+      const user: any = await User.findOne(query)
+        .select('userId name email mobile profileImage profileImageUrl coins country isVerified isBlocked')
+        .lean();
 
       if (!user) {
         return ResponseWrapper.error(res, new Error('User not found with this Filive ID'), 404);
@@ -62,14 +104,35 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, new Error('This account is suspended'), 403);
       }
 
-      const avatarUrl = (user.profileImage as any)?.url || null;
+      // Resolve avatar cleanly (supports populated Media, embedded URL, or profileImageUrl)
+      let avatarUrl: string | null = null;
+      if (user.profileImage) {
+        if (typeof user.profileImage === 'object' && user.profileImage.url) {
+          avatarUrl = user.profileImage.url;
+        } else if (typeof user.profileImage === 'string' && user.profileImage.startsWith('http')) {
+          avatarUrl = user.profileImage;
+        } else if (mongoose.Types.ObjectId.isValid(String(user.profileImage))) {
+          const media = await Media.findById(user.profileImage).lean();
+          avatarUrl = media?.url || null;
+        }
+      }
+
+      if (!avatarUrl && user.profileImageUrl?.url) {
+        avatarUrl = user.profileImageUrl.url;
+      }
+
+      // Display name formatting
+      let displayName = user.name || '';
+      if (!displayName || /^\d{7,}$/.test(displayName)) {
+        displayName = `User ${user.userId || ''}`.trim() || 'FiLive User';
+      }
 
       return ResponseWrapper.success(
         res,
         {
           id: user._id,
           userId: user.userId,
-          name: user.name || 'Filive User',
+          name: displayName,
           avatar: avatarUrl,
           country: user.country || 'Global',
           coins: user.coins || 0,
@@ -106,20 +169,10 @@ export default (router: Router) => {
       if (!userId) return ResponseWrapper.error(res, new Error('userId is required'), 400);
       if (!packageId) return ResponseWrapper.error(res, new Error('packageId is required'), 400);
 
-      // Resolve user by numeric userId or _id
-      let resolvedUserId = userId;
-      if (/^\d+$/.test(String(userId).trim())) {
-        const user = await User.findOne({ userId: Number(userId) }).select('_id');
-        if (!user) return ResponseWrapper.error(res, new Error('User not found'), 404);
-        resolvedUserId = user._id.toString();
-      } else if (!mongoose.Types.ObjectId.isValid(userId)) {
-        const user = await User.findOne({
-          $or: [{ name: userId }, { email: userId }, { mobile: userId }],
-        }).select('_id');
-        if (!user) return ResponseWrapper.error(res, new Error('User not found'), 404);
-        resolvedUserId = user._id.toString();
-      }
+      const user = await findUserByFlexibleInput(String(userId));
+      if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
 
+      const resolvedUserId = user._id.toString();
       const result = await coinService.createRazorpayOrder(resolvedUserId, packageId, 'user');
       return ResponseWrapper.success(res, result, 'Razorpay order created successfully');
     } catch (error: any) {
@@ -142,13 +195,10 @@ export default (router: Router) => {
         );
       }
 
-      let resolvedUserId = userId;
-      if (/^\d+$/.test(String(userId).trim())) {
-        const user = await User.findOne({ userId: Number(userId) }).select('_id');
-        if (!user) return ResponseWrapper.error(res, new Error('User not found'), 404);
-        resolvedUserId = user._id.toString();
-      }
+      const user = await findUserByFlexibleInput(String(userId));
+      if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
 
+      const resolvedUserId = user._id.toString();
       const result = await coinService.verifyRazorpayPayment(
         resolvedUserId,
         packageId,
@@ -172,12 +222,11 @@ export default (router: Router) => {
       if (!userId || !packageId) {
         return ResponseWrapper.error(res, new Error('userId and packageId are required'), 400);
       }
-      let resolvedUserId = userId;
-      if (/^\d+$/.test(String(userId).trim())) {
-        const user = await User.findOne({ userId: Number(userId) }).select('_id');
-        if (!user) return ResponseWrapper.error(res, new Error('User not found'), 404);
-        resolvedUserId = user._id.toString();
-      }
+
+      const user = await findUserByFlexibleInput(String(userId));
+      if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
+
+      const resolvedUserId = user._id.toString();
       const result = await coinService.createCashfreeOrder(resolvedUserId, packageId, 'user');
       return ResponseWrapper.success(res, result, 'Cashfree order created successfully');
     } catch (error: any) {
@@ -194,12 +243,11 @@ export default (router: Router) => {
       if (!userId || !orderId) {
         return ResponseWrapper.error(res, new Error('userId and orderId are required'), 400);
       }
-      let resolvedUserId = userId;
-      if (/^\d+$/.test(String(userId).trim())) {
-        const user = await User.findOne({ userId: Number(userId) }).select('_id');
-        if (!user) return ResponseWrapper.error(res, new Error('User not found'), 404);
-        resolvedUserId = user._id.toString();
-      }
+
+      const user = await findUserByFlexibleInput(String(userId));
+      if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
+
+      const resolvedUserId = user._id.toString();
       const result = await coinService.verifyCashfreePayment(resolvedUserId, orderId, packageId, 'user');
       return ResponseWrapper.success(res, result, result.message || 'Payment verified successfully');
     } catch (error: any) {
