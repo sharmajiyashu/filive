@@ -513,6 +513,14 @@ export default (socket: AuthenticatedSocket, io: Server) => {
             io.to(`user_${targetId}`).emit('personal_gift_received', payload);
           }
           io.to(`user_${userId}`).emit('gift_sent', payload);
+
+          // If global announcement enabled for this gift, broadcast to all live streams and rooms
+          if (result.gift.showInAllLiveStreams) {
+            io.emit('global_gift_announcement', {
+              ...payload,
+              isGlobalAnnouncement: true,
+            });
+          }
         } catch (err: any) {
           AppLogger.error(`[Socket Event: send_gift] Gift failed for receiverId=${targetId}: ${err.message}`);
           errors.push(err.message);

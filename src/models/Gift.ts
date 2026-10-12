@@ -6,6 +6,8 @@ export interface IGift extends Document {
   price: number;
   media: mongoose.Types.ObjectId; // Image/GIF/Sticker
   isActive: boolean;
+  showInAllLiveStreams: boolean;
+  isComboEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +19,8 @@ const GiftSchema: Schema = new Schema(
     price: { type: Number, required: true, min: 0 },
     media: { type: Schema.Types.ObjectId, ref: 'Media', required: true },
     isActive: { type: Boolean, default: true },
+    showInAllLiveStreams: { type: Boolean, default: false },
+    isComboEnabled: { type: Boolean, default: true },
   },
   {
     timestamps: true,

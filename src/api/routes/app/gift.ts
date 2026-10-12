@@ -75,6 +75,13 @@ export default (router: Router) => {
               io.to(`user_${actualReceiverId}`).emit('personal_gift_received', eventPayload);
             }
             io.to(`user_${req.user.id}`).emit('gift_sent', eventPayload);
+
+            if (result.gift.showInAllLiveStreams) {
+              io.emit('global_gift_announcement', {
+                ...eventPayload,
+                isGlobalAnnouncement: true,
+              });
+            }
           } else {
             // Direct/personal gift: Emit to both sender and receiver's private rooms
             const eventPayload = {
@@ -89,6 +96,13 @@ export default (router: Router) => {
             io.to(`user_${actualReceiverId}`).emit('personal_gift_received', eventPayload);
             io.to(`user_${req.user.id}`).emit('gift_sent', eventPayload);
             io.to(`user_${actualReceiverId}`).emit('gift_sent', eventPayload);
+
+            if (result.gift.showInAllLiveStreams) {
+              io.emit('global_gift_announcement', {
+                ...eventPayload,
+                isGlobalAnnouncement: true,
+              });
+            }
           }
         }
       } catch (ioError) {

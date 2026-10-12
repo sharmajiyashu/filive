@@ -23,14 +23,23 @@ export class GiftService {
     type: string;
     price: number;
     media: string;
+    showInAllLiveStreams?: boolean | string;
+    isComboEnabled?: boolean | string;
   }) {
     AppLogger.info(`[GiftService: createGift] Creating gift: ${data.name}`);
+    const showInAllLiveStreams = data.showInAllLiveStreams === true || data.showInAllLiveStreams === 'true';
+    const isComboEnabled = data.isComboEnabled !== undefined 
+      ? (data.isComboEnabled === true || data.isComboEnabled === 'true')
+      : true;
+
     return await Gift.create({
       name: data.name,
       type: new mongoose.Types.ObjectId(data.type),
       price: data.price,
       media: new mongoose.Types.ObjectId(data.media),
       isActive: true,
+      showInAllLiveStreams,
+      isComboEnabled,
     });
   }
 
@@ -41,6 +50,12 @@ export class GiftService {
     }
     if (data.type) {
       data.type = new mongoose.Types.ObjectId(data.type);
+    }
+    if (data.showInAllLiveStreams !== undefined) {
+      data.showInAllLiveStreams = data.showInAllLiveStreams === true || data.showInAllLiveStreams === 'true';
+    }
+    if (data.isComboEnabled !== undefined) {
+      data.isComboEnabled = data.isComboEnabled === true || data.isComboEnabled === 'true';
     }
     const gift = await Gift.findByIdAndUpdate(id, data, { new: true });
     if (!gift) throw new Error('Gift not found');
@@ -412,6 +427,8 @@ export class GiftService {
       url: giftMediaUrl,
       type: gift.type,
       isActive: gift.isActive,
+      showInAllLiveStreams: !!gift.showInAllLiveStreams,
+      isComboEnabled: gift.isComboEnabled !== false,
     };
 
     return {
