@@ -44,7 +44,7 @@ export default (router: Router) => {
   feedbackRouter.post('/', upload.array('images', 10), async (req: any, res: Response) => {
     try {
       const { email, feedbackType, description } = req.body;
-      const userId = req.user.id;
+      const userId = req.user?.id || null;
 
       if (!email || !feedbackType || !description) {
         throw new Error('Email, feedbackType, and description are required');

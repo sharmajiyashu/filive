@@ -57,6 +57,7 @@ export interface IUser extends Document {
   wealthCoins: number;
   charmCoins: number;
   countryId?: mongoose.Types.ObjectId;
+  countryCode?: string;
   enableVoiceCall: boolean;
   enableVideoCall: boolean;
   voiceCallPrice: number;
@@ -161,6 +162,7 @@ const UserSchema: Schema = new Schema(
     hobbies: [{ type: Schema.Types.ObjectId, ref: 'Hobby' }],
     album: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     country: { type: String },
+    countryCode: { type: String, sparse: true, index: true },
     maritalStatus: { type: String },
     notificationPreferences: {
       inApp: { type: Boolean, default: true },

@@ -48,7 +48,7 @@ export class StoryService {
     const allTags = [...new Set([...hashtags, ...providedTags])];
 
     const story = await Story.create({
-      userId,
+      userId: new mongoose.Types.ObjectId(userId),
       content: contentText,
       images: mediaIds,
       tags: allTags,

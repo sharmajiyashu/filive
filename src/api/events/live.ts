@@ -778,41 +778,53 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         AppLogger.info(`[Socket Event: disconnect] User is not hosting any active stream.`);
       }
 
-      // 2. Check if the user was watching any active streams and remove them
-      AppLogger.info(`[Socket Event: disconnect] Checking if userId=${userId} was watching any active streams`);
-      const streamsWatched = await Room.find({ status: 'live', viewers: userId });
-      AppLogger.info(`[Socket Event: disconnect] Found ${streamsWatched.length} watched streams for user ${userId}`);
-      for (const stream of streamsWatched) {
-        AppLogger.info(`[Socket Event: disconnect] Removing viewer ${userId} from stream ${stream.channelName}`);
-        await liveStreamService.leaveLiveStream(userId, stream.channelName);
+      // 2. Check if the user was watching any active streams and remove them after grace period (e.g. screen lock)
+      AppLogger.info(`[Socket Event: disconnect] Scheduling viewer check for userId=${userId} in 30 seconds`);
+      setTimeout(async () => {
+        try {
+          // If user reconnected with any socket (e.g. unlocked screen), keep them in stream
+          const userRoom = io.sockets.adapter.rooms.get(`user_${userId}`);
+          if (userRoom && userRoom.size > 0) {
+            AppLogger.info(`[Socket Event: disconnect] Viewer userId=${userId} reconnected (${userRoom.size} sockets). Keeping in stream.`);
+            return;
+          }
 
-        AppLogger.info(`[Socket Event: disconnect] Fetching username and profile image for ${userId}`);
-        const userObj = await User.findById(userId)
-          .select('name userId profileImage')
-          .populate('profileImage');
+          const streamsWatched = await Room.find({ status: 'live', viewers: userId });
+          AppLogger.info(`[Socket Event: disconnect] Found ${streamsWatched.length} watched streams for user ${userId} after timeout`);
+          for (const stream of streamsWatched) {
+            AppLogger.info(`[Socket Event: disconnect] Removing viewer ${userId} from stream ${stream.channelName}`);
+            await liveStreamService.leaveLiveStream(userId, stream.channelName);
 
-        const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
-        if (userJson) {
-          userJson.userId = userJson.userId ?? null;
-          userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+            const userObj = await User.findById(userId)
+              .select('name userId profileImage')
+              .populate('profileImage');
+
+            const userJson = userObj ? (userObj.toObject ? userObj.toObject() : userObj) as any : null;
+            if (userJson) {
+              userJson.userId = userJson.userId ?? null;
+              userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
+            }
+
+            const payload = {
+              success: true,
+              type: 'viewer_left',
+              channelName: stream.channelName,
+              roomId: stream.roomId ?? null,
+              room_id: stream.roomId ?? null,
+              user: userJson || userObj,
+              viewerCount: Math.max(0, (stream.viewerCount || 1) - 1),
+              charmRankingDaily: userJson?.charmRankingDaily,
+              totalGiftRevenue: stream.totalGiftRevenue || 0,
+              roomFollowerCount: stream.roomFollowerCount || 0
+            };
+            AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName}. payload=${JSON.stringify(payload)}`);
+            io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('viewer_left', payload);
+            io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('room_viewer_left', payload);
+          }
+        } catch (err: any) {
+          AppLogger.error(`[Socket Event: disconnect] Error in viewer disconnect timeout for user ${userId}: ${err.message}`, err);
         }
-
-        const payload = {
-          success: true,
-          type: 'viewer_left',
-          channelName: stream.channelName,
-          roomId: stream.roomId ?? null,
-          room_id: stream.roomId ?? null,
-          user: userJson || userObj,
-          viewerCount: Math.max(0, (stream.viewerCount || 1) - 1),
-          charmRankingDaily: userJson?.charmRankingDaily,
-          totalGiftRevenue: stream.totalGiftRevenue || 0,
-          roomFollowerCount: stream.roomFollowerCount || 0
-        };
-        AppLogger.info(`[Socket Event: disconnect] Broadcasting viewer_left/room_viewer_left to live_${stream.channelName} and room_${stream.channelName}. payload=${JSON.stringify(payload)}`);
-        io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('viewer_left', payload);
-        io.to(`live_${stream.channelName}`).to(`room_${stream.channelName}`).emit('room_viewer_left', payload);
-      }
+      }, 30000);
       AppLogger.info(`[Socket Event: disconnect] Completed disconnect cleanup for userId=${userId}`);
     } catch (error: any) {
       AppLogger.error(`[Socket Event: disconnect] Error cleaning up live stream on disconnect for user ${userId}: ${error.message}`, error);

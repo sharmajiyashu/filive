@@ -223,8 +223,11 @@ export class ProfileService {
       if (resolved?.countryId) {
         data.countryId = resolved.countryId;
         data.country = resolved.country;
+        data.countryCode = resolved.country;
+      } else {
+        if (data.countryCode) data.countryCode = String(data.countryCode).trim().toUpperCase();
+        if (data.country) data.country = String(data.country).trim();
       }
-      delete data.countryCode;
     }
 
     // Validate careerId directly if provided

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Country from '../models/Country';
+import { ISO_TO_DIAL } from './phoneCountry';
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -46,6 +47,7 @@ export async function resolveCountryUserFilter(country?: string | null): Promise
   }
   userQueryConditions.push({ country: { $regex: new RegExp(`^${escapedTarget}$`, 'i') } });
   userQueryConditions.push({ country: { $regex: escapedTarget, $options: 'i' } });
+  userQueryConditions.push({ countryCode: { $regex: new RegExp(`^${escapedTarget}$`, 'i') } });
   userQueryConditions.push({ nationality: { $regex: new RegExp(`^${escapedTarget}$`, 'i') } });
   userQueryConditions.push({ nationality: { $regex: escapedTarget, $options: 'i' } });
 
@@ -55,7 +57,21 @@ export async function resolveCountryUserFilter(country?: string | null): Promise
   }
   if (countryCodes.length > 0) {
     userQueryConditions.push({ country: { $in: countryCodes } });
+    userQueryConditions.push({ countryCode: { $in: countryCodes } });
     userQueryConditions.push({ nationality: { $in: countryCodes } });
+  }
+
+  // Also match phone prefixes of matching countries
+  matchingCountries.forEach((c: any) => {
+    const dial = c.phoneCode || c.countryCode || ISO_TO_DIAL[c.code?.toUpperCase()];
+    if (dial) {
+      userQueryConditions.push({ mobile: { $regex: new RegExp(`^\\+?${dial}`) } });
+    }
+  });
+
+  const directIsoDial = ISO_TO_DIAL[targetCountry.toUpperCase()];
+  if (directIsoDial) {
+    userQueryConditions.push({ mobile: { $regex: new RegExp(`^\\+?${directIsoDial}`) } });
   }
 
   if (!isNaN(numericVal) && numericVal > 0) {

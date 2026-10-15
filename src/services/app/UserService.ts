@@ -1,4 +1,4 @@
-import { Service } from 'typedi';
+import { Service, Container } from 'typedi';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import Story from '../../models/Story';
@@ -53,6 +53,36 @@ export class UserService {
       query._id = { $nin: ninIds };
     }
 
+    // Popular tab & user discovery visibility rule:
+    // Scenario 1: If user is unverified, but two users follow each other (mutual follow with current viewer), visible.
+    // Scenario 2: If user is unverified and not mutually followed, not visible. Verified users always visible.
+    const verificationOrMutualConditions: any[] = [
+      { isVerified: true },
+      { videoVerificationStatus: 'approved' },
+    ];
+
+    if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
+      const myFollowings = await Follow.find({
+        followerId: new mongoose.Types.ObjectId(currentUserId),
+        status: 'accepted',
+      }).distinct('followingId');
+
+      if (myFollowings.length > 0) {
+        const mutualFollowUserIds = await Follow.find({
+          followerId: { $in: myFollowings },
+          followingId: new mongoose.Types.ObjectId(currentUserId),
+          status: 'accepted',
+        }).distinct('followerId');
+
+        if (mutualFollowUserIds.length > 0) {
+          verificationOrMutualConditions.push({ _id: { $in: mutualFollowUserIds } });
+        }
+      }
+    }
+
+    query.$and = query.$and || [];
+    query.$and.push({ $or: verificationOrMutualConditions });
+
     // Type filter: online or new
     if (type === 'online') {
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -106,9 +136,39 @@ export class UserService {
 
     const userObjectIds = userDocs.map((u: any) => u._id);
 
+    // Clean up stale calls before calculating busy status
+    try {
+      const ringTimeout = new Date(Date.now() - 60 * 1000);
+      const staleAcceptedTimeout = new Date(Date.now() - 30 * 60 * 1000);
+      await Promise.all([
+        Call.updateMany(
+          {
+            $or: [{ callerId: { $in: userObjectIds } }, { receiverId: { $in: userObjectIds } }],
+            status: 'initiated',
+            createdAt: { $lt: ringTimeout }
+          },
+          { $set: { status: 'missed', endedAt: new Date() } }
+        ),
+        Call.updateMany(
+          {
+            $or: [{ callerId: { $in: userObjectIds } }, { receiverId: { $in: userObjectIds } }],
+            status: 'accepted',
+            createdAt: { $lt: staleAcceptedTimeout }
+          },
+          { $set: { status: 'ended', endedAt: new Date() } }
+        )
+      ]);
+    } catch (_) {}
+
+    let ioInstance: any;
+    try {
+      ioInstance = Container.get('socket');
+    } catch (_) {}
+
     const [activeCalls, activeRooms] = await Promise.all([
       Call.find({
         status: { $in: ['initiated', 'accepted'] },
+        createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) },
         $or: [
           { callerId: { $in: userObjectIds } },
           { receiverId: { $in: userObjectIds } },
@@ -138,7 +198,8 @@ export class UserService {
     const formattedUsers = await Promise.all(userDocs.map(async (u: any) => {
       const uObj = u.toObject ? u.toObject() : u;
       const uid = uObj._id?.toString();
-      const isOnline = uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+      const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uid}`)?.size > 0;
+      const isOnline = hasSocket || (uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 30 * 60 * 1000 : false);
       const isBusy = busyUserSet.has(uid);
       const isLive = liveUserSet.has(uid);
       const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
@@ -308,7 +369,12 @@ export class UserService {
       };
     });
 
-    const stories = await Story.find({ userId: user._id })
+    const stories = await Story.find({
+      $or: [
+        { userId: user._id },
+        { userId: user._id.toString() }
+      ]
+    })
       .populate('images')
       .populate({
         path: 'userId',

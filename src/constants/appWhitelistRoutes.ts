@@ -21,4 +21,5 @@ export const appWhitelistRoutes = [
     '/banners',
     '/social-links',
     '/coins/packages',
+    '/help-feedback',
 ]

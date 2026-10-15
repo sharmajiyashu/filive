@@ -12,7 +12,7 @@ import { CONSTANTS } from "../../config/constants";
 import { addMinutes } from "date-fns";
 import AppLogger from '../../api/loaders/logger';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
-import { resolveCountryFromSignals } from '../../utils/phoneCountry';
+import { resolveCountryFromSignals, isoFromDialCode } from '../../utils/phoneCountry';
 
 
 @Service()
@@ -26,10 +26,11 @@ export class AuthenticationService {
     private generateToken(userId: string, role: string): string {
         const payload = { userId, role };
         const secret = config.auth.secret;
-        const options: jwt.SignOptions = {
-            expiresIn: role === 'admin' ? CONSTANTS.JWT_ADMIN_ACCESS_EXPIRY : CONSTANTS.JWT_ACCESS_EXPIRY
-        };
-        return jwt.sign(payload, secret, options) as string;
+        if (role === 'admin') {
+            return jwt.sign(payload, secret, { expiresIn: CONSTANTS.JWT_ADMIN_ACCESS_EXPIRY }) as string;
+        }
+        // Lifetime token for app users (never expires until user logs out)
+        return jwt.sign(payload, secret, { expiresIn: '36500d' }) as string;
     }
 
     /** Auto-clears expired temporary blocks; throws ACCOUNT_BLOCKED for active restrictions (app users only). */
@@ -267,6 +268,7 @@ export class AuthenticationService {
                 }
             }
 
+            const fallbackCode = extras?.countryCode || resolvedCountry?.country || isoFromDialCode(extras?.extension) || undefined;
             // Register new user with this mobile
             user = await User.create({
                 name: 'User',
@@ -276,7 +278,8 @@ export class AuthenticationService {
                 userRole: 'user',
                 authProvider: 'phone',
                 countryId: resolvedCountry?.countryId,
-                country: resolvedCountry?.country,
+                country: resolvedCountry?.country || fallbackCode,
+                countryCode: fallbackCode,
                 referredBy: referrerObjId
             });
 
@@ -285,9 +288,15 @@ export class AuthenticationService {
             // Update existing user with new OTP
             user.otp = otp;
             user.otpExpires = otpExpires;
+            const fallbackCode = extras?.countryCode || resolvedCountry?.country || isoFromDialCode(extras?.extension) || undefined;
             if (!user.countryId && resolvedCountry?.countryId) {
                 user.countryId = resolvedCountry.countryId;
-                user.country = resolvedCountry.country;
+            }
+            if (!user.country && (resolvedCountry?.country || fallbackCode)) {
+                user.country = resolvedCountry?.country || fallbackCode;
+            }
+            if (!user.countryCode && fallbackCode) {
+                user.countryCode = fallbackCode;
             }
             if (!user.authProvider) {
                 user.authProvider = 'phone';
@@ -405,7 +414,7 @@ export class AuthenticationService {
 
     async verifyToken(token: string): Promise<IUser> {
         try {
-            const decoded = jwt.verify(token, config.auth.secret) as { userId: string };
+            const decoded = jwt.verify(token, config.auth.secret, { ignoreExpiration: true }) as { userId: string };
 
             const user = await User.findById(decoded.userId);
 

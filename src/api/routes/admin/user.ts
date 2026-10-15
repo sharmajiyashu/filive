@@ -896,12 +896,27 @@ export default (router: Router) => {
       const limit = parseInt(req.query.limit?.toString() || '10');
       const status = req.query.status?.toString() || 'pending';
 
-      const query: any = {};
+      let query: any = {};
 
-      if (status !== 'all') {
+      if (status === 'pending') {
+        query = {
+          $or: [
+            { videoVerificationStatus: 'pending' },
+            {
+              videoVerificationVideo: { $exists: true, $ne: null },
+              videoVerificationStatus: { $nin: ['approved', 'rejected'] }
+            }
+          ]
+        };
+      } else if (status !== 'all') {
         query.videoVerificationStatus = status;
       } else {
-        query.videoVerificationStatus = { $in: ['pending', 'approved', 'rejected'] };
+        query = {
+          $or: [
+            { videoVerificationStatus: { $in: ['pending', 'approved', 'rejected'] } },
+            { videoVerificationVideo: { $exists: true, $ne: null } }
+          ]
+        };
       }
 
       const users = await User.find(query)

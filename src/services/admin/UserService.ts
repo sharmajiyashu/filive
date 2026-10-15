@@ -229,6 +229,11 @@ export class UserService {
         query.isPremium = true;
       } else if (params.category === 'normal' || params.category === 'real') {
         query.isPremium = false;
+      } else if (params.category === 'pending_video_verification') {
+        query.$or = [
+          { videoVerificationStatus: 'pending' },
+          { videoVerificationVideo: { $exists: true, $ne: null }, videoVerificationStatus: { $nin: ['approved', 'rejected'] } }
+        ];
       }
     }
 
@@ -765,6 +770,9 @@ export class UserService {
     if (!user) throw new Error('USER_NOT_FOUND');
 
     user.videoVerificationStatus = status;
+    if (status === 'approved') {
+      user.isVerified = true;
+    }
     await user.save();
     return user;
   }

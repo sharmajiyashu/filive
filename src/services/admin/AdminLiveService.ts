@@ -46,11 +46,11 @@ export class AdminLiveService {
       uniqueId: hostObj.userId,
       wealthLevel: current
         ? {
-            name: current.name,
-            levelNumber: current.levelNumber,
-            color: current.color,
-            image: current.image,
-          }
+          name: current.name,
+          levelNumber: current.levelNumber,
+          color: current.color,
+          image: current.image,
+        }
         : null,
     };
   }
@@ -66,7 +66,7 @@ export class AdminLiveService {
     obj.joinedUsersCount = Array.isArray(obj.joinedUsers) ? obj.joinedUsers.length : 0;
     if (obj.status === 'ended') {
       obj.duration = this.formatDuration(
-        obj.startedAt ? new Date(obj.startedAt) : undefined,
+        (obj.startedAt || obj.createdAt) ? new Date(obj.startedAt || obj.createdAt) : undefined,
         obj.endedAt ? new Date(obj.endedAt) : undefined
       );
       obj.newFans = obj.roomFollowerCount || 0;

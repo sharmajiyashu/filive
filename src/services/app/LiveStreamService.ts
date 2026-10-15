@@ -798,7 +798,8 @@ export class LiveStreamService {
 
     // 1. Calculate live duration
     const endedAt = new Date();
-    const duration = Math.round((endedAt.getTime() - liveStream.startedAt.getTime()) / 1000);
+    const streamStart = liveStream.startedAt || liveStream.createdAt || endedAt;
+    const duration = Math.max(0, Math.round((endedAt.getTime() - new Date(streamStart).getTime()) / 1000));
 
     // 2. Sum wealthCoins (total spendings) of all current online viewers
     const activeViewers = await User.find({ _id: { $in: liveStream.viewers } }).select('wealthCoins coins');
@@ -828,7 +829,7 @@ export class LiveStreamService {
     const increasedFans = await Follow.countDocuments({
       followingId: liveStream.hostId,
       status: 'accepted',
-      createdAt: { $gte: liveStream.startedAt, $lte: endedAt }
+      createdAt: { $gte: streamStart, $lte: endedAt }
     });
 
     // 7. Calculate daily charm ranking
@@ -863,6 +864,7 @@ export class LiveStreamService {
     liveStream.endedAt = endedAt;
     liveStream.viewers = [];
     liveStream.viewerCount = 0;
+    liveStream.totalGiftRevenue = coinCollection;
     await liveStream.save();
     AppLogger.info(`[LiveStreamService: endLiveStream] Saved end status in database.`);
 
