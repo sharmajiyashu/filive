@@ -246,7 +246,17 @@ export default (router: Router) => {
      */
     router.post('/auth/social-login', async (req: Request, res: Response) => {
         try {
-            const { provider, idToken, accessToken, email, name, socialId, photoUrl, countryId, countryCode, referredBy, extension } = req.body;
+            const provider = (req.body.provider || req.body.loginType || '').toString().toLowerCase().trim();
+            const idToken = req.body.idToken || (provider === 'google' ? req.body.token : undefined);
+            const accessToken = req.body.accessToken || (provider !== 'google' ? req.body.token : undefined) || (provider === 'google' ? req.body.token : undefined);
+            const email = req.body.email;
+            const name = req.body.name;
+            const socialId = req.body.socialId || req.body.googleId || req.body.facebookId || req.body.appleId;
+            const photoUrl = req.body.photoUrl || req.body.avatar;
+            const countryId = req.body.countryId;
+            const countryCode = req.body.countryCode;
+            const referredBy = req.body.referredBy || req.body.referralCode;
+            const extension = req.body.extension;
             const ipCountry = countryCodeFromIpHeaders(req.headers) || undefined;
 
             if (provider === 'google') {
@@ -294,7 +304,7 @@ export default (router: Router) => {
                 });
                 return ResponseWrapper.success(res, result, 'Apple authentication successful');
             } else {
-                return ResponseWrapper.error(res, 'Invalid social provider. Supported: google, facebook, apple');
+                return ResponseWrapper.error(res, `Invalid social provider '${provider}'. Supported: google, facebook, apple`);
             }
         } catch (error: any) {
             return ResponseWrapper.error(res, error);
