@@ -262,6 +262,10 @@ export class UserService {
         path: 'careerId',
         populate: { path: 'image' }
       })
+      .populate({
+        path: 'hobbies',
+        populate: { path: 'image' }
+      })
       .populate('countryId')
       .populate([...ACTIVE_STORE_POPULATE] as any);
 
@@ -496,6 +500,11 @@ export class UserService {
         enableVoiceCall,
         enableVideoCall,
         career: user.careerId,
+        hobbies: userObj.hobbies || user.hobbies || [],
+        album: userObj.album || [],
+        height: userObj.height || '',
+        weight: userObj.weight || '',
+        maritalStatus: userObj.maritalStatus || '',
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
         charmLevelInfo,
@@ -513,6 +522,12 @@ export class UserService {
         followedLiveRooms: followedLiveStreams,
         isBlock
       },
+      career: user.careerId,
+      hobbies: userObj.hobbies || user.hobbies || [],
+      album: userObj.album || [],
+      height: userObj.height || '',
+      weight: userObj.weight || '',
+      maritalStatus: userObj.maritalStatus || '',
       voiceCallPrice,
       videoCallPrice,
       audioCallPrice: voiceCallPrice,

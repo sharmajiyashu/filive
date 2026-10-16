@@ -24,8 +24,18 @@ export async function seedSettings() {
       },
       {
         key: 'marital_statuses',
-        value: ['single', 'divorced', 'married', 'secret', 'inlove'],
-        description: 'List of available marital statuses'
+        value: ['Single', 'In Love', 'Engaged', 'Married', 'Separated', 'Divorced', 'Widowed', 'Secret', 'Complicated'],
+        description: 'List of available marital statuses and emotional states'
+      },
+      {
+        key: 'height_options',
+        value: ['140cm', '145cm', '150cm', '155cm', '160cm', '165cm', '170cm', '175cm', '180cm', '185cm', '190cm', '195cm', '200cm', '205cm', '210cm'],
+        description: 'List of standard height options for edit profile'
+      },
+      {
+        key: 'weight_options',
+        value: ['40kg', '45kg', '50kg', '55kg', '60kg', '65kg', '70kg', '75kg', '80kg', '85kg', '90kg', '95kg', '100kg', '105kg', '110kg', '115kg', '120kg'],
+        description: 'List of standard weight options for edit profile'
       },
       {
         key: 'feedback_types',

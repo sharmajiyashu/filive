@@ -143,46 +143,64 @@ export default (router: Router) => {
         }
 
         if (payload.call_price_tiers !== undefined) {
-            if (typeof payload.call_price_tiers === 'string') {
+          if (typeof payload.call_price_tiers === 'string') {
+            try {
+              payload.call_price_tiers = JSON.parse(payload.call_price_tiers);
+            } catch (e) {
+              // fallback
+            }
+          }
+          if (Array.isArray(payload.call_price_tiers)) {
+            payload.call_price_tiers = payload.call_price_tiers.map((tier: any) => ({
+              minLevel: Number(tier.minLevel || 1),
+              maxLevel: Number(tier.maxLevel || 1),
+              audioPrice: Number(tier.audioPrice || 0),
+              videoPrice: Number(tier.videoPrice || 0),
+              label: String(tier.label || `Level ${tier.minLevel}–${tier.maxLevel}`)
+            }));
+          }
+        }
+
+        if (payload.coin_to_bean_rate !== undefined) {
+          payload.coin_to_bean_rate = Number(payload.coin_to_bean_rate);
+        }
+        if (payload.bean_to_coin_rate_other !== undefined) {
+          payload.bean_to_coin_rate_other = Number(payload.bean_to_coin_rate_other);
+        }
+        if (payload.min_coin_to_bean_transfer !== undefined) {
+          payload.min_coin_to_bean_transfer = Number(payload.min_coin_to_bean_transfer);
+        }
+        if (payload.exchange_rate_base_beans !== undefined) {
+          payload.exchange_rate_base_beans = Number(payload.exchange_rate_base_beans);
+        }
+        if (payload.gift_commission_percent !== undefined) {
+          payload.gift_commission_percent = Number(payload.gift_commission_percent);
+        }
+        const parseArraySetting = (key: string) => {
+          if (payload[key] !== undefined) {
+            if (typeof payload[key] === 'string') {
               try {
-                payload.call_price_tiers = JSON.parse(payload.call_price_tiers);
+                payload[key] = JSON.parse(payload[key]);
               } catch (e) {
-                // fallback
+                payload[key] = payload[key].split(',').map((s: string) => s.trim()).filter(Boolean);
               }
             }
-            if (Array.isArray(payload.call_price_tiers)) {
-              payload.call_price_tiers = payload.call_price_tiers.map((tier: any) => ({
-                minLevel: Number(tier.minLevel || 1),
-                maxLevel: Number(tier.maxLevel || 1),
-                audioPrice: Number(tier.audioPrice || 0),
-                videoPrice: Number(tier.videoPrice || 0),
-                label: String(tier.label || `Level ${tier.minLevel}–${tier.maxLevel}`)
-              }));
+            if (!Array.isArray(payload[key])) {
+              payload[key] = [];
             }
           }
+        };
 
-          if (payload.coin_to_bean_rate !== undefined) {
-            payload.coin_to_bean_rate = Number(payload.coin_to_bean_rate);
-          }
-          if (payload.bean_to_coin_rate_other !== undefined) {
-            payload.bean_to_coin_rate_other = Number(payload.bean_to_coin_rate_other);
-          }
-          if (payload.min_coin_to_bean_transfer !== undefined) {
-            payload.min_coin_to_bean_transfer = Number(payload.min_coin_to_bean_transfer);
-          }
-          if (payload.exchange_rate_base_beans !== undefined) {
-            payload.exchange_rate_base_beans = Number(payload.exchange_rate_base_beans);
-          }
-          if (payload.gift_commission_percent !== undefined) {
-            payload.gift_commission_percent = Number(payload.gift_commission_percent);
-          }
+        parseArraySetting('marital_statuses');
+        parseArraySetting('height_options');
+        parseArraySetting('weight_options');
 
-          const result = await appSettingService.updateSettings(payload);
-          return ResponseWrapper.success(res, result, 'Settings updated successfully');
-        } catch (error: any) {
-          return ResponseWrapper.error(res, error);
-        }
+        const result = await appSettingService.updateSettings(payload);
+        return ResponseWrapper.success(res, result, 'Settings updated successfully');
+      } catch (error: any) {
+        return ResponseWrapper.error(res, error);
       }
+    }
   );
 
   /**

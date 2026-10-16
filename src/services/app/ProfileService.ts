@@ -316,6 +316,7 @@ export class ProfileService {
     return {
       profile: {
         ...profileData,
+        career: updatedUser.careerId || updatedUser.career,
         referralCode,
         referCode: referralCode,
         deepLink,
@@ -360,21 +361,26 @@ export class ProfileService {
 
   public async getProfileSettings() {
     const [careers, settings, hobbies] = await Promise.all([
-      Career.find({ isActive: true }).populate('image'),
+      Career.find({ isActive: true }).populate('image').sort({ name: 1 }),
       require('../../models/AppSetting').default.find({
-        key: { $in: ['marital_statuses'] }
+        key: { $in: ['marital_statuses', 'height_options', 'weight_options'] }
       }),
       Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 })
     ]);
 
     const maritalStatuses = settings.find((s: any) => s.key === 'marital_statuses')?.value || [
-      'single', 'divorced', 'married', 'secret', 'inlove'
+      'Single', 'In Love', 'Engaged', 'Married', 'Separated', 'Divorced', 'Widowed', 'Secret', 'Complicated'
     ];
+
+    const heightOptions = settings.find((s: any) => s.key === 'height_options')?.value || [];
+    const weightOptions = settings.find((s: any) => s.key === 'weight_options')?.value || [];
 
     return {
       careers,
       maritalStatuses,
-      hobbies
+      hobbies,
+      heightOptions,
+      weightOptions
     };
   }
 
@@ -389,51 +395,35 @@ export class ProfileService {
       mediaIds.push(media._id);
     }
 
-    const updatedUser = await User.findByIdAndUpdate(
+    await User.findByIdAndUpdate(
       userId,
       { $push: { album: { $each: mediaIds } } },
       { new: true }
-    )
-      .populate('profileImage')
-      .populate('album')
-      .populate({
-        path: 'hobbies',
-        populate: { path: 'image' }
-      })
-      .populate({
-        path: 'careerId',
-        populate: { path: 'image' }
-      });
+    );
 
-    if (!updatedUser) throw new Error('USER_NOT_FOUND');
-
-    const userObj = updatedUser.toObject();
-    userObj.album = await withDefaultAlbum(userObj.album);
-    return userObj;
+    const profile = await this.getProfile(userId);
+    return {
+      profile,
+      user: profile,
+      album: profile.album,
+      message: 'ALBUM_UPDATED'
+    };
   }
 
   public async deleteAlbumPhoto(userId: string, photoId: string) {
-    const updatedUser = await User.findByIdAndUpdate(
+    await User.findByIdAndUpdate(
       userId,
       { $pull: { album: photoId } },
       { new: true }
-    )
-      .populate('profileImage')
-      .populate('album')
-      .populate({
-        path: 'hobbies',
-        populate: { path: 'image' }
-      })
-      .populate({
-        path: 'careerId',
-        populate: { path: 'image' }
-      });
+    );
 
-    if (!updatedUser) throw new Error('USER_NOT_FOUND');
-
-    const userObj = updatedUser.toObject();
-    userObj.album = await withDefaultAlbum(userObj.album);
-    return userObj;
+    const profile = await this.getProfile(userId);
+    return {
+      profile,
+      user: profile,
+      album: profile.album,
+      message: 'ALBUM_UPDATED'
+    };
   }
 
   public async uploadVideoVerification(userId: string, file: Express.Multer.File) {
