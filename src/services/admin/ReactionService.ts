@@ -9,7 +9,7 @@ export class ReactionService {
   constructor(
     @Inject() private cloudinaryService: CloudinaryService,
     @Inject() private mediaService: MediaService
-  ) {}
+  ) { }
 
   async createReaction(data: any, file?: any) {
     let gifUrl = data.gifUrl;
@@ -21,7 +21,7 @@ export class ReactionService {
         const media = await this.mediaService.createMedia({
           url: uploadResults[0].url,
           mimetype: uploadResults[0].mimetype || file.mimetype || 'image/gif',
-          type: 'image',
+          type: (uploadResults[0].type as any) || 'image',
           size: uploadResults[0].size || file.size,
           width: uploadResults[0].width,
           height: uploadResults[0].height,
@@ -113,7 +113,7 @@ export class ReactionService {
         const media = await this.mediaService.createMedia({
           url: uploadResults[0].url,
           mimetype: uploadResults[0].mimetype || file.mimetype || 'image/gif',
-          type: 'image',
+          type: (uploadResults[0].type as any) || 'image',
           size: uploadResults[0].size || file.size,
           width: uploadResults[0].width,
           height: uploadResults[0].height,
