@@ -20,8 +20,18 @@ export class ResponseWrapper {
       errorMessage = JSON.stringify(error);
     }
 
+    if (errorMessage.includes('DEVICE_BANNED')) {
+      return res.status(403).json({
+        success: false,
+        message: 'This device has been banned by admin. You cannot log in or register from this device.',
+        error: errorMessage,
+        isDeviceBanned: true,
+      });
+    }
+
     return res.status(code).json({
       success: false,
+      message: errorMessage,
       error: errorMessage,
     });
   }

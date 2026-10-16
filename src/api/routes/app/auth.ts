@@ -38,16 +38,25 @@ export default (router: Router) => {
      *       200:
      *         description: OTP sent successfully
      */
+    const getDeviceSignals = (req: Request) => {
+        const deviceId = (req.body.deviceId || req.headers['x-device-id'] || req.headers['device-id'] || '').toString().trim();
+        const deviceModel = (req.body.deviceModel || req.headers['x-device-model'] || '').toString().trim();
+        return { deviceId, deviceModel };
+    };
+
     router.post('/auth/send-otp',
         validate(sendOtpSchema, 'body'),
         async (req: Request, res: Response) => {
             try {
                 const { extension, mobile, countryId, countryCode, referredBy } = req.body;
+                const { deviceId, deviceModel } = getDeviceSignals(req);
                 const fullMobile = `${extension}${mobile}`;
                 await authService.userSendOTP(fullMobile, countryId, referredBy, {
                     countryCode,
                     extension,
                     ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, null, 'OTP sent successfully');
             } catch (error: any) {
@@ -87,8 +96,9 @@ export default (router: Router) => {
         async (req: Request, res: Response) => {
             try {
                 const { extension, mobile, otp } = req.body;
+                const { deviceId, deviceModel } = getDeviceSignals(req);
                 const fullMobile = `${extension}${mobile}`;
-                const result = await authService.userVerifyOTP(fullMobile, otp);
+                const result = await authService.userVerifyOTP(fullMobile, otp, deviceId, deviceModel);
                 return ResponseWrapper.success(res, result, 'OTP verified successfully');
             } catch (error: any) {
                 return ResponseWrapper.error(res, error);
@@ -135,6 +145,7 @@ export default (router: Router) => {
         async (req: Request, res: Response) => {
             try {
                 const { idToken, accessToken, email, name, googleId, photoUrl, countryId, countryCode, referredBy, extension } = req.body;
+                const { deviceId, deviceModel } = getDeviceSignals(req);
                 const result = await authService.googleAuth({
                     idToken,
                     accessToken,
@@ -147,6 +158,8 @@ export default (router: Router) => {
                     referredBy,
                     extension,
                     ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, result, 'Google authentication successful');
             } catch (error: any) {
@@ -192,6 +205,7 @@ export default (router: Router) => {
         async (req: Request, res: Response) => {
             try {
                 const { accessToken, email, name, facebookId, photoUrl, countryId, countryCode, referredBy, extension } = req.body;
+                const { deviceId, deviceModel } = getDeviceSignals(req);
                 const result = await authService.facebookAuth({
                     accessToken,
                     email,
@@ -203,6 +217,8 @@ export default (router: Router) => {
                     referredBy,
                     extension,
                     ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, result, 'Facebook authentication successful');
             } catch (error: any) {
@@ -258,6 +274,7 @@ export default (router: Router) => {
             const referredBy = req.body.referredBy || req.body.referralCode;
             const extension = req.body.extension;
             const ipCountry = countryCodeFromIpHeaders(req.headers) || undefined;
+            const { deviceId, deviceModel } = getDeviceSignals(req);
 
             if (provider === 'google') {
                 const result = await authService.googleAuth({
@@ -272,6 +289,8 @@ export default (router: Router) => {
                     referredBy,
                     extension,
                     ipCountry,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, result, 'Google authentication successful');
             } else if (provider === 'facebook') {
@@ -286,6 +305,8 @@ export default (router: Router) => {
                     referredBy,
                     extension,
                     ipCountry,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, result, 'Facebook authentication successful');
             } else if (provider === 'apple') {
@@ -301,6 +322,8 @@ export default (router: Router) => {
                     referredBy,
                     extension,
                     ipCountry,
+                    deviceId,
+                    deviceModel,
                 });
                 return ResponseWrapper.success(res, result, 'Apple authentication successful');
             } else {
@@ -321,6 +344,7 @@ export default (router: Router) => {
     router.post('/auth/apple', async (req: Request, res: Response) => {
         try {
             const { identityToken, idToken, authorizationCode, accessToken, email, name, appleId, photoUrl, countryId, countryCode, referredBy, extension } = req.body;
+            const { deviceId, deviceModel } = getDeviceSignals(req);
             const result = await authService.appleAuth({
                 identityToken: identityToken || idToken,
                 authorizationCode: authorizationCode || accessToken,
@@ -333,6 +357,8 @@ export default (router: Router) => {
                 referredBy,
                 extension,
                 ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
+                deviceId,
+                deviceModel,
             });
             return ResponseWrapper.success(res, result, 'Apple authentication successful');
         } catch (error: any) {

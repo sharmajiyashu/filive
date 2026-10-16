@@ -447,6 +447,31 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/users/account:
+   *   delete:
+   *     summary: Permanently delete current user account
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Account deleted successfully
+   */
+  const handleDeleteAccount = async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await userService.deleteAccount(userId);
+      return ResponseWrapper.success(res, result, 'Account deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  };
+
+  appRouter.delete('/account', handleDeleteAccount);
+  appRouter.post('/delete-account', handleDeleteAccount);
+
+  /**
+   * @swagger
    * /app/users/{id}:
    *   get:
    *     summary: Get user details

@@ -38,6 +38,17 @@ export class AppSettingService {
     party_room_banners: ['https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200'],
     recharge_offer_banners: ['https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200'],
     default_album_image_url: '',
+    // About Us & Legal Settings
+    about_us_title: 'About FiLive',
+    about_us_content: 'Welcome to FiLive – your premier live streaming, voice party, and social entertainment platform. Connect with talented creators, make real-time friends, participate in thrilling live rooms, and share your memorable moments across the globe.',
+    about_us_version: 'V_1.1.18.2025698',
+    company_name: 'FiLive Entertainment Private Limited',
+    official_website_url: 'https://filive-website.vercel.app',
+    terms_conditions_url: 'https://filive.app/terms',
+    privacy_policy_url: 'https://filive.app/privacy',
+    contact_us_email: 'support@filive.app',
+    contact_us_phone: '+91 98765 43210',
+    contact_us_address: 'FiLive Global Tech Park, Bangalore, India',
     // Connect With Us – Social Media Links
     social_facebook_url: '',
     social_instagram_url: '',

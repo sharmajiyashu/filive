@@ -670,6 +670,7 @@ export class UserService {
 
     return {
       users,
+      blockUser: users,
       pagination: {
         total,
         page,
@@ -677,6 +678,29 @@ export class UserService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  public async deleteAccount(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user ID');
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const timestamp = Date.now();
+    await User.findByIdAndUpdate(userId, {
+      isDeleted: true,
+      deletedAt: new Date(),
+      fcmTokens: [],
+      name: 'Deleted Account',
+      email: user.email ? `deleted_${timestamp}_${user.email}` : undefined,
+      mobile: user.mobile ? `deleted_${timestamp}_${user.mobile}` : undefined,
+      bio: '',
+    });
+
+    return { message: 'Account deleted successfully' };
   }
 
   public async unblockUser(blockerId: string, blockedId: string) {

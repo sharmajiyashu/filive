@@ -238,6 +238,10 @@ export class ProfileService {
     }
     if (data.privacySettings) {
       const user = await User.findById(userId);
+      const isVip = Boolean(user?.isVip || user?.isPremium);
+      if (!isVip) {
+        throw new Error('Privacy settings are an exclusive VIP feature. Please upgrade to VIP.');
+      }
       data.privacySettings = { ...user?.privacySettings, ...data.privacySettings };
     }
 
@@ -390,6 +394,10 @@ export class ProfileService {
       user.notificationPreferences = { ...user.notificationPreferences, ...data.notificationPreferences };
     }
     if (data.privacySettings) {
+      const isVip = Boolean(user.isVip || user.isPremium);
+      if (!isVip) {
+        throw new Error('Privacy settings are an exclusive VIP feature. Please upgrade to VIP.');
+      }
       user.privacySettings = { ...user.privacySettings, ...data.privacySettings };
     }
 

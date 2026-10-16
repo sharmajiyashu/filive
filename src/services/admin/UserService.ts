@@ -1,6 +1,7 @@
 import { Service, Container, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
+import { BannedDevice } from '../../models/BannedDevice';
 import AgencyHost from '../../models/AgencyHost';
 import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
@@ -550,6 +551,8 @@ export class UserService {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
+    const deviceId = (user.deviceId || '').trim();
+
     user.isBlocked = false;
     user.blockedUntil = undefined;
     user.blockReason = undefined;
@@ -557,6 +560,11 @@ export class UserService {
     user.deviceBan = false;
 
     await user.save();
+
+    if (deviceId) {
+      await BannedDevice.updateMany({ deviceId }, { isActive: false });
+    }
+
     const notified = await this.notifyAccountUnblocked(user);
     return this.buildRestrictionResult(user, 'none', notified);
   }
@@ -586,21 +594,91 @@ export class UserService {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
     user.deviceBan = !user.deviceBan;
+    const deviceId = (user.deviceId || '').trim();
+
     if (user.deviceBan) {
       user.isBlocked = true;
       user.blockReason = 'Device Banned by Admin';
       user.blockedUntil = undefined;
       await user.save();
+
+      if (deviceId) {
+        await BannedDevice.findOneAndUpdate(
+          { deviceId },
+          {
+            deviceId,
+            bannedByUserId: user._id,
+            reason: 'Device Banned by Admin',
+            deviceModel: user.deviceModel,
+            isActive: true,
+          },
+          { upsert: true, new: true }
+        );
+
+        // Cascade device ban to any other user accounts on this device
+        await User.updateMany(
+          { deviceId, _id: { $ne: user._id } },
+          { deviceBan: true, isBlocked: true, blockReason: 'Device Banned by Admin' }
+        );
+      }
+
       const notified = await this.notifyAccountBlocked(user, 'device_ban');
       return this.buildRestrictionResult(user, 'device_ban', notified);
     }
 
+    // Unban device
     user.isBlocked = false;
     user.blockedUntil = undefined;
     user.blockReason = undefined;
     await user.save();
+
+    if (deviceId) {
+      await BannedDevice.updateMany({ deviceId }, { isActive: false });
+      await User.updateMany(
+        { deviceId, blockReason: 'Device Banned by Admin' },
+        { deviceBan: false, isBlocked: false, blockReason: undefined }
+      );
+    }
+
     const notified = await this.notifyAccountUnblocked(user);
     return this.buildRestrictionResult(user, 'none', notified);
+  }
+
+  public async getBannedDevices(): Promise<any[]> {
+    return BannedDevice.find({ isActive: true })
+      .populate('bannedByUserId', 'name mobile email userId profileImage deviceModel')
+      .sort({ createdAt: -1 });
+  }
+
+  public async banDeviceDirectly(deviceId: string, reason?: string): Promise<any> {
+    const trimmed = (deviceId || '').trim();
+    if (!trimmed) throw new Error('DEVICE_ID_REQUIRED');
+
+    const record = await BannedDevice.findOneAndUpdate(
+      { deviceId: trimmed },
+      { deviceId: trimmed, reason: reason || 'Device Banned by Admin', isActive: true },
+      { upsert: true, new: true }
+    );
+
+    await User.updateMany(
+      { deviceId: trimmed },
+      { deviceBan: true, isBlocked: true, blockReason: reason || 'Device Banned by Admin' }
+    );
+
+    return record;
+  }
+
+  public async unbanDeviceDirectly(deviceId: string): Promise<any> {
+    const trimmed = (deviceId || '').trim();
+    if (!trimmed) throw new Error('DEVICE_ID_REQUIRED');
+
+    await BannedDevice.updateMany({ deviceId: trimmed }, { isActive: false });
+    await User.updateMany(
+      { deviceId: trimmed, blockReason: 'Device Banned by Admin' },
+      { deviceBan: false, isBlocked: false, blockReason: undefined }
+    );
+
+    return { success: true, message: 'Device unbanned successfully' };
   }
 
   public async toggleUserBlock(userId: string): Promise<RestrictionNotifyResult> {

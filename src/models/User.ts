@@ -104,6 +104,8 @@ export interface IUser extends Document {
   referCode?: string;
   instantBlock: boolean;
   deviceBan: boolean;
+  deviceId?: string;
+  deviceModel?: string;
   blockReason?: string;
   blockedUntil?: Date;
   authProvider?: 'phone' | 'email' | 'google' | 'facebook' | 'apple';
@@ -111,6 +113,8 @@ export interface IUser extends Document {
   facebookId?: string;
   appleId?: string;
   socialProfile?: any;
+  isDeleted?: boolean;
+  deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -227,6 +231,8 @@ const UserSchema: Schema = new Schema(
     referCode: { type: String, sparse: true },
     instantBlock: { type: Boolean, default: false },
     deviceBan: { type: Boolean, default: false },
+    deviceId: { type: String, index: true },
+    deviceModel: { type: String },
     blockReason: { type: String },
     blockedUntil: { type: Date },
     authProvider: { type: String, enum: ['phone', 'email', 'google', 'facebook', 'apple'], default: 'phone' },
@@ -234,6 +240,8 @@ const UserSchema: Schema = new Schema(
     facebookId: { type: String, sparse: true, index: true },
     appleId: { type: String, sparse: true, index: true },
     socialProfile: { type: Schema.Types.Mixed },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   {
     timestamps: true,

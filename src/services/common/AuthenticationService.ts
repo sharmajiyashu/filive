@@ -2,6 +2,7 @@ import { Container, Inject, Service } from "typedi";
 import mongoose from "mongoose";
 import axios from "axios";
 import User, { IUser } from '../../models/User';
+import { BannedDevice } from '../../models/BannedDevice';
 import Follow from '../../models/Follow';
 import bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
@@ -33,10 +34,51 @@ export class AuthenticationService {
         return jwt.sign(payload, secret, { expiresIn: '36500d' }) as string;
     }
 
-    /** Auto-clears expired temporary blocks; throws ACCOUNT_BLOCKED for active restrictions (app users only). */
-    private async assertUserNotBlocked(user: IUser): Promise<IUser> {
+    /**
+     * Checks if the device is banned in BannedDevice collection or across users.
+     * Throws DEVICE_BANNED error if device is banned.
+     */
+    public async assertDeviceNotBanned(deviceId?: string): Promise<void> {
+        if (!deviceId || typeof deviceId !== 'string') return;
+        const trimmed = deviceId.trim();
+        if (!trimmed) return;
+
+        const bannedRecord = await BannedDevice.findOne({ deviceId: trimmed, isActive: true });
+        if (bannedRecord) {
+            throw new Error(`DEVICE_BANNED: This device has been banned from accessing FiLive (${bannedRecord.reason || 'Device Banned by Admin'}). You cannot create accounts or log in from this device.`);
+        }
+
+        const bannedUser = await User.findOne({ deviceId: trimmed, deviceBan: true });
+        if (bannedUser) {
+            await BannedDevice.findOneAndUpdate(
+                { deviceId: trimmed },
+                { deviceId: trimmed, bannedByUserId: bannedUser._id, isActive: true, reason: 'Device Banned by Admin' },
+                { upsert: true }
+            );
+            throw new Error(`DEVICE_BANNED: This device has been banned from accessing FiLive. You cannot create accounts or log in from this device.`);
+        }
+    }
+
+    /** Auto-clears expired temporary blocks; throws ACCOUNT_BLOCKED or DEVICE_BANNED for active restrictions (app users only). */
+    private async assertUserNotBlocked(user: IUser, incomingDeviceId?: string): Promise<IUser> {
         if (!user || user.userRole !== 'user') {
             return user;
+        }
+
+        const deviceToCheck = incomingDeviceId || user.deviceId;
+        if (deviceToCheck) {
+            await this.assertDeviceNotBanned(deviceToCheck);
+        }
+
+        if (user.deviceBan) {
+            if (deviceToCheck) {
+                await BannedDevice.findOneAndUpdate(
+                    { deviceId: deviceToCheck.trim() },
+                    { deviceId: deviceToCheck.trim(), bannedByUserId: user._id, isActive: true, reason: 'Device Banned by Admin' },
+                    { upsert: true }
+                );
+            }
+            throw new Error(`DEVICE_BANNED: Your device has been banned from accessing FiLive (${user.blockReason || 'Device Banned by Admin'}). You cannot log in or register.`);
         }
 
         if (!user.isBlocked) {
@@ -231,9 +273,16 @@ export class AuthenticationService {
         mobile: string,
         countryId?: string,
         referredBy?: string,
-        extras?: { countryCode?: string; extension?: string; ipCountry?: string }
+        extras?: { countryCode?: string; extension?: string; ipCountry?: string; deviceId?: string; deviceModel?: string }
     ): Promise<{ otp: string }> {
+        if (extras?.deviceId) {
+            await this.assertDeviceNotBanned(extras.deviceId);
+        }
+
         let user = await User.findOne({ mobile });
+        if (user) {
+            await this.assertUserNotBlocked(user, extras?.deviceId);
+        }
 
         const otp = this.generateOTP(4);
         const otpExpires = addMinutes(new Date(), CONSTANTS.OTP_EXPIRY_MINUTES);
@@ -277,6 +326,8 @@ export class AuthenticationService {
                 otpExpires,
                 userRole: 'user',
                 authProvider: 'phone',
+                deviceId: extras?.deviceId,
+                deviceModel: extras?.deviceModel,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country || fallbackCode,
                 countryCode: fallbackCode,
@@ -288,6 +339,12 @@ export class AuthenticationService {
             // Update existing user with new OTP
             user.otp = otp;
             user.otpExpires = otpExpires;
+            if (extras?.deviceId) {
+                user.deviceId = extras.deviceId;
+            }
+            if (extras?.deviceModel) {
+                user.deviceModel = extras.deviceModel;
+            }
             const fallbackCode = extras?.countryCode || resolvedCountry?.country || isoFromDialCode(extras?.extension) || undefined;
             if (!user.countryId && resolvedCountry?.countryId) {
                 user.countryId = resolvedCountry.countryId;
@@ -310,7 +367,16 @@ export class AuthenticationService {
         return { otp }; // Return for testing/dev purposes if needed
     }
 
-    async userVerifyOTP(mobile: string, otp: string): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+    async userVerifyOTP(
+        mobile: string,
+        otp: string,
+        deviceId?: string,
+        deviceModel?: string
+    ): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        if (deviceId) {
+            await this.assertDeviceNotBanned(deviceId);
+        }
+
         const user = await User.findOne({
             mobile,
             otp,
@@ -321,7 +387,7 @@ export class AuthenticationService {
             throw new Error('Invalid or expired OTP');
         }
 
-        await this.assertUserNotBlocked(user);
+        await this.assertUserNotBlocked(user, deviceId);
 
         // Clear OTP after successful verification
         const isNewUserVerification = !!user.referredBy;
@@ -332,6 +398,12 @@ export class AuthenticationService {
         user.otpExpires = undefined;
         user.referredBy = undefined; // Process only once
         user.lastLoginAt = new Date();
+        if (deviceId) {
+            user.deviceId = deviceId;
+        }
+        if (deviceModel) {
+            user.deviceModel = deviceModel;
+        }
         await user.save();
 
         if (isNewUserVerification && referrerId) {
@@ -481,7 +553,13 @@ export class AuthenticationService {
         referredBy?: string;
         extension?: string;
         ipCountry?: string;
+        deviceId?: string;
+        deviceModel?: string;
     }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        if (payload.deviceId) {
+            await this.assertDeviceNotBanned(payload.deviceId);
+        }
+
         const settings = await this.appSettingService.getSettings();
         if (settings.google_login_enabled === false) {
             throw new Error('Google login is currently disabled by administrator');
@@ -564,10 +642,15 @@ export class AuthenticationService {
         let isNewUser = false;
 
         if (user) {
-            await this.assertUserNotBlocked(user);
+            await this.assertUserNotBlocked(user, payload.deviceId);
 
             // Update user details if needed
             let hasChanges = false;
+            if (payload.deviceId && (!user.deviceId || user.deviceId !== payload.deviceId)) {
+                user.deviceId = payload.deviceId;
+                if (payload.deviceModel) user.deviceModel = payload.deviceModel;
+                hasChanges = true;
+            }
             if (resolvedGoogleId && !user.googleId) {
                 user.googleId = resolvedGoogleId;
                 hasChanges = true;
@@ -627,6 +710,8 @@ export class AuthenticationService {
                 googleId: resolvedGoogleId,
                 authProvider: 'google',
                 userRole: 'user',
+                deviceId: payload.deviceId,
+                deviceModel: payload.deviceModel,
                 isVerified: true,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
@@ -686,7 +771,13 @@ export class AuthenticationService {
         referredBy?: string;
         extension?: string;
         ipCountry?: string;
+        deviceId?: string;
+        deviceModel?: string;
     }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        if (payload.deviceId) {
+            await this.assertDeviceNotBanned(payload.deviceId);
+        }
+
         const settings = await this.appSettingService.getSettings();
         if (settings.facebook_login_enabled === false) {
             throw new Error('Facebook login is currently disabled by administrator');
@@ -737,10 +828,15 @@ export class AuthenticationService {
         let isNewUser = false;
 
         if (user) {
-            await this.assertUserNotBlocked(user);
+            await this.assertUserNotBlocked(user, payload.deviceId);
 
             // Update user details if needed
             let hasChanges = false;
+            if (payload.deviceId && (!user.deviceId || user.deviceId !== payload.deviceId)) {
+                user.deviceId = payload.deviceId;
+                if (payload.deviceModel) user.deviceModel = payload.deviceModel;
+                hasChanges = true;
+            }
             if (resolvedFacebookId && !user.facebookId) {
                 user.facebookId = resolvedFacebookId;
                 hasChanges = true;
@@ -800,6 +896,8 @@ export class AuthenticationService {
                 facebookId: resolvedFacebookId,
                 authProvider: 'facebook',
                 userRole: 'user',
+                deviceId: payload.deviceId,
+                deviceModel: payload.deviceModel,
                 isVerified: true,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
@@ -860,7 +958,13 @@ export class AuthenticationService {
         referredBy?: string;
         extension?: string;
         ipCountry?: string;
+        deviceId?: string;
+        deviceModel?: string;
     }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        if (payload.deviceId) {
+            await this.assertDeviceNotBanned(payload.deviceId);
+        }
+
         let resolvedAppleId = payload.appleId;
         let resolvedEmail = payload.email?.toLowerCase().trim();
         let resolvedName = payload.name;
@@ -903,8 +1007,12 @@ export class AuthenticationService {
         let isNewUser = false;
 
         if (user) {
-            await this.assertUserNotBlocked(user);
+            await this.assertUserNotBlocked(user, payload.deviceId);
 
+            if (payload.deviceId && (!user.deviceId || user.deviceId !== payload.deviceId)) {
+                user.deviceId = payload.deviceId;
+                if (payload.deviceModel) user.deviceModel = payload.deviceModel;
+            }
             if (resolvedAppleId && !user.appleId) {
                 user.appleId = resolvedAppleId;
             }
@@ -955,6 +1063,8 @@ export class AuthenticationService {
                 appleId: resolvedAppleId,
                 authProvider: 'apple',
                 userRole: 'user',
+                deviceId: payload.deviceId,
+                deviceModel: payload.deviceModel,
                 isVerified: true,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,

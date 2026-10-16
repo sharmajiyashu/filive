@@ -138,6 +138,35 @@ export default (router: Router) => {
     }
   });
 
+  userRouter.get('/banned-devices', async (req: any, res: Response) => {
+    try {
+      const devices = await userService.getBannedDevices();
+      return ResponseWrapper.success(res, devices, 'Banned devices fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.post('/banned-devices', async (req: any, res: Response) => {
+    try {
+      const { deviceId, reason } = req.body;
+      const result = await userService.banDeviceDirectly(deviceId, reason);
+      return ResponseWrapper.success(res, result, 'Device banned successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  userRouter.delete('/banned-devices/:deviceId', async (req: any, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const result = await userService.unbanDeviceDirectly(deviceId);
+      return ResponseWrapper.success(res, result, 'Device unbanned successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   userRouter.post('/:id/send-notification', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
