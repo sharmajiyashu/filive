@@ -6,6 +6,7 @@ import Room from '../../models/Room';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import Container from 'typedi';
+import { CallService } from '../../services/app/CallService';
 import AppLogger from '../loaders/logger';
 import { emitSocketError } from '../../utils/socketResponse';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
@@ -28,6 +29,7 @@ const publicChatDisabledRooms = new Set<string>();
 export default (socket: AuthenticatedSocket, io: Server) => {
   const liveStreamService = Container.get(LiveStreamService);
   const giftService = Container.get(GiftService);
+  const callService = Container.get(CallService);
 
   if (!socket.user) {
     return;
@@ -169,6 +171,10 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       AppLogger.info(`[Socket Event: leave_room/leave_live] Calling liveStreamService.leaveLiveStream for userId=${userId}, channelName=${channelName}`);
       const liveStream = await liveStreamService.leaveLiveStream(userId, channelName);
       AppLogger.info(`[Socket Event: leave_room/leave_live] liveStreamService.leaveLiveStream returned. Is stream found? ${!!liveStream}`);
+
+      try {
+        await callService.endUserActiveCalls(userId, 'left_live_room');
+      } catch (_) {}
 
       AppLogger.info(`[Socket Event: leave_room/leave_live] Fetching User details for leave broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)

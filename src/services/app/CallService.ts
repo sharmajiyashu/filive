@@ -281,7 +281,8 @@ export class CallService {
 
     // 3. Check if caller or receiver is already in a call (busy status)
     if (await this.isUserBusy(callerId)) {
-      throw new Error('You are already in another call');
+      AppLogger.info(`[CallService: initiateCall] Caller ${callerId} had an unfinished active call. Auto-ending it.`);
+      await this.endUserActiveCalls(callerId, 'new_call_initiated');
     }
     if (await this.isUserBusy(receiverId)) {
       throw new Error('User is busy on another call');
@@ -322,8 +323,8 @@ export class CallService {
    * Returns true if the user is in an initiated or accepted call.
    */
   public async isUserBusy(userId: string): Promise<boolean> {
-    const ringTimeoutCutoff = new Date(Date.now() - 60 * 1000);
-    const staleAcceptedCutoff = new Date(Date.now() - 2 * 3600 * 1000); // 2 hours
+    const ringTimeoutCutoff = new Date(Date.now() - 30 * 1000);
+    const staleAcceptedCutoff = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes
     try {
       await Call.updateMany(
         {
@@ -354,6 +355,34 @@ export class CallService {
       ],
     }).select('_id');
     return !!activeCall;
+  }
+
+  /**
+   * Terminate any dangling initiated or accepted calls for a user.
+   */
+  public async endUserActiveCalls(userId: string, reason: string = 'ended_by_user'): Promise<void> {
+    try {
+      const activeCalls = await Call.find({
+        $or: [
+          { callerId: new mongoose.Types.ObjectId(userId) },
+          { receiverId: new mongoose.Types.ObjectId(userId) },
+        ],
+        status: { $in: ['initiated', 'accepted'] },
+      });
+
+      for (const call of activeCalls) {
+        try {
+          await this.endCall(userId, call._id.toString());
+        } catch (_) {
+          await Call.findByIdAndUpdate(call._id, {
+            status: 'ended',
+            endedAt: new Date(),
+          });
+        }
+      }
+    } catch (e: any) {
+      AppLogger.warn(`[CallService: endUserActiveCalls] Error ending active calls for user ${userId}: ${e.message}`);
+    }
   }
 
   /**
@@ -389,10 +418,12 @@ export class CallService {
     }
 
     if (await this.isUserBusy(callerId)) {
-      throw new Error('You are already in another call');
+      AppLogger.info(`[CallService: createInstantMatchedCall] Caller ${callerId} had active call. Auto-ending it.`);
+      await this.endUserActiveCalls(callerId, 'instant_match');
     }
     if (await this.isUserBusy(receiverId)) {
-      throw new Error('User is busy on another call');
+      AppLogger.info(`[CallService: createInstantMatchedCall] Receiver ${receiverId} had active call. Auto-ending it.`);
+      await this.endUserActiveCalls(receiverId, 'instant_match_supersede');
     }
 
     const callId = new mongoose.Types.ObjectId();

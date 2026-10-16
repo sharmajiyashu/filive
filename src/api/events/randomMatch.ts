@@ -52,7 +52,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   socket.on('leave_random_match', async (data?: any, callback?: any) => {
     AppLogger.info(`[Socket Event: leave_random_match] userId=${userId}`);
     try {
-      const left = randomMatchService.leaveRandomMatch(userId, io);
+      const left = await randomMatchService.leaveRandomMatch(userId, io);
       if (!left) {
         socket.emit('random_match_left', {
           callType: null,

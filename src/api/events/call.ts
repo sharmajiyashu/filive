@@ -220,6 +220,19 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
+  // End all active calls for current user
+  socket.on('end_all_calls', async (data?: any, callback?: any) => {
+    AppLogger.info(`[Socket Event: end_all_calls] userId=${userId}`);
+    try {
+      await callService.endUserActiveCalls(userId, 'user_requested_end_all');
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'end_all_calls' });
+      }
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: end_all_calls] Error for user ${userId}: ${error.message}`);
+    }
+  });
+
   // 5. Send Gift inside Call context
   socket.on('send_gift_in_call', async (data: { callId: string; giftId: string; quantity?: number }, callback?: any) => {
     AppLogger.info(`[Socket Event: send_gift_in_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);

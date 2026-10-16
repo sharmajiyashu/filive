@@ -36,6 +36,14 @@ export class UserService {
     let query: any = {
       userRole: 'user',
       gender: { $regex: /^female$/i },
+      $and: [
+        {
+          $or: [
+            { enableVoiceCall: true },
+            { enableVideoCall: true }
+          ]
+        }
+      ]
     };
 
     if (currentUserId) {

@@ -68,15 +68,16 @@ export class RandomMatchService {
     }
 
     if (this.callerIndex.has(callerId)) {
-      throw new Error('You are already searching for a random match');
+      this.removeCallerFromQueue(callerId, this.callerIndex.get(callerId)!);
     }
 
     if (this.availableHosts.has(callerId)) {
-      throw new Error('Turn off random call availability before searching as a caller');
+      this.availableHosts.delete(callerId);
     }
 
     if (await this.callService.isUserBusy(callerId)) {
-      throw new Error('You are already in another call');
+      AppLogger.info(`[RandomMatchService: joinRandomMatch] Caller ${callerId} had hanging active call. Auto-ending it.`);
+      await this.callService.endUserActiveCalls(callerId, 'new_random_match');
     }
 
     const caller = await User.findById(callerId).select('coins');
@@ -111,15 +112,17 @@ export class RandomMatchService {
   /**
    * Caller leaves the search queue (home leave / cancel).
    */
-  public leaveRandomMatch(callerId: string, io?: Server): boolean {
+  public async leaveRandomMatch(callerId: string, io?: Server): Promise<boolean> {
     const callType = this.callerIndex.get(callerId);
-    if (!callType) return false;
+    if (callType) {
+      this.removeCallerFromQueue(callerId, callType);
+    }
 
-    this.removeCallerFromQueue(callerId, callType);
+    await this.callService.endUserActiveCalls(callerId, 'cancelled_random_match');
 
     if (io) {
       io.to(`user_${callerId}`).emit('random_match_left', {
-        callType,
+        callType: callType || null,
         success: true,
         type: 'random_match_left'
       });
