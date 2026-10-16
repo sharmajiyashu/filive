@@ -10,6 +10,7 @@ import Chat from '../../models/Chat';
 import Room from '../../models/Room';
 import Call from '../../models/Call';
 import FamilyMember from '../../models/FamilyMember';
+import Family from '../../models/Family';
 import Country from '../../models/Country';
 import mongoose from 'mongoose';
 import { ensureUserReferralCode } from '../../utils/referral';
@@ -453,11 +454,14 @@ export class UserService {
     }
 
     // Check if the user has an active livestream or party room
-    const activeLive = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'livestream' });
-    const activeParty = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'party_room' });
+    const activeLive = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'livestream' }).populate('roomPhoto');
+    let activeParty = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'party_room' }).populate('roomPhoto');
+    if (!activeParty) {
+      activeParty = await Room.findOne({ hostId: user._id, roomType: 'party_room' }).sort({ updatedAt: -1 }).populate('roomPhoto');
+    }
 
     // Fetch user's family membership details
-    const familyMemberDoc = await FamilyMember.findOne({ userId: user._id })
+    let familyMemberDoc = await FamilyMember.findOne({ userId: user._id })
       .populate({
         path: 'familyId',
         populate: [
@@ -466,8 +470,18 @@ export class UserService {
         ]
       });
 
-    const family = familyMemberDoc && familyMemberDoc.familyId ? familyMemberDoc.familyId : null;
-    const familyRole = familyMemberDoc ? familyMemberDoc.role : null;
+    let family: any = familyMemberDoc && familyMemberDoc.familyId ? familyMemberDoc.familyId : null;
+    let familyRole: any = familyMemberDoc ? familyMemberDoc.role : null;
+
+    if (!family) {
+      const createdFamily = await Family.findOne({ creatorId: user._id })
+        .populate({ path: 'creatorId', select: 'name email profileImage userId' })
+        .populate('image');
+      if (createdFamily) {
+        family = createdFamily;
+        familyRole = 'creator';
+      }
+    }
 
     // Fetch user's joined group chats
     const groupChats = await Chat.find({
@@ -537,6 +551,10 @@ export class UserService {
       enableVideoCall,
       family,
       familyRole,
+      isLive: !!activeLive,
+      liveStream: activeLive ? activeLive.toObject() : null,
+      partyRoom: activeParty ? activeParty.toObject() : null,
+      activePartyRoom: activeParty ? activeParty.toObject() : null,
       groups: groupChats,
       richLevelInfo,
       charmLevelInfo,

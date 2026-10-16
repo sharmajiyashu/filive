@@ -14,6 +14,9 @@ import UserVisitor from '../../models/UserVisitor';
 import AgencyHost from '../../models/AgencyHost';
 import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
+import FamilyMember from '../../models/FamilyMember';
+import Family from '../../models/Family';
+import Room from '../../models/Room';
 import { applyProfileDefaultsWithAlbum, withDefaultAlbum } from './profileDefaults';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
@@ -100,6 +103,34 @@ export class ProfileService {
     const rewardSetting = await AppSetting.findOne({ key: 'invite_reward_coins' });
     const inviteRewardCoins = rewardSetting ? Number(rewardSetting.value) : 2000;
 
+    let familyMemberDoc: any = await FamilyMember.findOne({ userId })
+      .populate({
+        path: 'familyId',
+        populate: [
+          { path: 'creatorId', select: 'name email profileImage userId' },
+          { path: 'image' }
+        ]
+      });
+
+    let family: any = familyMemberDoc && familyMemberDoc.familyId ? familyMemberDoc.familyId : null;
+    let familyRole: any = familyMemberDoc ? familyMemberDoc.role : null;
+
+    if (!family) {
+      const createdFamily = await Family.findOne({ creatorId: userId })
+        .populate({ path: 'creatorId', select: 'name email profileImage userId' })
+        .populate('image');
+      if (createdFamily) {
+        family = createdFamily;
+        familyRole = 'creator';
+      }
+    }
+
+    const activeLive = await Room.findOne({ hostId: userId, status: 'live', roomType: 'livestream' }).populate('roomPhoto');
+    let activeParty: any = await Room.findOne({ hostId: userId, status: 'live', roomType: 'party_room' }).populate('roomPhoto');
+    if (!activeParty) {
+      activeParty = await Room.findOne({ hostId: userId, roomType: 'party_room' }).sort({ updatedAt: -1 }).populate('roomPhoto');
+    }
+
     return {
       ...profileData,
       referralCode,
@@ -118,6 +149,12 @@ export class ProfileService {
       isAgencyHost,
       isBecomeHost,
       becomeHostMessage,
+      family,
+      familyRole,
+      isLive: !!activeLive,
+      liveStream: activeLive ? (typeof (activeLive as any).toObject === 'function' ? (activeLive as any).toObject() : activeLive) : null,
+      partyRoom: activeParty ? (typeof activeParty.toObject === 'function' ? activeParty.toObject() : activeParty) : null,
+      activePartyRoom: activeParty ? (typeof activeParty.toObject === 'function' ? activeParty.toObject() : activeParty) : null,
     };
   }
 
