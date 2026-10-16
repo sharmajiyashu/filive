@@ -23,6 +23,8 @@ interface LiveCommentData {
   message: string;
 }
 
+const publicChatDisabledRooms = new Set<string>();
+
 export default (socket: AuthenticatedSocket, io: Server) => {
   const liveStreamService = Container.get(LiveStreamService);
   const giftService = Container.get(GiftService);
@@ -242,6 +244,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
+      // Check if public chat is disabled for this room
+      if (publicChatDisabledRooms.has(channelName)) {
+        const isHost = liveStream && liveStream.hostId && liveStream.hostId.toString() === userId;
+        if (!isHost) {
+          emitSocketError(socket, 'room_comment', 'Public chat is disabled in this room', 'Action forbidden', 'PUBLIC_CHAT_DISABLED', callback);
+          return;
+        }
+      }
+
       if (liveStream) {
         await Room.updateOne({ _id: liveStream._id }, { $inc: { commentCount: 1 } });
       }
@@ -340,6 +351,32 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: stop_music] Error for user ${userId}: ${error.message}`);
       emitSocketError(socket, 'stop_music', error, 'Failed to stop music', undefined, callback);
+    }
+  });
+
+  // Toggle Public Chat event
+  socket.on('toggle_public_chat', async (data: { channelName: string; enabled: boolean }, callback?: any) => {
+    AppLogger.info(`[Socket Event: toggle_public_chat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
+    try {
+      const { channelName, enabled } = data || {};
+      if (!channelName) {
+        emitSocketError(socket, 'toggle_public_chat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      if (!enabled) {
+        publicChatDisabledRooms.add(channelName);
+      } else {
+        publicChatDisabledRooms.delete(channelName);
+      }
+      const payload = { success: true, channelName, enabled: !!enabled, senderId: userId };
+      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('public_chat_toggled', payload);
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'toggle_public_chat', data: payload });
+      }
+      AppLogger.info(`[Socket Event: toggle_public_chat] Broadcasted public_chat_toggled=${enabled} to live_${channelName}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: toggle_public_chat] Error for user ${userId}: ${error.message}`);
+      emitSocketError(socket, 'toggle_public_chat', error, 'Failed to toggle public chat', undefined, callback);
     }
   });
 
