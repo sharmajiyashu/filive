@@ -8,6 +8,7 @@ import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
 import Career from '../../models/Career';
 import Hobby from '../../models/Hobby';
+import Country from '../../models/Country';
 import { LevelService } from './LevelService';
 import UserVisitor from '../../models/UserVisitor';
 import AgencyHost from '../../models/AgencyHost';
@@ -360,12 +361,13 @@ export class ProfileService {
   }
 
   public async getProfileSettings() {
-    const [careers, settings, hobbies] = await Promise.all([
+    const [careers, settings, hobbies, countries] = await Promise.all([
       Career.find({ isActive: true }).populate('image').sort({ name: 1 }),
       require('../../models/AppSetting').default.find({
         key: { $in: ['marital_statuses', 'height_options', 'weight_options'] }
       }),
-      Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 })
+      Hobby.find({ isActive: true }).populate('image').sort({ type: 1, name: 1 }),
+      Country.find({ isActive: true }).sort({ name: 1 })
     ]);
 
     const maritalStatuses = settings.find((s: any) => s.key === 'marital_statuses')?.value || [
@@ -380,7 +382,8 @@ export class ProfileService {
       maritalStatuses,
       hobbies,
       heightOptions,
-      weightOptions
+      weightOptions,
+      countries
     };
   }
 
