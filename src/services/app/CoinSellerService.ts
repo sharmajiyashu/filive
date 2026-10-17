@@ -22,7 +22,7 @@ export class CoinSellerService {
   ) { }
 
 
-  async transferCoins(senderId: string, targetUserId: number, amount: number) {
+  async transferCoins(senderId: string, targetUserId: number, amount: number, salesMethodRaw?: string) {
     if (!amount || amount <= 0) {
       throw new Error('Transfer amount must be greater than zero');
     }
@@ -41,83 +41,214 @@ export class CoinSellerService {
 
     const target = await User.findOne({ userId: targetUserId }).populate('profileImage');
     if (!target) {
-      throw new Error('Recipient user with specified ID not found');
+      throw new Error(`Recipient user with ID ${targetUserId} not found`);
     }
 
-    if (target._id.toString() === senderId) {
-      throw new Error('You cannot transfer coins to yourself');
+    const isSelf = target._id.toString() === senderId;
+    const salesMethod = (salesMethodRaw || (isSelf ? 'user' : (target.isCoinseller ? 'coinseller' : 'user'))).toLowerCase().trim();
+
+    if (isSelf && salesMethod === 'coinseller') {
+      throw new Error('You cannot transfer coin seller stock to your own coin seller balance. Select "User" to recharge your personal coin wallet.');
     }
+
+    const isTargetCoinseller = Boolean(target.isCoinseller);
+    if (salesMethod === 'coinseller' && !isTargetCoinseller) {
+      throw new Error(`User ${target.name || ''} (ID: ${target.userId}) is not a registered Coin Seller. Please select "User" to transfer to their personal coin wallet.`);
+    }
+
+    const isCoinsellerTransfer = salesMethod === 'coinseller' && isTargetCoinseller && !isSelf;
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
+    let updatedSender: any;
+    let updatedTarget: any;
+
     try {
-      const isTargetCoinseller = Boolean(target.isCoinseller);
-      const recipientField = isTargetCoinseller ? 'coinSellerCoins' : 'coins';
-      const recipientWallet = isTargetCoinseller ? 'coinSellerCoins' : 'coins';
+      // 1. Deduct from sender's coinSellerCoins
+      updatedSender = await User.findByIdAndUpdate(
+        senderId,
+        { $inc: { coinSellerCoins: -amount } },
+        { session, new: true }
+      );
 
-      // Deduct from sender's coin seller coins
-      await User.findByIdAndUpdate(senderId, { $inc: { coinSellerCoins: -amount } }, { session });
+      // 2. Credit to recipient
+      if (isSelf) {
+        // Self-recharge: Credit personal wallet coins and wealthCoins
+        updatedSender = await User.findByIdAndUpdate(
+          senderId,
+          { $inc: { coins: amount, wealthCoins: amount } },
+          { session, new: true }
+        );
+        updatedTarget = updatedSender;
+      } else if (isCoinsellerTransfer) {
+        // Coin Seller to Coin Seller transfer: Credit target's coinSellerCoins
+        updatedTarget = await User.findByIdAndUpdate(
+          target._id,
+          { $inc: { coinSellerCoins: amount } },
+          { session, new: true }
+        );
+      } else {
+        // Coin Seller to User transfer: Credit target's personal coins and wealthCoins
+        updatedTarget = await User.findByIdAndUpdate(
+          target._id,
+          { $inc: { coins: amount, wealthCoins: amount } },
+          { session, new: true }
+        );
+      }
 
-      // Add to receiver: coinSellerCoins if receiver is coinseller, else coins
-      await User.findByIdAndUpdate(target._id, { $inc: { [recipientField]: amount } }, { session });
+      // 3. Create CoinHistory records
+      if (isSelf) {
+        // Seller wallet deduction
+        await CoinHistory.create([{
+          userId: sender._id,
+          amount: -amount,
+          type: 'transfer',
+          wallet: 'coinSellerCoins',
+          transferTarget: 'self',
+          paymentGateway: 'CoinSeller',
+          description: `Transferred ${amount} coins to own personal wallet`
+        }], { session });
 
-      // Add history record for sender
-      await CoinHistory.create([{
-        userId: sender._id,
-        relatedUserId: target._id,
-        amount: -amount,
-        type: 'transfer',
-        wallet: 'coinSellerCoins',
-        transferTarget: isTargetCoinseller ? 'coinseller' : 'user',
-        paymentGateway: 'CoinSeller',
-        description: `Transferred to ${isTargetCoinseller ? 'Coin Seller ' : ''}${target.name || 'User'} (ID: ${target.userId})`
-      }], { session });
+        // Personal wallet credit
+        await CoinHistory.create([{
+          userId: sender._id,
+          amount: amount,
+          type: 'transfer',
+          wallet: 'coins',
+          transferTarget: 'self',
+          paymentGateway: 'CoinSeller',
+          description: `Recharged ${amount} coins from own Coin Seller balance`
+        }], { session });
+      } else {
+        // Sender deduction
+        await CoinHistory.create([{
+          userId: sender._id,
+          relatedUserId: target._id,
+          amount: -amount,
+          type: 'transfer',
+          wallet: 'coinSellerCoins',
+          transferTarget: isCoinsellerTransfer ? 'coinseller' : 'user',
+          paymentGateway: 'CoinSeller',
+          description: `Transferred to ${isCoinsellerTransfer ? 'Coin Seller ' : 'User '}${target.name || 'User'} (ID: ${target.userId})`
+        }], { session });
 
-      // Add history record for receiver
-      await CoinHistory.create([{
-        userId: target._id,
-        relatedUserId: sender._id,
-        amount: amount,
-        type: 'transfer',
-        wallet: recipientWallet,
-        transferTarget: 'coinseller',
-        paymentGateway: 'CoinSeller',
-        description: `Received from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
-      }], { session });
+        // Target credit
+        await CoinHistory.create([{
+          userId: target._id,
+          relatedUserId: sender._id,
+          amount: amount,
+          type: 'transfer',
+          wallet: isCoinsellerTransfer ? 'coinSellerCoins' : 'coins',
+          transferTarget: 'coinseller',
+          paymentGateway: 'CoinSeller',
+          description: isCoinsellerTransfer
+            ? `Received ${amount} coins from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
+            : `Received ${amount} coins recharge from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
+        }], { session });
+      }
 
       await session.commitTransaction();
-      return {
-        success: true,
-        message: 'Coins transferred successfully',
-        transferredAmount: amount,
-        recipient: {
-          id: target._id,
-          userId: target.userId,
-          name: target.name,
-          email: target.email
-        },
-        user: {
-          id: target._id,
-          userId: target.userId,
-          name: target.name,
-          email: target.email,
-          profileImage: target.profileImage
-        },
-        coinSeller: {
-          id: sender._id,
-          userId: sender.userId,
-          name: sender.name,
-          email: sender.email,
-          profileImage: sender.profileImage
-        }
-      };
     } catch (error) {
       await session.abortTransaction();
       throw error;
     } finally {
       session.endSession();
     }
+
+    // Determine message & send system messages
+    let returnMessage = '';
+    if (isSelf) {
+      returnMessage = `Successfully transferred ${amount} coins to your personal wallet!`;
+      try {
+        await this.chatService.sendSystemMessage(
+          sender._id.toString(),
+          'Self Recharge Successful',
+          `🎉 Self Recharge Successful! You transferred ${amount} coins from your Coin Seller inventory to your personal wallet. Updated Wallet Balance: ${updatedSender?.coins || 0} Coins.`,
+          {
+            isRecharge: true,
+            amount,
+            fromUserId: sender.userId,
+            fromUserName: sender.name,
+            newBalance: updatedSender?.coins || 0,
+            wallet: 'coins',
+            isCoinseller: false,
+          }
+        );
+      } catch (e: any) {
+        console.warn(`[CoinSellerService] sendSystemMessage self error: ${e.message}`);
+      }
+    } else if (isCoinsellerTransfer) {
+      returnMessage = `Coins transferred successfully to Coin Seller ${target.name || 'User'} (ID: ${target.userId})`;
+      try {
+        await this.chatService.sendSystemMessage(
+          target._id.toString(),
+          'Coin Stock Received',
+          `🎉 Coin Stock Received! You have received ${amount} coins from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId}). Updated Coin Seller Balance: ${updatedTarget?.coinSellerCoins || 0} Coins.`,
+          {
+            isRecharge: true,
+            amount,
+            fromUserId: sender.userId,
+            fromUserName: sender.name,
+            newBalance: updatedTarget?.coinSellerCoins || 0,
+            wallet: 'coinSellerCoins',
+            isCoinseller: true,
+          }
+        );
+      } catch (e: any) {
+        console.warn(`[CoinSellerService] sendSystemMessage coinseller error: ${e.message}`);
+      }
+    } else {
+      returnMessage = `Coins transferred successfully to User ${target.name || 'User'} (ID: ${target.userId})`;
+      try {
+        await this.chatService.sendSystemMessage(
+          target._id.toString(),
+          'Coins Received',
+          `🎉 Recharge Successful! You have received ${amount} coins from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId}). Updated Wallet Balance: ${updatedTarget?.coins || 0} Coins.`,
+          {
+            isRecharge: true,
+            amount,
+            fromUserId: sender.userId,
+            fromUserName: sender.name,
+            newBalance: updatedTarget?.coins || 0,
+            wallet: 'coins',
+            isCoinseller: false,
+          }
+        );
+      } catch (e: any) {
+        console.warn(`[CoinSellerService] sendSystemMessage user error: ${e.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      message: returnMessage,
+      transferredAmount: amount,
+      isSelf,
+      isCoinsellerTransfer,
+      senderBalance: updatedSender?.coinSellerCoins,
+      recipientBalance: isCoinsellerTransfer ? updatedTarget?.coinSellerCoins : updatedTarget?.coins,
+      recipient: {
+        id: target._id,
+        userId: target.userId,
+        name: target.name,
+        email: target.email
+      },
+      user: {
+        id: target._id,
+        userId: target.userId,
+        name: target.name,
+        email: target.email,
+        profileImage: target.profileImage
+      },
+      coinSeller: {
+        id: sender._id,
+        userId: sender.userId,
+        name: sender.name,
+        email: sender.email,
+        profileImage: sender.profileImage
+      }
+    };
   }
 
   async getSellerSalesHistory(sellerId: string, page: number = 1, limit: number = 20) {

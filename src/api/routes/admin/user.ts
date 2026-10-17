@@ -13,6 +13,7 @@ import { ResponseWrapper } from '../../responseWrapper';
 import { LevelService } from '../../../services/app/LevelService';
 import { UserService } from '../../../services/admin/UserService';
 import { LiveDataService } from '../../../services/app/LiveDataService';
+import { ChatService } from '../../../services/app/ChatService';
 import upload from '../../middleware/upload';
 import { CloudinaryService } from '../../../services/common/CloudinaryService';
 import { MediaService } from '../../../services/common/MediaService';
@@ -181,7 +182,15 @@ export default (router: Router) => {
     try {
       const userId = req.params.id;
       const { title, message } = req.body;
-      return ResponseWrapper.success(res, { userId, title, message, sent: true }, 'Announcement sent successfully');
+      if (!title || !message) {
+        return ResponseWrapper.error(res, new Error('Title and message are required'), 400);
+      }
+      const chatService = Container.get(ChatService);
+      const result = await chatService.sendSystemMessage(userId, title, message, {
+        isAnnouncement: true,
+        sentByAdmin: true
+      });
+      return ResponseWrapper.success(res, { userId, title, message, sent: true, result }, 'System message sent successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

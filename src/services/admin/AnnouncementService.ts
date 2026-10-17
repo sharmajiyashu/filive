@@ -28,21 +28,10 @@ export class AnnouncementService {
     io.to(room).emit(event, payload);
   }
 
-  /** Official sender for announcement chats — env SYSTEM_CHAT_USER_ID or first admin. */
+  /** Official sender for announcement chats — official system user. */
   private async resolveSystemSenderId(): Promise<string> {
-    const envId = process.env.SYSTEM_CHAT_USER_ID;
-    if (envId && mongoose.Types.ObjectId.isValid(envId)) {
-      const exists = await User.findById(envId).select('_id');
-      if (exists) return exists._id.toString();
-    }
-
-    const admin = await User.findOne({ userRole: 'admin' }).select('_id').sort({ createdAt: 1 });
-    if (!admin) {
-      throw new Error(
-        'SYSTEM_CHAT_USER_ID is not set and no admin user exists to send announcement chats'
-      );
-    }
-    return admin._id.toString();
+    const sysUser = await this.chatService.resolveSystemUser();
+    return sysUser._id.toString();
   }
 
   public async getSummary() {

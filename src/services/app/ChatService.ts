@@ -1,11 +1,13 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
+import { Server } from 'socket.io';
 import Chat from '../../models/Chat';
 import Message, { IAgencyHostInviteMetadata, toInviteFlag } from '../../models/Message';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import Block from '../../models/Block';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
+import AppLogger from '../../api/loaders/logger';
 
 @Service()
 export class ChatService {
@@ -117,6 +119,93 @@ export class ChatService {
     }
 
     return supportUser;
+  }
+
+  public getSocketIo(): Server | null {
+    try {
+      return Container.get('socket') as Server;
+    } catch {
+      return null;
+    }
+  }
+
+  public emitSocketEvent(event: string, room: string, payload: unknown) {
+    const io = this.getSocketIo();
+    if (!io) {
+      AppLogger.warn(`[ChatService] Socket unavailable, skipped event: ${event} room: ${room}`);
+      return;
+    }
+    io.to(room).emit(event, payload);
+  }
+
+  async sendSystemMessage(
+    targetUserId: string,
+    title: string,
+    text: string,
+    metadata?: Record<string, any>
+  ): Promise<any> {
+    try {
+      const systemUser = await this.resolveSystemUser();
+      const systemUserIdStr = systemUser._id.toString();
+      if (systemUserIdStr === targetUserId) {
+        return null;
+      }
+
+      const chat = await this.getOrCreateSingleChat(systemUserIdStr, targetUserId);
+      if (!chat) {
+        AppLogger.warn(`[ChatService: sendSystemMessage] Could not create or find chat between system and ${targetUserId}`);
+        return null;
+      }
+
+      const message = await Message.create({
+        chatId: chat._id,
+        senderId: systemUser._id,
+        type: 'system',
+        text,
+        metadata: {
+          title,
+          ...(metadata || {})
+        },
+        seenBy: [{ userId: systemUser._id, seenAt: new Date() }],
+        reactions: []
+      });
+
+      await Chat.findByIdAndUpdate(chat._id, { updatedAt: new Date() });
+
+      const populated = await Message.findById(message._id)
+        .populate({
+          path: 'senderId',
+          select: 'name email profileImage userRole userId',
+          populate: { path: 'profileImage' }
+        });
+
+      const payload = populated?.toObject ? populated.toObject() : populated;
+
+      // Broadcast to chat room and to user's private notification channel
+      this.emitSocketEvent('new_message', `chat_${chat._id}`, payload);
+      this.emitSocketEvent('new_message', `user_${targetUserId}`, payload);
+      this.emitSocketEvent('chat_message_received', `user_${targetUserId}`, payload);
+
+      if (metadata && metadata.isRecharge) {
+        this.emitSocketEvent('coins_recharge_received', `user_${targetUserId}`, {
+          chatId: chat._id.toString(),
+          messageId: message._id.toString(),
+          amount: metadata.amount,
+          fromUserId: metadata.fromUserId,
+          fromUserName: metadata.fromUserName,
+          newBalance: metadata.newBalance,
+          wallet: metadata.wallet || 'coins',
+          isCoinseller: metadata.isCoinseller || false,
+          title,
+          text,
+        });
+      }
+
+      return { chat, message, payload };
+    } catch (err: any) {
+      AppLogger.error(`[ChatService: sendSystemMessage] Error: ${err?.message}`, err);
+      throw err;
+    }
   }
 
   async getUserChats(

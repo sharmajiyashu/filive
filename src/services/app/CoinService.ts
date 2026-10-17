@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import { AppSettingService } from '../common/AppSettingService';
 import { PaymentMethodService } from './PaymentMethodService';
 import { PaymentGatewayKey } from '../../models/PaymentMethod';
+import AppLogger from '../../api/loaders/logger';
 
 type RechargeAudience = 'user' | 'seller' | 'website';
 
@@ -560,6 +561,30 @@ export class CoinService {
       }], { session });
 
       await session.commitTransaction();
+
+      const updatedUser = await User.findById(userId).select('coins coinSellerCoins');
+      const newBal = credit.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
+      try {
+        const { ChatService } = require('./ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          userId,
+          'Recharge Successful',
+          `🎉 Recharge Successful! You have recharged ${pkg.coins} coins with package "${pkg.name}". Updated Balance: ${newBal} Coins.`,
+          {
+            isRecharge: true,
+            amount: pkg.coins,
+            fromUserId: 0,
+            fromUserName: 'Payment Gateway',
+            newBalance: newBal,
+            wallet: credit.wallet,
+            isCoinseller: credit.wallet === 'coinSellerCoins',
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[CoinService: recharge] Failed to send system message: ${err?.message}`);
+      }
+
       return { success: true, coins: pkg.coins, wallet: credit.wallet, audience };
     } catch (error) {
       await session.abortTransaction();
@@ -768,6 +793,27 @@ export class CoinService {
       await session.commitTransaction();
 
       const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
+      const newBal = credit.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
+      try {
+        const { ChatService } = require('./ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          userId,
+          'Recharge Successful',
+          `🎉 Recharge Successful! You have recharged ${pkg.coins} coins via Razorpay. Updated Balance: ${newBal} Coins.`,
+          {
+            isRecharge: true,
+            amount: pkg.coins,
+            fromUserId: 0,
+            fromUserName: 'Razorpay',
+            newBalance: newBal,
+            wallet: credit.wallet,
+            isCoinseller: credit.wallet === 'coinSellerCoins',
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[CoinService: verifyRazorpayPayment] Failed to send system message: ${err?.message}`);
+      }
 
       return {
         success: true,

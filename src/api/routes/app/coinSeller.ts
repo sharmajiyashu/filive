@@ -41,9 +41,14 @@ export default (router: Router) => {
    */
   sellerRouter.post('/transfer', async (req: any, res: Response) => {
     try {
-      const { targetUserId, amount } = req.body;
-      const result = await coinSellerService.transferCoins(req.user.id, Number(targetUserId), Number(amount));
-      return ResponseWrapper.success(res, result, 'Coins transferred successfully');
+      const { targetUserId, amount, salesMethod } = req.body;
+      const result = await coinSellerService.transferCoins(
+        req.user.id,
+        Number(targetUserId),
+        Number(amount),
+        salesMethod
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Coins transferred successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

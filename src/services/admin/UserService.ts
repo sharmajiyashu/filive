@@ -726,6 +726,29 @@ export class UserService {
       description: description || (amount >= 0 ? 'Coins Added by Admin' : 'Coins Deducted by Admin'),
     });
 
+    if (amount > 0) {
+      try {
+        const { ChatService } = require('../app/ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          user._id.toString(),
+          'Coins Added by Admin',
+          `🎉 Admin has credited ${amount} coins to your wallet! Updated Balance: ${newCoins} Coins. ${description ? `Note: ${description}` : ''}`,
+          {
+            isRecharge: true,
+            amount,
+            fromUserId: 0,
+            fromUserName: 'Admin',
+            newBalance: newCoins,
+            wallet: 'coins',
+            isCoinseller: false,
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[UserService: adjustUserCoins] Failed to send system message: ${err?.message}`);
+      }
+    }
+
     return user;
   }
 
@@ -839,6 +862,29 @@ export class UserService {
       type: 'other',
       description: description || (amount >= 0 ? 'Added by Admin' : 'Deducted by Admin'),
     });
+
+    if (amount > 0) {
+      try {
+        const { ChatService } = require('../app/ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          user._id.toString(),
+          'Coinseller Stock Added by Admin',
+          `🎉 Admin has credited ${amount} coinseller coins to your inventory! Updated Balance: ${newVal} Coins. ${description ? `Note: ${description}` : ''}`,
+          {
+            isRecharge: true,
+            amount,
+            fromUserId: 0,
+            fromUserName: 'Admin',
+            newBalance: newVal,
+            wallet: 'coinSellerCoins',
+            isCoinseller: true,
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[UserService: adjustCoinsellerCoins] Failed to send system message: ${err?.message}`);
+      }
+    }
 
     return user;
   }
