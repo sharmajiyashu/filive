@@ -23,23 +23,10 @@ export default (router: Router) => {
     const user = await User.findById(userId).select('email userRole name');
     const userEmail = (user?.email || '').trim().toLowerCase();
 
-    const settings = await appSettingService.getSettings();
-    const rawAllowed = settings.website_permission_emails;
-    const allowedEmails: string[] = Array.isArray(rawAllowed)
-      ? rawAllowed.map((e: string) => String(e).trim().toLowerCase())
-      : ['filive@gmail.com'];
+    // STRICT: Website management is ONLY permitted for filive@gmail.com
+    const hasPermission = userEmail === 'filive@gmail.com';
 
-    // Ensure filive@gmail.com is always included
-    if (!allowedEmails.includes('filive@gmail.com')) {
-      allowedEmails.push('filive@gmail.com');
-    }
-
-    const hasPermission =
-      userEmail === 'filive@gmail.com' ||
-      allowedEmails.includes(userEmail) ||
-      user?.userRole === 'admin';
-
-    return { user, userEmail, allowedEmails, hasPermission };
+    return { user, userEmail, allowedEmails: ['filive@gmail.com'], hasPermission };
   }
 
   /**
@@ -50,6 +37,14 @@ export default (router: Router) => {
     try {
       const { userEmail, allowedEmails, hasPermission } =
         await resolveAdminEmailAndPermission(req.user?.id);
+
+      if (!hasPermission) {
+        return ResponseWrapper.error(
+          res,
+          new Error('Access denied. Website management is strictly reserved for filive@gmail.com'),
+          403
+        );
+      }
 
       const settings = await appSettingService.getSettings();
 
@@ -112,10 +107,10 @@ export default (router: Router) => {
       const { userEmail, allowedEmails, hasPermission } =
         await resolveAdminEmailAndPermission(req.user?.id);
 
-      if (!hasPermission && userEmail !== 'filive@gmail.com') {
+      if (!hasPermission) {
         return ResponseWrapper.error(
           res,
-          new Error('You do not have permission to modify Website Settings'),
+          new Error('Access denied. Website management is strictly reserved for filive@gmail.com'),
           403
         );
       }
@@ -187,6 +182,15 @@ export default (router: Router) => {
    */
   websiteRouter.post('/permissions/add', async (req: any, res: Response) => {
     try {
+      const { hasPermission } = await resolveAdminEmailAndPermission(req.user?.id);
+      if (!hasPermission) {
+        return ResponseWrapper.error(
+          res,
+          new Error('Access denied. Website management is strictly reserved for filive@gmail.com'),
+          403
+        );
+      }
+
       const emailToAdd = String(req.body.email || '').trim().toLowerCase();
       if (!emailToAdd || !emailToAdd.includes('@')) {
         return ResponseWrapper.error(res, new Error('Please enter a valid email address'), 400);
@@ -222,6 +226,15 @@ export default (router: Router) => {
    */
   websiteRouter.post('/permissions/remove', async (req: any, res: Response) => {
     try {
+      const { hasPermission } = await resolveAdminEmailAndPermission(req.user?.id);
+      if (!hasPermission) {
+        return ResponseWrapper.error(
+          res,
+          new Error('Access denied. Website management is strictly reserved for filive@gmail.com'),
+          403
+        );
+      }
+
       const emailToRemove = String(req.body.email || '').trim().toLowerCase();
       if (!emailToRemove) {
         return ResponseWrapper.error(res, new Error('Email is required'), 400);
@@ -263,6 +276,15 @@ export default (router: Router) => {
    */
   websiteRouter.post('/test-email', async (req: any, res: Response) => {
     try {
+      const { hasPermission } = await resolveAdminEmailAndPermission(req.user?.id);
+      if (!hasPermission) {
+        return ResponseWrapper.error(
+          res,
+          new Error('Access denied. Website management is strictly reserved for filive@gmail.com'),
+          403
+        );
+      }
+
       const settings = await appSettingService.getSettings();
       const targetEmail = settings.website_enquiry_email || 'filive@gmail.com';
 
