@@ -3,10 +3,13 @@ import Container from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import Media from '../../models/Media';
+import Country from '../../models/Country';
 import TeamApplication from '../../models/TeamApplication';
 import ContactMessage from '../../models/ContactMessage';
 import { CoinService } from '../../services/app/CoinService';
 import { PaymentMethodService } from '../../services/app/PaymentMethodService';
+import { EmailService } from '../../services/common/emailService';
+import { AppSettingService } from '../../services/common/AppSettingService';
 import { ResponseWrapper } from '../responseWrapper';
 
 /**
@@ -65,13 +68,39 @@ export default (router: Router) => {
   const paymentMethodService = Container.get(PaymentMethodService);
 
   /**
+   * GET /v1/api/web/countries
+   * Returns active countries with flags and currency details for auto/manual selection
+   */
+  router.get('/countries', async (req: Request, res: Response) => {
+    try {
+      const countries = await Country.find({ isActive: true })
+        .select('name code flag currencySymbol currencyCode exchangeRate phoneCode')
+        .lean();
+
+      const priority = ['IN', 'US', 'AE', 'GB', 'SA', 'CA', 'AU', 'SG', 'DE', 'FR'];
+      const sorted = countries.sort((a: any, b: any) => {
+        const idxA = priority.indexOf((a.code || '').toUpperCase());
+        const idxB = priority.indexOf((b.code || '').toUpperCase());
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      return ResponseWrapper.success(res, sorted, 'Active countries fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
    * GET /v1/api/web/packages
-   * Public coin packages for users (sorted by coins)
+   * Public coin packages for users with local currency conversion (sorted by coins)
    */
   router.get('/packages', async (req: Request, res: Response) => {
     try {
-      const countryId = req.query.countryId?.toString();
-      const result = await coinService.getPackages(countryId, 'user');
+      const country = (req.query.countryCode || req.query.countryId || req.query.country || '')?.toString();
+      const result = await coinService.getPackages(country, 'website');
       return ResponseWrapper.success(res, result, 'Packages fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -153,7 +182,7 @@ export default (router: Router) => {
   router.get('/payment-methods', async (req: Request, res: Response) => {
     try {
       const countryCode = req.query.countryCode?.toString() || 'IN';
-      const result = await paymentMethodService.getAvailablePaymentMethods(countryCode, 'user', 'web');
+      const result = await paymentMethodService.getAvailablePaymentMethods(countryCode, 'website', 'web');
       return ResponseWrapper.success(res, result, 'Payment methods fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -280,6 +309,27 @@ export default (router: Router) => {
         status: 'pending',
       });
 
+      // Dispatch lead notification email to filive@gmail.com
+      try {
+        const appSettingService = Container.get(AppSettingService);
+        const emailService = Container.get(EmailService);
+        const settings = await appSettingService.getSettings();
+        if (settings.website_contact_notifications_enabled !== false) {
+          const destinationEmail = settings.website_enquiry_email || 'filive@gmail.com';
+          await emailService.sendWebEnquiryEmail({
+            to: destinationEmail,
+            type: 'team_application',
+            name: application.name,
+            email: application.email,
+            inquiryType: application.inquiryType,
+            audienceSize: application.audienceSize,
+            message: application.message,
+          });
+        }
+      } catch (mailErr) {
+        console.error('Failed to dispatch team application notification email:', mailErr);
+      }
+
       return ResponseWrapper.success(
         res,
         application,
@@ -308,6 +358,26 @@ export default (router: Router) => {
         message: String(message).trim(),
         status: 'pending',
       });
+
+      // Dispatch lead notification email to filive@gmail.com
+      try {
+        const appSettingService = Container.get(AppSettingService);
+        const emailService = Container.get(EmailService);
+        const settings = await appSettingService.getSettings();
+        if (settings.website_contact_notifications_enabled !== false) {
+          const destinationEmail = settings.website_enquiry_email || 'filive@gmail.com';
+          await emailService.sendWebEnquiryEmail({
+            to: destinationEmail,
+            type: 'contact',
+            name: contact.name,
+            email: contact.email,
+            subject: contact.subject,
+            message: contact.message,
+          });
+        }
+      } catch (mailErr) {
+        console.error('Failed to dispatch contact message notification email:', mailErr);
+      }
 
       return ResponseWrapper.success(
         res,

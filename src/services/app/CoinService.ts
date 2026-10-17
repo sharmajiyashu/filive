@@ -15,7 +15,7 @@ import { AppSettingService } from '../common/AppSettingService';
 import { PaymentMethodService } from './PaymentMethodService';
 import { PaymentGatewayKey } from '../../models/PaymentMethod';
 
-type RechargeAudience = 'user' | 'seller';
+type RechargeAudience = 'user' | 'seller' | 'website';
 
 const BEANS_HISTORY_TYPES = [
   'charm_received',
@@ -46,37 +46,62 @@ export class CoinService {
     @Inject() private paymentMethodService: PaymentMethodService
   ) { }
 
-  async getPackages(countryId?: string, audience: RechargeAudience = 'user') {
-    const packages = await CoinPackage.find({
+  async getPackages(countryIdOrCode?: string, audience: RechargeAudience = 'user') {
+    let packages = await CoinPackage.find({
       isActive: true,
-      targetAudience: { $in: [audience, 'all'] },
+      targetAudience: audience === 'website' ? 'website' : { $in: [audience, 'all'] },
     }).sort({ coins: 1 });
 
-    if (!countryId) {
-      return packages.map(pkg => ({
-        ...pkg.toObject(),
-        localPrice: pkg.price,
-        currencyCode: 'USD',
-        currencySymbol: '$'
-      }));
+    // Fallback to general/user packages if website-specific packages are not yet created
+    if (audience === 'website' && packages.length === 0) {
+      packages = await CoinPackage.find({
+        isActive: true,
+        targetAudience: { $in: ['website', 'all', 'user'] },
+      }).sort({ coins: 1 });
     }
 
-    const country = await Country.findById(countryId);
+    let country: any = null;
+    if (countryIdOrCode) {
+      if (mongoose.Types.ObjectId.isValid(countryIdOrCode)) {
+        country = await Country.findById(countryIdOrCode);
+      }
+      if (!country) {
+        country = await Country.findOne({
+          code: countryIdOrCode.trim().toUpperCase(),
+          isActive: true,
+        });
+      }
+    }
+
     if (!country) {
       return packages.map(pkg => ({
         ...pkg.toObject(),
         localPrice: pkg.price,
-        currencyCode: 'USD',
-        currencySymbol: '$'
+        currencyCode: 'INR',
+        currencySymbol: '₹'
       }));
     }
 
-    return packages.map(pkg => ({
-      ...pkg.toObject(),
-      localPrice: calculateLocalPrice(pkg.price, country.exchangeRate),
-      currencyCode: country.currencyCode,
-      currencySymbol: country.currencySymbol
-    }));
+    return packages.map(pkg => {
+      let localPrice: number;
+      if (country.currencyCode === 'INR' || country.code === 'IN') {
+        localPrice = pkg.price;
+      } else if (country.currencyCode === 'USD' || country.code === 'US') {
+        localPrice = Number((pkg.price / 83.5).toFixed(2));
+      } else {
+        const usdPrice = pkg.price / 83.5;
+        localPrice = calculateLocalPrice(usdPrice, country.exchangeRate);
+      }
+
+      return {
+        ...pkg.toObject(),
+        localPrice,
+        currencyCode: country.currencyCode,
+        currencySymbol: country.currencySymbol,
+        countryName: country.name,
+        countryFlag: country.flag,
+      };
+    });
   }
 
   async getWallet(userId: string) {
@@ -375,6 +400,9 @@ export class CoinService {
     if (['seller', 'coinseller', 'coin_seller', 'coin-seller'].includes(normalized)) {
       return 'seller';
     }
+    if (['website', 'web'].includes(normalized)) {
+      return 'website';
+    }
     return 'user';
   }
 
@@ -402,9 +430,10 @@ export class CoinService {
       return { wallet: 'coinSellerCoins' as const };
     }
 
+    const totalCoins = (pkg.coins || 0) + (pkg.bonus || 0);
     await User.findByIdAndUpdate(
       userId,
-      { $inc: { coins: pkg.coins, wealthCoins: pkg.coins } },
+      { $inc: { coins: totalCoins, wealthCoins: totalCoins } },
       { session }
     );
     return { wallet: 'coins' as const };

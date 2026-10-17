@@ -49,6 +49,11 @@ export class AppSettingService {
     contact_us_email: 'support@filive.app',
     contact_us_phone: '+91 98765 43210',
     contact_us_address: 'FiLive Global Tech Park, Bangalore, India',
+    // Website & Enquiry Settings
+    website_enquiry_email: 'filive@gmail.com',
+    website_permission_emails: ['filive@gmail.com'],
+    website_recharge_enabled: true,
+    website_contact_notifications_enabled: true,
     // Connect With Us – Social Media Links
     social_facebook_url: '',
     social_instagram_url: '',
@@ -123,6 +128,10 @@ export class AppSettingService {
       return defaultValue;
     }
     return null;
+  }
+
+  async updateSetting(key: string, value: any) {
+    return this.updateSettings({ [key]: value });
   }
 
   async updateSettings(settings: { [key: string]: any }) {

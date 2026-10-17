@@ -16,6 +16,8 @@ export default (router: Router) => {
       if (audience === 'user' || audience === 'seller') {
         // Include legacy 'all' packages in both modules until migrated
         query.targetAudience = { $in: [audience, 'all'] };
+      } else if (audience === 'website') {
+        query.targetAudience = { $in: ['website', 'all'] };
       } else if (audience === 'all') {
         query.targetAudience = 'all';
       }
@@ -84,8 +86,8 @@ export default (router: Router) => {
   coinPackageRouter.post('/', async (req: any, res: Response) => {
     try {
       const body = { ...req.body };
-      if (body.targetAudience && !['user', 'seller', 'all'].includes(body.targetAudience)) {
-        return ResponseWrapper.error(res, new Error("targetAudience must be 'user', 'seller', or 'all'"), 400);
+      if (body.targetAudience && !['user', 'seller', 'website', 'all'].includes(body.targetAudience)) {
+        return ResponseWrapper.error(res, new Error("targetAudience must be 'user', 'seller', 'website', or 'all'"), 400);
       }
       const pkg = await CoinPackage.create(body);
       return ResponseWrapper.success(res, pkg, 'Coin package created successfully');
@@ -97,8 +99,8 @@ export default (router: Router) => {
   coinPackageRouter.put('/:id', async (req: any, res: Response) => {
     try {
       const body = { ...req.body };
-      if (body.targetAudience && !['user', 'seller', 'all'].includes(body.targetAudience)) {
-        return ResponseWrapper.error(res, new Error("targetAudience must be 'user', 'seller', or 'all'"), 400);
+      if (body.targetAudience && !['user', 'seller', 'website', 'all'].includes(body.targetAudience)) {
+        return ResponseWrapper.error(res, new Error("targetAudience must be 'user', 'seller', 'website', or 'all'"), 400);
       }
       const pkg = await CoinPackage.findByIdAndUpdate(req.params.id, body, { new: true });
       return ResponseWrapper.success(res, pkg, 'Coin package updated successfully');

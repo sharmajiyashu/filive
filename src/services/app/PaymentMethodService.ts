@@ -76,14 +76,14 @@ export class PaymentMethodService {
    */
   public async getAvailablePaymentMethods(
     countryCode?: string,
-    audience: 'user' | 'seller' = 'user',
+    audience: 'user' | 'seller' | 'website' = 'user',
     platform: 'app' | 'web' = 'app'
   ) {
     await this.ensureDefaults();
     const code = countryCode?.trim().toUpperCase();
     const query: any = {
       isActive: true,
-      targetAudience: { $in: ['all', audience] },
+      targetAudience: { $in: ['all', audience, 'website'] },
     };
 
     if (platform === 'web') {
@@ -96,7 +96,17 @@ export class PaymentMethodService {
       query.countries = { $in: [code, 'ALL', '*'] };
     }
 
-    const methods = await PaymentMethod.find(query).sort({ gateway: 1 });
+    let methods = await PaymentMethod.find(query).sort({ gateway: 1 });
+
+    // Fallback for web if no methods specifically configured for this international country code:
+    // Web platforms should show available web payment gateways (Razorpay/Cashfree which accept international cards)
+    if (methods.length === 0 && platform === 'web') {
+      methods = await PaymentMethod.find({
+        isActive: true,
+        showInWeb: { $ne: false },
+      }).sort({ gateway: 1 });
+    }
+
     const available = [];
 
     for (const method of methods) {
@@ -123,7 +133,7 @@ export class PaymentMethodService {
   public async assertPaymentGatewayAllowed(
     userId: string,
     gateway: PaymentGatewayKey,
-    audience: 'user' | 'seller' = 'user',
+    audience: 'user' | 'seller' | 'website' = 'user',
     platform: 'app' | 'web' = 'app'
   ) {
     await this.ensureDefaults();
@@ -151,7 +161,9 @@ export class PaymentMethodService {
     }
 
     const audienceOk =
-      method.targetAudience === 'all' || method.targetAudience === audience;
+      method.targetAudience === 'all' ||
+      method.targetAudience === audience ||
+      (audience === 'website' && method.showInWeb !== false);
     if (!audienceOk) {
       throw new Error(
         `${method.displayName} is not available for ${audience} recharge in your region`
@@ -161,9 +173,11 @@ export class PaymentMethodService {
     const countries = (method.countries || []).map((c) => c.toUpperCase());
     const isAll = countries.includes('ALL') || countries.includes('*');
     if (!isAll && !countries.includes(countryCode)) {
-      throw new Error(
-        `${method.displayName} is not available in country ${countryCode}`
-      );
+      if (platform !== 'web') {
+        throw new Error(
+          `${method.displayName} is not available in country ${countryCode}`
+        );
+      }
     }
 
     return { countryCode, method };
@@ -171,10 +185,13 @@ export class PaymentMethodService {
 
   public async assertPackageAllowedForAudience(
     packageAudience: PaymentTargetAudience | string | undefined,
-    rechargeAudience: 'user' | 'seller'
+    rechargeAudience: 'user' | 'seller' | 'website'
   ) {
-    const pkgAudience = (packageAudience || 'all') as PaymentTargetAudience;
+    const pkgAudience = (packageAudience || 'all') as PaymentTargetAudience | string;
     if (pkgAudience === 'all') return;
+    if (pkgAudience === 'website' && (rechargeAudience === 'website' || rechargeAudience === 'user')) {
+      return;
+    }
     if (pkgAudience !== rechargeAudience) {
       throw new Error(
         `This package is only available for ${pkgAudience} recharge, not ${rechargeAudience}`

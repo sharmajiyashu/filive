@@ -40,6 +40,33 @@ export async function adminSeed() {
 
     AppLogger.info('Admin created with SUPER_ADMIN role');
 
+    // Seed website admin: filive@gmail.com
+    const filiveEmail = 'filive@gmail.com';
+    const filivePassword = process.env.FILIVE_ADMIN_PASSWORD || 'Filive@123';
+    const existingFilive = await User.findOne({ email: filiveEmail });
+
+    if (!existingFilive) {
+      const filiveHashed = await bcrypt.hash(filivePassword, 10);
+      await User.create({
+        userRole: 'admin',
+        email: filiveEmail,
+        password: filiveHashed,
+        name: 'FiLive Website Admin',
+        location: {
+          lat: 0,
+          lng: 0,
+          address: 'HQ Website Address',
+          city: 'Bangalore',
+          state: 'Karnataka',
+          zipcode: '560001'
+        }
+      });
+      AppLogger.info('✅ filive@gmail.com created with Website Admin privileges');
+    } else if (existingFilive.userRole !== 'admin') {
+      existingFilive.userRole = 'admin';
+      await existingFilive.save();
+      AppLogger.info('✅ filive@gmail.com upgraded to admin role');
+    }
   } catch (error) {
     AppLogger.error('Admin seeder failed', error);
   }

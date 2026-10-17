@@ -34,6 +34,7 @@ import socialLink from './socialLink';
 import vip from './vip';
 import teamApplication from './teamApplication';
 import contactMessage from './contactMessage';
+import websiteSettings from './websiteSettings';
 
 export default (router: Router): Router => {
   auth(router);
@@ -71,6 +72,7 @@ export default (router: Router): Router => {
   vip(router);
   teamApplication(router);
   contactMessage(router);
+  websiteSettings(router);
   return router;
 };
 
