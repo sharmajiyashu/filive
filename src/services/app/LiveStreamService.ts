@@ -407,6 +407,11 @@ export class LiveStreamService {
       throw new Error('Room/livestream not found or you are not the host');
     }
 
+    if (liveStream.status !== 'live') {
+      liveStream.status = 'live';
+      liveStream.endedAt = undefined;
+    }
+
     if (data.title !== undefined) liveStream.title = data.title;
     if (data.partyRoomOption !== undefined) liveStream.partyRoomOption = data.partyRoomOption;
     let seatsMutedChanged = false;
@@ -537,7 +542,7 @@ export class LiveStreamService {
         try {
           await liveStream.populate(this.seatPopulate());
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-          io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('seat_updated', {
+          this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
             channelName: liveStream.channelName,
             seats: liveStream.toObject().seats,
             maxSeats: liveStream.seats ? liveStream.seats.length : 0,
@@ -546,7 +551,7 @@ export class LiveStreamService {
           });
 
           if (seatsMutedChanged) {
-            io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit(data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
+            this.broadcastToRoom(liveStream.channelName, data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
             AppLogger.info(`[LiveStreamService: updateLiveStream] Emitted ${data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted'} and seat_updated`);
           }
         } catch (e: any) {
@@ -566,7 +571,7 @@ export class LiveStreamService {
           settingsPayload.partyRoomOption = liveStream.partyRoomOption;
           settingsPayload.channelName = liveStream.channelName;
           settingsPayload.token = liveStream.token;
-          io.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_settings_updated', settingsPayload);
+          this.broadcastToRoom(liveStream.channelName, 'room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
         }
@@ -584,7 +589,7 @@ export class LiveStreamService {
     const io2 = this.getSocketIo();
     if (io2 && fullyPopulatedRoom) {
       try {
-        io2.to(`live_${liveStream.channelName}`).to(`room_${liveStream.channelName}`).emit('room_updated', fullyPopulatedRoom);
+        this.broadcastToRoom(liveStream.channelName, 'room_updated', fullyPopulatedRoom);
       } catch (e: any) {
         AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_updated event: ${e.message}`, e);
       }
@@ -722,6 +727,74 @@ export class LiveStreamService {
       return null;
     }
   }
+
+  public broadcastToRoom(channelName: string, event: string, data: any) {
+    try {
+      const io = this.getSocketIo();
+      if (!io) return;
+      const clean = channelName ? channelName.replace(/^(live_)+/, '') : '';
+      const rooms = new Set<string>();
+      if (channelName) {
+        rooms.add(channelName);
+        rooms.add(`live_${channelName}`);
+        rooms.add(`room_${channelName}`);
+      }
+      if (clean) {
+        rooms.add(clean);
+        rooms.add(`live_${clean}`);
+        rooms.add(`room_${clean}`);
+      }
+      let emitter: any = io;
+      for (const r of rooms) {
+        if (r) emitter = emitter.to(r);
+      }
+      emitter.emit(event, data);
+      AppLogger.info(`[Socket Broadcast] Event '${event}' broadcasted to rooms: ${Array.from(rooms).join(', ')}`);
+    } catch (err: any) {
+      AppLogger.error(`[Socket Broadcast] Failed to emit '${event}': ${err?.message || err}`);
+    }
+  }
+
+  public async findRoomByChannelOrAny(channelName?: string, requesterOrHostId?: string) {
+    const clean = channelName ? channelName.replace(/^(live_)+/, '') : '';
+    const variants: string[] = [];
+    if (channelName) variants.push(channelName);
+    if (clean && clean !== channelName) variants.push(clean);
+    if (clean) {
+      variants.push(`live_${clean}`);
+      variants.push(`live_live_${clean}`);
+    }
+
+    let room: any = null;
+    if (variants.length > 0) {
+      // 1. Try finding by channel variant with status 'live'
+      room = await Room.findOne({ channelName: { $in: variants }, status: 'live' });
+
+      // 2. Fallback: find by channel variant without status filter
+      if (!room) {
+        room = await Room.findOne({ channelName: { $in: variants } }).sort({ createdAt: -1 });
+      }
+    }
+
+    // 3. Fallback: if not found by channel, but hostId or requesterId is provided
+    if (!room && requesterOrHostId && mongoose.Types.ObjectId.isValid(requesterOrHostId)) {
+      room = await Room.findOne({
+        hostId: new mongoose.Types.ObjectId(requesterOrHostId),
+        $or: [{ status: 'live' }, { roomType: 'party_room' }]
+      }).sort({ updatedAt: -1 });
+    }
+
+    // If room is found and its status is ended/inactive, revive it to live for party rooms or active interactions
+    if (room && room.status !== 'live') {
+      AppLogger.info(`[findRoomByChannelOrAny] Reviving room _id=${room._id}, channelName=${room.channelName} from status='${room.status}' to 'live'`);
+      room.status = 'live';
+      room.endedAt = undefined;
+      await room.save().catch((e: any) => AppLogger.warn(`[findRoomByChannelOrAny] Failed to revive status: ${e.message}`));
+    }
+
+    return room;
+  }
+
 
   /**
    * Ends an active live stream
@@ -941,14 +1014,14 @@ export class LiveStreamService {
       throw new Error('You are banned from live streaming');
     }
 
-    AppLogger.info(`[LiveStreamService: joinLiveStream] Querying active stream for channelName=${channelName}`);
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    AppLogger.info(`[LiveStreamService: joinLiveStream] Querying stream for channelName=${channelName}, userId=${userId}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, userId);
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: joinLiveStream] Active livestream not found or has ended. channelName=${channelName}`);
       throw new Error('Live stream not found or has ended');
     }
 
-    if (liveStream.blockedUsers && liveStream.blockedUsers.some(id => id.toString() === userId)) {
+    if (liveStream.blockedUsers && liveStream.blockedUsers.some((id: any) => id.toString() === userId)) {
       throw new Error('You are blocked and kicked from this room');
     }
 
@@ -958,13 +1031,13 @@ export class LiveStreamService {
     if (!liveStream.joinedUsers) {
       liveStream.joinedUsers = [];
     }
-    if (!liveStream.joinedUsers.some(id => id.toString() === userId)) {
+    if (!liveStream.joinedUsers.some((id: any) => id.toString() === userId)) {
       liveStream.joinedUsers.push(userObjectId);
       shouldSave = true;
     }
 
     // Avoid duplicate entries in viewers list
-    const isAlreadyWatching = liveStream.viewers.some(id => id.toString() === userId);
+    const isAlreadyWatching = liveStream.viewers.some((id: any) => id.toString() === userId);
     AppLogger.info(`[LiveStreamService: joinLiveStream] Found streamId=${liveStream._id}. Is user already watching? ${isAlreadyWatching}`);
 
     if (!isAlreadyWatching) {
@@ -983,9 +1056,9 @@ export class LiveStreamService {
 
     if (liveStream.roomType === 'party_room') {
       if (!liveStream.seats) liveStream.seats = [];
-      const userAlreadyHasSeat = liveStream.seats.some(seat => seat.userId && seat.userId.toString() === userId);
+      const userAlreadyHasSeat = liveStream.seats.some((seat: any) => seat.userId && seat.userId.toString() === userId);
       if (!userAlreadyHasSeat) {
-        const openSeat = liveStream.seats.find(seat => seat.status === 'open');
+        const openSeat = liveStream.seats.find((seat: any) => seat.status === 'open');
         if (openSeat) {
           openSeat.userId = userObjectId;
           openSeat.status = 'occupied';
@@ -1000,8 +1073,9 @@ export class LiveStreamService {
           if (io) {
             await liveStream.populate(this.seatPopulate());
             const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-            io.to(`live_${channelName}`).to(`room_${channelName}`).emit('seat_updated', {
-              channelName,
+            this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+              channelName: liveStream.channelName,
+              maxSeats: liveStream.maxSeats || liveStream.seats.length,
               seats: liveStream.toObject().seats,
               roomAdmins,
               roomAdmin: roomAdmins
@@ -1600,13 +1674,14 @@ export class LiveStreamService {
    * Retrieves details of a room by its channelName
    */
   public async getRoomDetails(channelName: string, currentUserId?: string) {
-    const liveStream = await Room.findOne({ channelName })
-      .populate(this.hostPopulate())
-      .populate(this.seatPopulate());
+    const liveStream = await this.findRoomByChannelOrAny(channelName, currentUserId);
     if (!liveStream) {
       throw new Error('Room not found');
     }
-    return await this.populateRoomWithDailyRank(liveStream, currentUserId);
+    const populated = await Room.findById(liveStream._id)
+      .populate(this.hostPopulate())
+      .populate(this.seatPopulate());
+    return await this.populateRoomWithDailyRank(populated || liveStream, currentUserId);
   }
 
   /**
@@ -1931,7 +2006,7 @@ export class LiveStreamService {
     await roomSetting.save();
 
     // If there is an active room, update room properties and notify all users via socket
-    const activeStream = await Room.findOne({ hostId, status: 'live' });
+    const activeStream = await this.findRoomByChannelOrAny(undefined, hostId);
     if (activeStream) {
       if (data.maxSeats !== undefined && data.maxSeats > 0) {
         activeStream.maxSeats = data.maxSeats;
@@ -1988,10 +2063,10 @@ export class LiveStreamService {
         settingsPayload.roomTheme = activeStream.roomTheme;
 
         // 1. Broadcast room_settings_updated to everyone in the room
-        io.to(`live_${activeStream.channelName}`).emit('room_settings_updated', settingsPayload);
+        this.broadcastToRoom(activeStream.channelName, 'room_settings_updated', settingsPayload);
 
         // 2. ALWAYS broadcast seat_updated so all devices redraw the updated seat list instantly
-        io.to(`live_${activeStream.channelName}`).emit('seat_updated', {
+        this.broadcastToRoom(activeStream.channelName, 'seat_updated', {
           channelName: activeStream.channelName,
           maxSeats: activeStream.maxSeats,
           seats: activeStream.toObject().seats,
@@ -2000,7 +2075,8 @@ export class LiveStreamService {
         });
 
         if (data.muteAllSeats !== undefined) {
-          io.to(`live_${activeStream.channelName}`).emit(
+          this.broadcastToRoom(
+            activeStream.channelName,
             data.muteAllSeats ? 'all_seats_muted' : 'all_seats_unmuted',
             { channelName: activeStream.channelName }
           );
@@ -2019,15 +2095,15 @@ export class LiveStreamService {
 
   public async changeSeat(userId: string, channelName: string, newSeatIndex: number) {
     AppLogger.info(`[LiveStreamService: changeSeat] userId=${userId}, channelName=${channelName}, newSeatIndex=${newSeatIndex}`);
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    const liveStream = await this.findRoomByChannelOrAny(channelName, userId);
     if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
 
-    const targetSeat = liveStream.seats.find(s => s.seatIndex === newSeatIndex);
+    const targetSeat = liveStream.seats.find((s: any) => s.seatIndex === newSeatIndex);
     if (!targetSeat) throw new Error('Seat index not found');
     if (targetSeat.status !== 'open') throw new Error('Seat is not open');
 
     // Remove user from old seat
-    const oldSeat = liveStream.seats.find(s => s.userId && s.userId.toString() === userId);
+    const oldSeat = liveStream.seats.find((s: any) => s.userId && s.userId.toString() === userId);
     if (oldSeat) {
       oldSeat.userId = undefined;
       oldSeat.status = 'open';
@@ -2042,8 +2118,9 @@ export class LiveStreamService {
     await liveStream.populate(this.seatPopulate());
     const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
     if (io) {
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
+      this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+        channelName: liveStream.channelName,
+        maxSeats: liveStream.maxSeats || liveStream.seats.length,
         seats: liveStream.toObject().seats,
         roomAdmins,
         roomAdmin: roomAdmins
@@ -2054,13 +2131,29 @@ export class LiveStreamService {
   }
 
   public async lockSeat(requesterId: string, channelName: string, seatIndex: number, lock: boolean) {
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
-    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+    AppLogger.info(`[LiveStreamService: lockSeat] requesterId=${requesterId}, channelName=${channelName}, seatIndex=${seatIndex}, lock=${lock}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId);
+    if (!liveStream) throw new Error('Active room not found');
+    if (!liveStream.seats) liveStream.seats = [];
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
 
-    const seat = liveStream.seats.find(s => s.seatIndex === seatIndex);
-    if (!seat) throw new Error('Seat index not found');
+    let seat = liveStream.seats.find((s: any) => s.seatIndex === seatIndex);
+    if (!seat) {
+      const maxSeats = liveStream.maxSeats || 20;
+      if (seatIndex >= 0 && seatIndex < maxSeats) {
+        const newSeat: any = {
+          seatIndex,
+          status: lock ? 'locked' : 'open',
+          isMuted: false,
+          isLocked: lock
+        };
+        liveStream.seats.push(newSeat);
+        seat = newSeat;
+      } else {
+        throw new Error('Seat index not found');
+      }
+    }
 
     if (lock) {
       if (seat.userId) throw new Error('Cannot lock an occupied seat. Remove user first.');
@@ -2074,8 +2167,9 @@ export class LiveStreamService {
     if (io) {
       await liveStream.populate(this.seatPopulate());
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
+      this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+        channelName: liveStream.channelName,
+        maxSeats: liveStream.maxSeats || liveStream.seats.length,
         seats: liveStream.toObject().seats,
         roomAdmins,
         roomAdmin: roomAdmins
@@ -2086,13 +2180,29 @@ export class LiveStreamService {
   }
 
   public async muteSeat(requesterId: string, channelName: string, seatIndex: number, mute: boolean) {
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
-    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+    AppLogger.info(`[LiveStreamService: muteSeat] requesterId=${requesterId}, channelName=${channelName}, seatIndex=${seatIndex}, mute=${mute}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId);
+    if (!liveStream) throw new Error('Active room not found');
+    if (!liveStream.seats) liveStream.seats = [];
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
 
-    const seat = liveStream.seats.find(s => s.seatIndex === seatIndex);
-    if (!seat) throw new Error('Seat index not found');
+    let seat = liveStream.seats.find((s: any) => s.seatIndex === seatIndex);
+    if (!seat) {
+      const maxSeats = liveStream.maxSeats || 20;
+      if (seatIndex >= 0 && seatIndex < maxSeats) {
+        const newSeat: any = {
+          seatIndex,
+          status: 'open',
+          isMuted: mute,
+          isLocked: false
+        };
+        liveStream.seats.push(newSeat);
+        seat = newSeat;
+      } else {
+        throw new Error('Seat index not found');
+      }
+    }
 
     seat.isMuted = mute;
 
@@ -2106,14 +2216,14 @@ export class LiveStreamService {
       const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
+      this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+        channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || liveStream.seats.length,
         seats: liveStream.toObject().seats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
-      io.to(`live_${channelName}`).emit(mute ? 'seat_muted' : 'seat_unmuted', {
+      this.broadcastToRoom(liveStream.channelName, mute ? 'seat_muted' : 'seat_unmuted', {
         seatIndex,
         isMuted: mute,
         userId: userIdStr,
@@ -2125,7 +2235,8 @@ export class LiveStreamService {
   }
 
   public async muteAllSeats(requesterId: string, channelName: string, mute: boolean) {
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    AppLogger.info(`[LiveStreamService: muteAllSeats] requesterId=${requesterId}, channelName=${channelName}, mute=${mute}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId);
     if (!liveStream) throw new Error('Active room not found');
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
@@ -2156,32 +2267,34 @@ export class LiveStreamService {
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
 
       // Emit seat_updated with populated seats (same as muteSeat does)
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
+      this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+        channelName: liveStream.channelName,
+        maxSeats: liveStream.maxSeats || (liveStream.seats ? liveStream.seats.length : 0),
         seats: liveStream.toObject().seats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
 
       // Emit all_seats_muted/unmuted event for UI
-      io.to(`live_${channelName}`).emit(mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName });
+      this.broadcastToRoom(liveStream.channelName, mute ? 'all_seats_muted' : 'all_seats_unmuted', { channelName: liveStream.channelName });
 
       // Emit room_updated so clients get the new muteAllSeats boolean (no longer on room, but they will receive the event)
-      io.to(`live_${channelName}`).emit('room_updated', liveStream);
+      this.broadcastToRoom(liveStream.channelName, 'room_updated', liveStream);
     }
 
     return liveStream;
   }
 
   public async kickUser(requesterId: string, channelName: string, userIdToKick: string) {
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    AppLogger.info(`[LiveStreamService: kickUser] requesterId=${requesterId}, channelName=${channelName}, userIdToKick=${userIdToKick}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId);
     if (!liveStream) throw new Error('Active room not found');
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
 
     // Remove from seat if they are on one
     if (liveStream.seats) {
-      const seat = liveStream.seats.find(s => s.userId && s.userId.toString() === userIdToKick);
+      const seat = liveStream.seats.find((s: any) => s.userId && s.userId.toString() === userIdToKick);
       if (seat) {
         seat.userId = undefined;
         seat.status = 'open';
@@ -2189,8 +2302,10 @@ export class LiveStreamService {
     }
 
     // Remove from viewers
-    liveStream.viewers = liveStream.viewers.filter(uid => uid.toString() !== userIdToKick);
-    liveStream.viewerCount = liveStream.viewers.length;
+    if (liveStream.viewers) {
+      liveStream.viewers = liveStream.viewers.filter((uid: any) => uid.toString() !== userIdToKick);
+      liveStream.viewerCount = liveStream.viewers.length;
+    }
 
     await liveStream.save();
 
@@ -2199,20 +2314,22 @@ export class LiveStreamService {
       await liveStream.populate(this.seatPopulate());
       const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      io.to(`live_${channelName}`).emit('seat_updated', {
-        channelName,
+      this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+        channelName: liveStream.channelName,
+        maxSeats: liveStream.maxSeats || (liveStream.seats ? liveStream.seats.length : 0),
         seats: liveStream.toObject().seats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
-      io.to(`live_${channelName}`).emit('user_kicked', { userId: userIdToKick, channelName, user });
+      this.broadcastToRoom(liveStream.channelName, 'user_kicked', { userId: userIdToKick, channelName: liveStream.channelName, user });
     }
 
     return liveStream;
   }
 
   public async inviteToSeat(requesterId: string, channelName: string, targetUserId: string, seatIndex: number) {
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
+    AppLogger.info(`[LiveStreamService: inviteToSeat] requesterId=${requesterId}, channelName=${channelName}, targetUserId=${targetUserId}, seatIndex=${seatIndex}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId);
     if (!liveStream) throw new Error('Active room not found');
 
     await this.verifyAdmin(requesterId, liveStream.hostId.toString());
@@ -2220,14 +2337,15 @@ export class LiveStreamService {
     const io = this.getSocketIo();
     if (io) {
       const user = await User.findById(targetUserId).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
-      io.to(`live_${channelName}`).emit('user_invited_to_seat', { targetUserId, seatIndex, channelName, user });
+      this.broadcastToRoom(liveStream.channelName, 'user_invited_to_seat', { targetUserId, seatIndex, channelName: liveStream.channelName, user });
     }
     return { success: true };
   }
 
   public async makeAdmin(requesterId: string, channelName: string, targetUserId: string | number, isAdmin: boolean) {
-    // 1. Find the live room by channelName
-    const activeStream = await Room.findOne({ channelName, status: 'live' });
+    AppLogger.info(`[LiveStreamService: makeAdmin] requesterId=${requesterId}, channelName=${channelName}, targetUserId=${targetUserId}, isAdmin=${isAdmin}`);
+    // 1. Find the room by channelName
+    const activeStream = await this.findRoomByChannelOrAny(channelName, requesterId);
     if (!activeStream) throw new Error('No active room found for this channel');
 
     const hostId = activeStream.hostId.toString();
@@ -2256,8 +2374,8 @@ export class LiveStreamService {
 
     // Verify target user is currently in the room joined list / viewers
     const isJoined =
-      activeStream.joinedUsers?.some(id => id.toString() === resolvedUserIdStr) ||
-      activeStream.viewers?.some(id => id.toString() === resolvedUserIdStr);
+      activeStream.joinedUsers?.some((id: any) => id.toString() === resolvedUserIdStr) ||
+      activeStream.viewers?.some((id: any) => id.toString() === resolvedUserIdStr);
 
     if (!isJoined) {
       throw new Error('User is not joined in this room. User must join the room first to become an admin.');
@@ -2291,11 +2409,11 @@ export class LiveStreamService {
       const sanitizedUser = await User.findById(resolvedUserIdStr)
         .select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins')
         .populate('profileImage');
-      io.to(`live_${channelName}`).emit('user_made_admin', {
+      this.broadcastToRoom(activeStream.channelName, 'user_made_admin', {
         targetUserId: resolvedUserIdStr,
         userId: targetUser.userId,
         isAdmin,
-        channelName,
+        channelName: activeStream.channelName,
         user: sanitizedUser
       });
     }

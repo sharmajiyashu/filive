@@ -48,9 +48,16 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      AppLogger.info(`[Socket Event: join_room/join_live] Socket joining rooms live_${channelName} and room_${channelName}. userId=${userId}`);
+      const cleanChannel = channelName.replace(/^(live_)+/, '');
+      socket.join(channelName);
       socket.join(`live_${channelName}`);
       socket.join(`room_${channelName}`);
+      if (cleanChannel && cleanChannel !== channelName) {
+        socket.join(cleanChannel);
+        socket.join(`live_${cleanChannel}`);
+        socket.join(`room_${cleanChannel}`);
+      }
+      AppLogger.info(`[Socket Event: join_room/join_live] Socket joined room variants for ${channelName}. userId=${userId}`);
 
       AppLogger.info(`[Socket Event: join_room/join_live] Calling liveStreamService.joinLiveStream for userId=${userId}, channelName=${channelName}`);
       const liveStream = await liveStreamService.joinLiveStream(userId, channelName);

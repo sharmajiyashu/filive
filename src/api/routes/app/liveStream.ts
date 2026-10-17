@@ -180,15 +180,8 @@ export default (router: Router) => {
 
       // Emit room_updated socket event
       try {
-        const io = Container.get('socket') as any;
-        if (io) {
-          AppLogger.info(`[HTTP POST /app/room/edit] Emitting room_updated socket event to rooms: live_${channelName}, room_${channelName}`);
-          io.to(`live_${channelName}`).emit('room_updated', result);
-          io.to(`room_${channelName}`).emit('room_updated', result);
-          AppLogger.info(`[HTTP POST /app/room/edit] room_updated socket event emitted successfully`);
-        } else {
-          AppLogger.warn(`[HTTP POST /app/room/edit] Socket instance not found in Container`);
-        }
+        liveStreamService.broadcastToRoom(channelName, 'room_updated', result);
+        AppLogger.info(`[HTTP POST /app/room/edit] room_updated socket event emitted successfully`);
       } catch (e: any) {
         AppLogger.error(`[HTTP POST /app/room/edit] Failed to emit room_updated socket event: ${e.message}`, e);
       }
