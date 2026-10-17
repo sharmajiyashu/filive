@@ -488,13 +488,14 @@ export class LiveStreamService {
       const maxSeatsNum = Number(data.maxSeats);
       if (!isNaN(maxSeatsNum) && maxSeatsNum > 0) {
         roomSetting.maxSeats = maxSeatsNum;
+        liveStream.maxSeats = maxSeatsNum;
         settingsUpdated = true;
 
         // Resize seats array in the active room
         let existingSeats = liveStream.seats || [];
         let newSeats: any[] = [];
         for (let i = 0; i < maxSeatsNum; i++) {
-          const oldSeat = existingSeats.find(s => s.seatIndex === i);
+          const oldSeat = existingSeats.find((s: any) => s.seatIndex === i);
           if (oldSeat) {
             newSeats.push(oldSeat);
           } else {
@@ -502,6 +503,8 @@ export class LiveStreamService {
           }
         }
         liveStream.seats = newSeats;
+        liveStream.markModified('seats');
+        liveStream.markModified('maxSeats');
       }
     }
 
@@ -542,10 +545,12 @@ export class LiveStreamService {
         try {
           await liveStream.populate(this.seatPopulate());
           const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+          const currentSeats = liveStream.toObject ? liveStream.toObject().seats : liveStream.seats;
+          const currentMax = liveStream.maxSeats || (currentSeats ? currentSeats.length : 0);
           this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
             channelName: liveStream.channelName,
-            seats: liveStream.toObject().seats,
-            maxSeats: liveStream.seats ? liveStream.seats.length : 0,
+            seats: currentSeats,
+            maxSeats: currentMax,
             roomAdmins,
             roomAdmin: roomAdmins
           });
@@ -571,6 +576,8 @@ export class LiveStreamService {
           settingsPayload.partyRoomOption = liveStream.partyRoomOption;
           settingsPayload.channelName = liveStream.channelName;
           settingsPayload.token = liveStream.token;
+          settingsPayload.maxSeats = liveStream.maxSeats || roomSetting.maxSeats;
+          settingsPayload.seats = liveStream.toObject ? liveStream.toObject().seats : liveStream.seats;
           this.broadcastToRoom(liveStream.channelName, 'room_settings_updated', settingsPayload);
         } catch (e: any) {
           AppLogger.error(`[LiveStreamService: updateLiveStream] Failed to emit room_settings_updated event: ${e.message}`, e);
