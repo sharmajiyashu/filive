@@ -16,6 +16,9 @@ export class PayoutMethodService {
     minAmount?: number;
     maxAmount?: number;
     instructions?: string;
+    feeType?: 'percentage' | 'fixed';
+    feeValue?: number;
+    feePercent?: number;
     isActive?: boolean;
   }) {
     AppLogger.info(`[PayoutMethodService: createPayoutMethod] Creating payout method: ${data.name}`);
@@ -43,6 +46,10 @@ export class PayoutMethodService {
       parsedCountries = parsedCountries.map((c) => c.toUpperCase());
     }
 
+    const feeType = data.feeType === 'fixed' ? 'fixed' : 'percentage';
+    const feeValue = data.feeValue !== undefined ? Number(data.feeValue) : (data.feePercent !== undefined ? Number(data.feePercent) : 0);
+    const feePercent = feeType === 'percentage' ? feeValue : (data.feePercent !== undefined ? Number(data.feePercent) : 0);
+
     const payload: any = {
       name: data.name,
       countries: parsedCountries || [],
@@ -50,6 +57,9 @@ export class PayoutMethodService {
       minAmount: data.minAmount !== undefined ? Number(data.minAmount) : 0,
       maxAmount: data.maxAmount !== undefined ? Number(data.maxAmount) : 100000,
       instructions: data.instructions || '',
+      feeType,
+      feeValue,
+      feePercent,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
     };
 
@@ -81,6 +91,21 @@ export class PayoutMethodService {
     }
     if (Array.isArray(data.countries)) {
       data.countries = data.countries.map((c: string) => c.toUpperCase());
+    }
+
+    if (data.feeType !== undefined) {
+      data.feeType = data.feeType === 'fixed' ? 'fixed' : 'percentage';
+    }
+    if (data.feeValue !== undefined) {
+      data.feeValue = Number(data.feeValue);
+      if (data.feeType === 'percentage' || (!data.feeType && data.feePercent === undefined)) {
+        data.feePercent = data.feeValue;
+      }
+    } else if (data.feePercent !== undefined) {
+      data.feePercent = Number(data.feePercent);
+      if (data.feeValue === undefined) {
+        data.feeValue = data.feePercent;
+      }
     }
 
     if (data.media && mongoose.Types.ObjectId.isValid(data.media)) {

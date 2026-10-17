@@ -125,6 +125,24 @@ export class CoinService {
     const minCoinToBeanTransfer = Number(await appSettingService.getSettingValue('min_coin_to_bean_transfer') ?? 100);
     const exchangeRateBaseBeans = Number(await appSettingService.getSettingValue('exchange_rate_base_beans') ?? 10000);
 
+    const cashoutEnabled = Boolean((await appSettingService.getSettingValue('cashout_enabled')) ?? true);
+    const rawAllowedDays = (await appSettingService.getSettingValue('cashout_allowed_days')) || [
+      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+    ];
+    const cashoutAllowedDays: string[] = Array.isArray(rawAllowedDays)
+      ? rawAllowedDays.map((d: string) => String(d).trim().toLowerCase())
+      : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+    const cashoutDisabledMessage = (await appSettingService.getSettingValue('cashout_disabled_message')) ||
+      'Beans cash out is currently closed. Please check the allowed withdrawal schedule.';
+
+    const beansPerUsd = Number((await appSettingService.getSettingValue('beans_per_usd')) || exchangeRateBaseBeans || 10000);
+    const usdToInrExchangeRate = Number((await appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0);
+
+    const currentDay = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }).toLowerCase();
+    const isCashoutAllowedToday = cashoutAllowedDays.includes(currentDay);
+    const isCashoutOpen = cashoutEnabled && isCashoutAllowedToday;
+
     const totalBeans = user.beans || 0;
     const withdrawableBeans = totalBeans;
     const beansToBeConfirmed = 0;
@@ -137,6 +155,12 @@ export class CoinService {
       coinToBeanRateOther,
       minCoinToBeanTransfer,
       exchangeRateBaseBeans,
+      beansPerUsd,
+      usdToInrExchangeRate,
+      isCashoutOpen,
+      cashoutEnabled,
+      cashoutAllowedDays,
+      cashoutDisabledMessage,
     };
   }
 

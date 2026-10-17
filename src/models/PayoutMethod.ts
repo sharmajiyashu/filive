@@ -17,6 +17,9 @@ export interface IPayoutMethod extends Document {
   minAmount?: number;
   maxAmount?: number;
   instructions?: string;
+  feeType: 'percentage' | 'fixed';
+  feeValue: number;
+  feePercent: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -43,6 +46,9 @@ const PayoutMethodSchema: Schema = new Schema(
     minAmount: { type: Number, default: 0 },
     maxAmount: { type: Number, default: 100000 },
     instructions: { type: String, default: '' },
+    feeType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+    feeValue: { type: Number, default: 0 },
+    feePercent: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
   },
   {

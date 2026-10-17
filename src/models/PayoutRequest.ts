@@ -15,7 +15,10 @@ export interface IPayoutRequest extends Document {
     countryCode?: string;
   };
   fieldValues: IPayoutFieldValue[];
-  amount: number;
+  amount: number; // Net amount payable
+  grossAmount?: number; // Gross amount before fees
+  feeAmount?: number; // Service fee amount deducted
+  feePercent?: number; // Fee percentage applied
   currency: string;
   coins?: number;
   status: 'pending' | 'approved' | 'rejected' | 'processing';
@@ -47,6 +50,9 @@ const PayoutRequestSchema: Schema = new Schema(
     },
     fieldValues: [PayoutFieldValueSchema],
     amount: { type: Number, required: true },
+    grossAmount: { type: Number, default: 0 },
+    feeAmount: { type: Number, default: 0 },
+    feePercent: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },
     coins: { type: Number, default: 0 },
     status: {

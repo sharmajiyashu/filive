@@ -176,6 +176,25 @@ export default (router: Router) => {
         if (payload.gift_commission_percent !== undefined) {
           payload.gift_commission_percent = Number(payload.gift_commission_percent);
         }
+        if (payload.beans_per_usd !== undefined) {
+          payload.beans_per_usd = Number(payload.beans_per_usd);
+        }
+        if (payload.usd_to_inr_exchange_rate !== undefined) {
+          payload.usd_to_inr_exchange_rate = Number(payload.usd_to_inr_exchange_rate);
+        }
+        if (payload.cashout_enabled !== undefined) {
+          payload.cashout_enabled = payload.cashout_enabled === true || payload.cashout_enabled === 'true' || payload.cashout_enabled === 1 || payload.cashout_enabled === '1';
+        }
+        if (payload.cashout_fee_value !== undefined) {
+          payload.cashout_fee_value = Number(payload.cashout_fee_value);
+        }
+        if (payload.cashout_fee_type !== undefined) {
+          payload.cashout_fee_type = payload.cashout_fee_type === 'fixed' ? 'fixed' : 'percentage';
+        }
+        if (payload.cashout_disabled_message !== undefined) {
+          payload.cashout_disabled_message = String(payload.cashout_disabled_message);
+        }
+
         const parseArraySetting = (key: string) => {
           if (payload[key] !== undefined) {
             if (typeof payload[key] === 'string') {
@@ -194,6 +213,7 @@ export default (router: Router) => {
         parseArraySetting('marital_statuses');
         parseArraySetting('height_options');
         parseArraySetting('weight_options');
+        parseArraySetting('cashout_allowed_days');
 
         const result = await appSettingService.updateSettings(payload);
         return ResponseWrapper.success(res, result, 'Settings updated successfully');

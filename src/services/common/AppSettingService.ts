@@ -8,6 +8,13 @@ export class AppSettingService {
     bean_to_coin_rate_other: 0.95,
     min_coin_to_bean_transfer: 100,
     exchange_rate_base_beans: 10000,
+    beans_per_usd: 10000,
+    usd_to_inr_exchange_rate: 95.0,
+    cashout_enabled: true,
+    cashout_allowed_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    cashout_disabled_message: 'Beans cash out is currently closed. Please check the allowed withdrawal schedule.',
+    cashout_fee_type: 'percentage',
+    cashout_fee_value: 0,
     call_price_tiers: [
       { minLevel: 1, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 1–7' },
       { minLevel: 8, maxLevel: 15, audioPrice: 1500, videoPrice: 3000, label: 'Level 8–15' },
