@@ -1239,7 +1239,11 @@ export class LiveStreamService {
       query.roomType = 'livestream';
     }
 
-    if (country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
+    const isMineFilter = filters?.isMine === true;
+    const isFollowingFilter = filters?.isFollowingRoom === true;
+    const isMineOrFollowing = isMineFilter || isFollowingFilter;
+
+    if (!isMineOrFollowing && country && country.trim() !== '' && country.trim().toLowerCase() !== 'all') {
       const targetCountry = country.trim();
       const countryConditions: any[] = [];
       if (mongoose.Types.ObjectId.isValid(targetCountry)) {
@@ -1275,7 +1279,7 @@ export class LiveStreamService {
     }
 
     // Filter by isMine and/or isFollowingRoom
-    if (filters?.isMine === true && filters?.isFollowingRoom === true) {
+    if (isMineFilter && isFollowingFilter) {
       if (userId && mongoose.Types.ObjectId.isValid(userId)) {
         const userObjId = new mongoose.Types.ObjectId(userId);
         const [followedRoomDocs, followedHostDocs] = await Promise.all([
@@ -1285,17 +1289,106 @@ export class LiveStreamService {
         const followedRoomIds = followedRoomDocs.map(doc => doc.roomId);
         const followedHostIds = followedHostDocs.map(doc => doc.followingId);
 
-        const orConditions: any[] = [
-          { hostId: userObjId }
-        ];
-        if (followedRoomIds.length > 0) {
-          orConditions.push({ _id: { $in: followedRoomIds }, status: 'live' });
-        }
-        if (followedHostIds.length > 0) {
-          orConditions.push({ hostId: { $in: followedHostIds }, status: 'live' });
+        const targetRoomType = query.roomType || 'party_room';
+
+        // 1. Fetch user's own room (always top priority at index 0 on page 1)
+        let myPartyRoom: any = null;
+        if (page === 1) {
+          const myRoomQuery: any = { hostId: userObjId };
+          if (targetRoomType !== 'all') {
+            myRoomQuery.roomType = targetRoomType;
+          }
+          myPartyRoom = await Room.findOne(myRoomQuery)
+            .sort({ status: -1, updatedAt: -1, createdAt: -1 })
+            .populate({
+              path: 'hostId',
+              select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+              populate: [
+                { path: 'profileImage' },
+                { path: 'countryId' },
+                ...ACTIVE_STORE_POPULATE
+              ]
+            });
         }
 
-        query.$or = orConditions;
+        // 2. Fetch followed rooms (excluding user's own room)
+        const followedOrConditions: any[] = [];
+        if (followedRoomIds.length > 0) {
+          followedOrConditions.push({ _id: { $in: followedRoomIds } });
+        }
+        if (followedHostIds.length > 0) {
+          followedOrConditions.push({ hostId: { $in: followedHostIds } });
+        }
+
+        let followedStreams: any[] = [];
+        let totalFollowed = 0;
+
+        if (followedOrConditions.length > 0) {
+          const followedQuery: any = {
+            $or: followedOrConditions,
+            hostId: { $ne: userObjId }
+          };
+          if (targetRoomType !== 'all') {
+            followedQuery.roomType = targetRoomType;
+          }
+          if (myPartyRoom?._id) {
+            followedQuery._id = { $ne: myPartyRoom._id };
+          }
+
+          totalFollowed = await Room.countDocuments(followedQuery);
+
+          const followedLimit = myPartyRoom ? Math.max(1, limit - 1) : limit;
+          const followedSkip = page === 1 ? 0 : (page - 1) * limit - (myPartyRoom ? 1 : 0);
+
+          followedStreams = await Room.find(followedQuery)
+            .populate({
+              path: 'hostId',
+              select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+              populate: [
+                { path: 'profileImage' },
+                { path: 'countryId' },
+                ...ACTIVE_STORE_POPULATE
+              ]
+            })
+            .sort({ status: -1, viewerCount: -1, createdAt: -1 })
+            .skip(Math.max(0, followedSkip))
+            .limit(followedLimit);
+        }
+
+        const combinedStreams = myPartyRoom ? [myPartyRoom, ...followedStreams] : followedStreams;
+        const totalCount = (myPartyRoom ? 1 : 0) + totalFollowed;
+
+        const mappedStreams = (
+          await Promise.all(
+            combinedStreams.map(async (stream: any) => {
+              const streamObj = await this.populateRoomWithDailyRank(stream, userId);
+              const hostObj = streamObj.hostId;
+              const hostIdStr =
+                hostObj &&
+                (hostObj._id ? hostObj._id.toString() : hostObj.toString());
+              const isMine =
+                userId && hostIdStr ? hostIdStr === userId.toString() : false;
+              const isFollowingRoom = !isMine;
+              return {
+                ...streamObj,
+                isMine,
+                isFollowingRoom,
+              };
+            })
+          )
+        ).filter((s): s is NonNullable<typeof s> => s !== null);
+
+        AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Mine+Following result: myRoom=${Boolean(myPartyRoom)}, followed=${followedStreams.length}, total=${totalCount}`);
+
+        return {
+          streams: mappedStreams,
+          pagination: {
+            total: totalCount,
+            page,
+            limit,
+            totalPages: Math.ceil(totalCount / limit) || 1
+          }
+        };
       } else {
         return {
           streams: [],
@@ -1385,14 +1478,19 @@ export class LiveStreamService {
     const total = await Room.countDocuments(query);
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Successfully retrieved. Found=${streams.length}, Total=${total}`);
 
-    const mappedStreams = (
+    let mappedStreams = (
       await Promise.all(
         streams.map(async (stream: any) => {
           const streamObj = await this.populateRoomWithDailyRank(stream, userId);
           const hostObj = streamObj.hostId;
           const hostGender = (hostObj?.gender || '').toLowerCase();
-          // Filter male hosts from default live stream feed (female only)
-          if (hostGender && hostGender === 'male') {
+          // Filter male hosts only from default public livestream feed (female only)
+          if (
+            roomType === 'livestream' &&
+            !filters?.isMine &&
+            !filters?.isFollowingRoom &&
+            hostGender === 'male'
+          ) {
             return null;
           }
           const hostIdStr =
@@ -1409,6 +1507,17 @@ export class LiveStreamService {
         })
       )
     ).filter((s): s is NonNullable<typeof s> => s !== null);
+
+    // If isMine is requested in fallback, ensure user's room is at the top
+    if (filters?.isMine) {
+      mappedStreams.sort((a: any, b: any) => {
+        if (a.isMine && !b.isMine) return -1;
+        if (!a.isMine && b.isMine) return 1;
+        if (a.status === 'live' && b.status !== 'live') return -1;
+        if (a.status !== 'live' && b.status === 'live') return 1;
+        return (b.viewerCount || 0) - (a.viewerCount || 0);
+      });
+    }
 
     return {
       streams: mappedStreams,
