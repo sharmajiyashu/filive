@@ -35,16 +35,21 @@ export class UserService {
   ) {
     let query: any = {
       userRole: 'user',
-      gender: { $regex: /^female$/i },
-      $and: [
+    };
+
+    const hasSearch = Boolean(search && search.trim() !== '');
+
+    if (!hasSearch) {
+      query.gender = { $regex: /^female$/i };
+      query.$and = [
         {
           $or: [
             { enableVoiceCall: true },
             { enableVideoCall: true }
           ]
         }
-      ]
-    };
+      ];
+    }
 
     if (currentUserId) {
       const blockedRelations = await Block.find({
@@ -62,35 +67,35 @@ export class UserService {
       query._id = { $nin: ninIds };
     }
 
-    // Popular tab & user discovery visibility rule:
-    // Scenario 1: If user is unverified, but two users follow each other (mutual follow with current viewer), visible.
-    // Scenario 2: If user is unverified and not mutually followed, not visible. Verified users always visible.
-    const verificationOrMutualConditions: any[] = [
-      { isVerified: true },
-      { videoVerificationStatus: 'approved' },
-    ];
+    // Popular tab & user discovery visibility rule (only for default browse feed):
+    if (!hasSearch) {
+      const verificationOrMutualConditions: any[] = [
+        { isVerified: true },
+        { videoVerificationStatus: 'approved' },
+      ];
 
-    if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
-      const myFollowings = await Follow.find({
-        followerId: new mongoose.Types.ObjectId(currentUserId),
-        status: 'accepted',
-      }).distinct('followingId');
-
-      if (myFollowings.length > 0) {
-        const mutualFollowUserIds = await Follow.find({
-          followerId: { $in: myFollowings },
-          followingId: new mongoose.Types.ObjectId(currentUserId),
+      if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
+        const myFollowings = await Follow.find({
+          followerId: new mongoose.Types.ObjectId(currentUserId),
           status: 'accepted',
-        }).distinct('followerId');
+        }).distinct('followingId');
 
-        if (mutualFollowUserIds.length > 0) {
-          verificationOrMutualConditions.push({ _id: { $in: mutualFollowUserIds } });
+        if (myFollowings.length > 0) {
+          const mutualFollowUserIds = await Follow.find({
+            followerId: { $in: myFollowings },
+            followingId: new mongoose.Types.ObjectId(currentUserId),
+            status: 'accepted',
+          }).distinct('followerId');
+
+          if (mutualFollowUserIds.length > 0) {
+            verificationOrMutualConditions.push({ _id: { $in: mutualFollowUserIds } });
+          }
         }
       }
-    }
 
-    query.$and = query.$and || [];
-    query.$and.push({ $or: verificationOrMutualConditions });
+      query.$and = query.$and || [];
+      query.$and.push({ $or: verificationOrMutualConditions });
+    }
 
     // Type filter: online or new
     if (type === 'online') {
@@ -167,12 +172,12 @@ export class UserService {
           { $set: { status: 'ended', endedAt: new Date() } }
         )
       ]);
-    } catch (_) {}
+    } catch (_) { }
 
     let ioInstance: any;
     try {
       ioInstance = Container.get('socket');
-    } catch (_) {}
+    } catch (_) { }
 
     const [activeCalls, activeRooms] = await Promise.all([
       Call.find({

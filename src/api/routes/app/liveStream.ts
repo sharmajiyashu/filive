@@ -588,9 +588,12 @@ export default (router: Router) => {
         roomType = 'all';
       }
 
+      const search = (req.query.search || req.query.q || req.query.userId || req.query.roomId)?.toString()?.trim();
+
       const result = await liveStreamService.getActiveLiveStreams(page, limit, userId, country, roomType, {
         isFollowingRoom,
-        isMine
+        isMine,
+        search
       });
       AppLogger.info(`[HTTP GET /app/room/list] Success. Found ${result.streams?.length || 0} active streams for roomType=${roomType}.`);
       return ResponseWrapper.success(res, result, 'Active live streams fetched successfully');
