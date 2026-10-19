@@ -71,5 +71,7 @@ CoinHistorySchema.index({ callId: 1, type: 1 }, { unique: true, sparse: true });
 CoinHistorySchema.index({ userId: 1, createdAt: -1 });
 CoinHistorySchema.index({ userId: 1, wallet: 1, createdAt: -1 });
 CoinHistorySchema.index({ type: 1, createdAt: -1 });
+CoinHistorySchema.index({ wallet: 1, createdAt: -1 });
+CoinHistorySchema.index({ wallet: 1, type: 1 });
 
 export default mongoose.model<ICoinHistory>('CoinHistory', CoinHistorySchema);

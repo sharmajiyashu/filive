@@ -251,6 +251,7 @@ const UserSchema: Schema = new Schema(
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ isBlocked: 1 });
 UserSchema.index({ isCoinseller: 1, isCoinsellerActive: 1 });
+UserSchema.index({ beans: -1 });
 
 UserSchema.pre('save', async function (next) {
   const user = this as any;

@@ -207,6 +207,17 @@ export default (router: Router) => {
     }
   });
 
+  userRouter.put('/:id/adjust-beans', async (req: any, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { amount, description } = req.body;
+      const user = await userService.adjustUserBeans(userId, Number(amount), description);
+      return ResponseWrapper.success(res, user, 'User beans adjusted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   /**
    * @swagger
    * /admin/users:
@@ -518,7 +529,7 @@ export default (router: Router) => {
   userRouter.put('/:id/adjust-balance', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const { type, amount } = req.body;
+      const { type, amount, description } = req.body;
 
       if (!['coins', 'beans'].includes(type)) {
         throw new Error('Invalid balance type specified. Must be coins or beans.');
@@ -527,29 +538,12 @@ export default (router: Router) => {
         throw new Error('Amount must be a number.');
       }
 
-      const user = await User.findById(userId);
-      if (!user) {
-        throw new Error('User not found');
+      let user;
+      if (type === 'coins') {
+        user = await userService.adjustUserCoins(userId, amount, description);
+      } else {
+        user = await userService.adjustUserBeans(userId, amount, description);
       }
-
-      const field = type === 'coins' ? 'coins' : 'beans';
-      const currentVal = (user as any)[field] || 0;
-      const newVal = currentVal + amount;
-
-      if (newVal < 0) {
-        throw new Error(`Insufficient balance. Resulting balance cannot be less than zero.`);
-      }
-
-      (user as any)[field] = newVal;
-      await user.save();
-
-      // Log action in CoinHistory
-      await CoinHistory.create({
-        userId: user._id,
-        amount: amount,
-        type: type === 'coins' ? 'recharge' : 'other',
-        description: `Admin balance adjustment: ${amount >= 0 ? '+' : ''}${amount} ${type}`
-      });
 
       return ResponseWrapper.success(res, user, `${type} balance updated successfully`);
     } catch (error: any) {

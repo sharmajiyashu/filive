@@ -752,6 +752,53 @@ export class UserService {
     return user;
   }
 
+  public async adjustUserBeans(userId: string, amount: number, description?: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    const currentBeans = user.beans || 0;
+    const newBeans = currentBeans + amount;
+    if (newBeans < 0) {
+      throw new Error(`Insufficient beans balance. Resulting balance cannot be less than zero.`);
+    }
+
+    user.beans = newBeans;
+    await user.save();
+
+    await CoinHistory.create({
+      userId: user._id,
+      amount: amount,
+      type: amount >= 0 ? 'charm_received' : 'cash_out',
+      wallet: 'beans',
+      paymentGateway: 'Admin',
+      description: description || (amount >= 0 ? 'Beans Added by Admin' : 'Beans Deducted by Admin'),
+    });
+
+    try {
+      const { ChatService } = require('../app/ChatService');
+      const chatService: any = Container.get(ChatService);
+      await chatService.sendSystemMessage(
+        user._id.toString(),
+        amount >= 0 ? 'Beans Added by Admin' : 'Beans Deducted by Admin',
+        amount >= 0
+          ? `🎉 Admin has credited ${amount} beans to your wallet! Updated Balance: ${newBeans} Beans. ${description ? `Note: ${description}` : ''}`
+          : `⚠️ Admin has deducted ${Math.abs(amount)} beans from your wallet. Updated Balance: ${newBeans} Beans. ${description ? `Note: ${description}` : ''}`,
+        {
+          isRecharge: false,
+          amount,
+          fromUserId: 0,
+          fromUserName: 'Admin',
+          newBalance: newBeans,
+          wallet: 'beans',
+          isCoinseller: false,
+        }
+      );
+    } catch (err: any) {
+      AppLogger.warn(`[UserService: adjustUserBeans] Failed to send system message: ${err?.message}`);
+    }
+
+    return user;
+  }
 
   public async toggleCoinseller(userId: string) {
     const user = await User.findById(userId);
