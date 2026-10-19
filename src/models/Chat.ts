@@ -43,4 +43,7 @@ const ChatSchema: Schema = new Schema(
   }
 );
 
+ChatSchema.index({ 'participants.userId': 1, updatedAt: -1 });
+ChatSchema.index({ type: 1 });
+
 export default mongoose.model<IChat>('Chat', ChatSchema);

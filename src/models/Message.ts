@@ -104,4 +104,8 @@ const MessageSchema: Schema = new Schema(
   }
 );
 
+MessageSchema.index({ chatId: 1, createdAt: -1 });
+MessageSchema.index({ chatId: 1, deletedAt: 1, createdAt: -1 });
+MessageSchema.index({ senderId: 1, createdAt: -1 });
+
 export default mongoose.model<IMessage>('Message', MessageSchema);

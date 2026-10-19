@@ -77,6 +77,8 @@ const RoomSchema: Schema = new Schema(
 // Indexing for faster queries on active rooms
 RoomSchema.index({ status: 1 });
 RoomSchema.index({ hostId: 1, status: 1 });
+RoomSchema.index({ status: 1, roomType: 1, createdAt: -1 });
+RoomSchema.index({ createdAt: -1 });
 
 async function generateNextRoomId(): Promise<number> {
   const highestRoom: any = await mongoose.models.Room.findOne({ roomId: { $gte: 10000001, $lte: 99999999 } })

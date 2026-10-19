@@ -564,17 +564,27 @@ export class ChatMessageService {
 
     await this.markChatAsRead(userId, chatId);
 
+    const senderFormatCache = new Map<string, any>();
+
     const formattedMessages = await Promise.all(
       messages.map(async (msg) => {
         const raw: any = formatAgencyHostInviteMessage(msg);
         if (raw && raw.senderId && typeof raw.senderId === 'object') {
-          raw.senderId = await formatUserActiveStoreItems(raw.senderId, false);
+          const sIdKey = (raw.senderId._id || raw.senderId.id || '').toString();
+          if (sIdKey && senderFormatCache.has(sIdKey)) {
+            raw.senderId = senderFormatCache.get(sIdKey);
+          } else {
+            raw.senderId = await formatUserActiveStoreItems(raw.senderId, false);
+            if (sIdKey) {
+              senderFormatCache.set(sIdKey, raw.senderId);
+            }
+          }
           raw.sender = raw.senderId;
-          raw.activeChatBubble = raw.senderId.activeChatBubble ?? null;
-          raw.chatBubble = raw.senderId.chatBubble ?? null;
-          raw.chat_bubble = raw.senderId.chat_bubble ?? null;
-          raw.activeFrame = raw.senderId.activeFrame ?? null;
-          raw.frame = raw.senderId.frame ?? null;
+          raw.activeChatBubble = raw.senderId?.activeChatBubble ?? null;
+          raw.chatBubble = raw.senderId?.chatBubble ?? null;
+          raw.chat_bubble = raw.senderId?.chat_bubble ?? null;
+          raw.activeFrame = raw.senderId?.activeFrame ?? null;
+          raw.frame = raw.senderId?.frame ?? null;
         }
         return raw;
       })

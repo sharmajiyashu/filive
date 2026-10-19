@@ -11,10 +11,10 @@ const transports = [
 ];
 
 const AppLogger = winston.createLogger({
-    level: 'silly',
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
     levels: winston.config.npm.levels,
     transports,
-    exitOnError: true,
+    exitOnError: false,
     silent: false
 });
 

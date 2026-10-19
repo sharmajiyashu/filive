@@ -19,4 +19,7 @@ const LikeSchema: Schema = new Schema(
   }
 );
 
+LikeSchema.index({ userId: 1, targetId: 1, targetType: 1 }, { unique: true });
+LikeSchema.index({ targetId: 1, targetType: 1 });
+
 export default mongoose.model<ILike>('Like', LikeSchema);

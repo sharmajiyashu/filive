@@ -60,5 +60,6 @@ CallSchema.index({ callerId: 1 });
 CallSchema.index({ receiverId: 1 });
 CallSchema.index({ status: 1 });
 CallSchema.index({ roomId: 1 });
+CallSchema.index({ createdAt: -1 });
 
 export default mongoose.model<ICall>('Call', CallSchema);

@@ -45,6 +45,10 @@ export default (app: Express): void => {
     });
 
     app.use((req: Request, _res: Response, next: NextFunction) => {
+        // Skip logging health checks and static files to reduce disk log bloat
+        if (req.url === '/health' || req.url.startsWith('/public') || req.url.includes('favicon.ico')) {
+            return next();
+        }
         AppLogger.info(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
         next();
     });

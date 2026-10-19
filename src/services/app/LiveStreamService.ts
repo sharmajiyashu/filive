@@ -1821,7 +1821,7 @@ export class LiveStreamService {
             seated = populatedSeated.toObject ? populatedSeated.toObject() : populatedSeated;
           }
         }
-        seated = await formatUserActiveStoreItems(seated, true);
+        seated = await formatUserActiveStoreItems(seated, false);
         const wealthCoins = seated.wealthCoins || 0;
         const charmCoins = seated.charmCoins || 0;
         const [enriched, richLevelInfo, charmLevelInfo] = await Promise.all([

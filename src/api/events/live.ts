@@ -69,7 +69,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
-      const userJson = await formatUserActiveStoreItems(userObj, true);
+      const userJson = await formatUserActiveStoreItems(userObj, false);
       if (userJson) {
         userJson.userId = userJson.userId ?? null;
         userJson.charmRankingDaily = await liveStreamService.getHostDailyCharmRank(userId);
@@ -131,7 +131,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         maxSeats: liveStream.seats ? liveStream.seats.length : 0
       };
 
-      AppLogger.info(`[Socket Event: join_room/join_live] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
+      AppLogger.info(`[Socket Event: join_room/join_live] Viewer ${userId} joined channel ${channelName}`);
 
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_joined', payload);
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_joined', payload);

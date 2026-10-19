@@ -29,4 +29,7 @@ const StorySchema: Schema = new Schema(
   }
 );
 
+StorySchema.index({ userId: 1, createdAt: -1 });
+StorySchema.index({ isBlocked: 1, createdAt: -1 });
+
 export default mongoose.model<IStory>('Story', StorySchema);

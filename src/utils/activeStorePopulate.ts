@@ -90,19 +90,35 @@ export async function clearExpiredActiveStoreItems(userId?: string) {
 export async function stripExpiredActiveStoreOnUser(user: any) {
   if (!user?._id) return user;
 
-  await clearExpiredActiveStoreItems(user._id.toString());
+  // Collect active item IDs that exist on user
+  const activeIds: mongoose.Types.ObjectId[] = [];
+  for (const field of ACTIVE_STORE_FIELDS) {
+    const active = user[field];
+    if (active) {
+      const id = active._id || active;
+      if (id && mongoose.Types.ObjectId.isValid(id.toString())) {
+        activeIds.push(new mongoose.Types.ObjectId(id.toString()));
+      }
+    }
+  }
+
+  if (activeIds.length === 0) return user;
 
   const now = new Date();
+  // Single batch query instead of sequential loop queries
+  const validOwned = await UserStoreItem.find({
+    userId: user._id,
+    storeItemId: { $in: activeIds },
+    expiresAt: { $gt: now },
+  }).select('storeItemId').lean();
+
+  const validOwnedIds = new Set(validOwned.map((item: any) => item.storeItemId.toString()));
+
   for (const field of ACTIVE_STORE_FIELDS) {
     const active = user[field];
     if (!active) continue;
-    const storeItemId = active._id || active;
-    const owned = await UserStoreItem.findOne({
-      userId: user._id,
-      storeItemId,
-      expiresAt: { $gt: now },
-    });
-    if (!owned) {
+    const sId = (active._id || active).toString();
+    if (!validOwnedIds.has(sId)) {
       if (typeof user.set === 'function') {
         user.set(field, undefined);
       } else {
@@ -132,26 +148,40 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
     rawUser.entry = (rawUser as any).entity;
   }
 
-  // If active fields are unpopulated ObjectIds or strings, fetch them with media
-  try {
-    const StoreItemModel = mongoose.model('StoreItem');
-    for (const [typeKey, fieldName] of Object.entries(ACTIVE_STORE_FIELD_BY_TYPE)) {
-      const val = rawUser[fieldName] || rawUser[typeKey];
-      if (val && (typeof val !== 'object' || !val.name || (!val.media && !val.url && !val.path))) {
-        const sId = val._id || val;
-        if (mongoose.Types.ObjectId.isValid(sId)) {
-          const fetched = await StoreItemModel.findById(sId).populate('media');
-          if (fetched) {
-            rawUser[fieldName] = fetched;
-            rawUser[typeKey] = fetched;
-          }
-        }
+  // Batch fetch any active fields that are unpopulated ObjectIds or strings
+  const missingIds: mongoose.Types.ObjectId[] = [];
+  const fieldToIdMap: Record<string, string> = {};
+
+  for (const [typeKey, fieldName] of Object.entries(ACTIVE_STORE_FIELD_BY_TYPE)) {
+    const val = rawUser[fieldName] || rawUser[typeKey];
+    if (val && (typeof val !== 'object' || !val.name || (!val.media && !val.url && !val.path))) {
+      const sId = val._id || val;
+      if (mongoose.Types.ObjectId.isValid(sId)) {
+        const sIdStr = sId.toString();
+        missingIds.push(new mongoose.Types.ObjectId(sIdStr));
+        fieldToIdMap[fieldName] = sIdStr;
+        fieldToIdMap[typeKey] = sIdStr;
       }
     }
-  } catch {}
+  }
 
-  // Fallback: If any active field is still missing, check inUse items from UserStoreItem
-  if (userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+  if (missingIds.length > 0) {
+    try {
+      const StoreItemModel = mongoose.model('StoreItem');
+      const fetchedItems = await StoreItemModel.find({ _id: { $in: missingIds } }).populate('media');
+      const itemMap = new Map(fetchedItems.map((item: any) => [item._id.toString(), item]));
+      for (const [field, sIdStr] of Object.entries(fieldToIdMap)) {
+        const item = itemMap.get(sIdStr);
+        if (item) {
+          rawUser[field] = item;
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback: If any active field is still missing and user exists, check inUse items from UserStoreItem
+  const hasMissingActive = !rawUser.activeEntry || !rawUser.activeFrame || !rawUser.activeChatBubble || !rawUser.activeTheme || !rawUser.activeRide;
+  if (hasMissingActive && userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
     try {
       const now = new Date();
       const inUseDocs = await UserStoreItem.find({

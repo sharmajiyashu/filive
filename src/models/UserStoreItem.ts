@@ -16,11 +16,15 @@ const UserStoreItemSchema: Schema = new Schema(
     storeItemId: { type: Schema.Types.ObjectId, ref: 'StoreItem', required: true },
     purchasedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
-    inUse: { type: Boolean, default: false },
   },
   {
     timestamps: true,
   }
 );
+
+UserStoreItemSchema.index({ inUse: 1, expiresAt: 1 });
+UserStoreItemSchema.index({ userId: 1, expiresAt: 1 });
+UserStoreItemSchema.index({ userId: 1, inUse: 1, expiresAt: 1 });
+UserStoreItemSchema.index({ userId: 1, storeItemId: 1, expiresAt: 1 });
 
 export default mongoose.model<IUserStoreItem>('UserStoreItem', UserStoreItemSchema);

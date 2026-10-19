@@ -37,7 +37,6 @@
   },
   "homepage": "https://github.com/TechanicInfotech/Pineapple-Node-Backend#readme",
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "agora-token": "^2.0.5",
     "apple-signin-auth": "^2.0.0",
