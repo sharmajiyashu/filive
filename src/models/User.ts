@@ -99,6 +99,11 @@ export interface IUser extends Document {
   };
   videoVerificationVideo?: mongoose.Types.ObjectId;
   videoVerificationStatus: 'none' | 'pending' | 'approved' | 'rejected';
+  verificationDocumentPhoto?: mongoose.Types.ObjectId;
+  verificationVideoDuration?: number;
+  verificationSubmittedAt?: Date;
+  verificationRejectReason?: string;
+  verificationAdminNotes?: string;
   referredBy?: mongoose.Types.ObjectId;
   referralCode?: string;
   referCode?: string;
@@ -226,6 +231,11 @@ const UserSchema: Schema = new Schema(
     },
     videoVerificationVideo: { type: Schema.Types.ObjectId, ref: 'Media' },
     videoVerificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
+    verificationDocumentPhoto: { type: Schema.Types.ObjectId, ref: 'Media' },
+    verificationVideoDuration: { type: Number },
+    verificationSubmittedAt: { type: Date },
+    verificationRejectReason: { type: String },
+    verificationAdminNotes: { type: String },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
     referralCode: { type: String, unique: true, sparse: true },
     referCode: { type: String, sparse: true },

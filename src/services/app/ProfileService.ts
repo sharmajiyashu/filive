@@ -1,11 +1,12 @@
 import FriendRequest from '../../models/FriendRequest';
-import { Service } from 'typedi';
+import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
 import { MediaType } from '../../constants/enum';
+import { ReportService } from './ReportService';
 import Career from '../../models/Career';
 import Hobby from '../../models/Hobby';
 import Country from '../../models/Country';
@@ -474,30 +475,106 @@ export class ProfileService {
     };
   }
 
-  public async uploadVideoVerification(userId: string, file: Express.Multer.File) {
-    const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.video, [file], 'verifications');
-    if (!uploadResults || uploadResults.length === 0) {
-      throw new Error('Video upload failed');
+  public async uploadVideoVerification(
+    userId: string,
+    filesInput: any,
+    opts: { duration?: number } = {}
+  ) {
+    let videoFile: Express.Multer.File | undefined;
+    let photoIdFile: Express.Multer.File | undefined;
+
+    if (Array.isArray(filesInput)) {
+      for (const f of filesInput) {
+        const fname = (f.fieldname || '').toLowerCase();
+        const mime = (f.mimetype || '').toLowerCase();
+        if (fname === 'video' || mime.startsWith('video/')) {
+          videoFile = f;
+        } else if (
+          fname.includes('id') ||
+          fname.includes('photo') ||
+          fname.includes('doc') ||
+          mime.startsWith('image/')
+        ) {
+          photoIdFile = f;
+        }
+      }
+      if (!videoFile && filesInput.length > 0) {
+        // If only 1 file and it's video or generic
+        if (filesInput[0].mimetype?.startsWith('video/')) {
+          videoFile = filesInput[0];
+        } else if (!photoIdFile) {
+          photoIdFile = filesInput[0];
+        }
+      }
+      if (!photoIdFile && filesInput.length > 1 && !videoFile) {
+        photoIdFile = filesInput[0];
+        videoFile = filesInput[1];
+      }
+    } else if (filesInput && filesInput.fieldname) {
+      const single = filesInput as Express.Multer.File;
+      if (single.mimetype.startsWith('video/')) {
+        videoFile = single;
+      } else {
+        photoIdFile = single;
+      }
     }
 
-    const media = await this.mediaService.createMedia({
-      ...uploadResults[0]
-    });
+    if (!videoFile && !photoIdFile) {
+      throw new Error('Please upload verification video and/or photo ID');
+    }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      {
-        videoVerificationVideo: media._id,
-        videoVerificationStatus: 'pending'
-      },
-      { new: true }
-    );
+    const updateData: any = {
+      videoVerificationStatus: 'pending',
+      verificationSubmittedAt: new Date(),
+      verificationRejectReason: undefined,
+    };
+
+    if (opts.duration) {
+      updateData.verificationVideoDuration = opts.duration;
+    }
+
+    if (videoFile) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.video, [videoFile], 'verifications');
+      if (uploadResults && uploadResults.length > 0) {
+        const media = await this.mediaService.createMedia({
+          ...uploadResults[0],
+        });
+        updateData.videoVerificationVideo = media._id;
+      }
+    }
+
+    if (photoIdFile) {
+      const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.image, [photoIdFile], 'verification_ids');
+      if (uploadResults && uploadResults.length > 0) {
+        const media = await this.mediaService.createMedia({
+          ...uploadResults[0],
+        });
+        updateData.verificationDocumentPhoto = media._id;
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true })
+      .populate('videoVerificationVideo')
+      .populate('verificationDocumentPhoto');
 
     if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
+    try {
+      const reportService = Container.get(ReportService);
+      await reportService.sendOfficialSystemMessage(
+        userId,
+        'Verification Submitted',
+        'Your identity verification request (Photo ID & 30-sec video) has been received and is pending administrative review. Thank you for keeping Filive safe.',
+        { type: 'verification_submitted', status: 'pending' }
+      );
+    } catch {
+      // non-blocking
+    }
+
     return {
       message: 'Video verification uploaded successfully',
-      status: updatedUser.videoVerificationStatus
+      status: updatedUser.videoVerificationStatus,
+      user: updatedUser,
     };
   }
 

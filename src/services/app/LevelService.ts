@@ -3,9 +3,14 @@ import Level from '../../models/Level';
 
 function getLevelRangeText(levelNumber: number): string {
   if (levelNumber === 0) return '0';
-  const groupStart = Math.floor((levelNumber - 1) / 5) * 5 + 1;
-  const groupEnd = groupStart + 4;
-  return `${groupStart}-${groupEnd}`;
+  if (levelNumber >= 100) return '100';
+  if (levelNumber >= 30) {
+    const start = Math.floor(levelNumber / 10) * 10;
+    return `${start}-${start + 9}`;
+  }
+  if (levelNumber >= 20) return '20-29';
+  if (levelNumber >= 10) return '10-19';
+  return '1-9';
 }
 
 @Service()
@@ -22,12 +27,12 @@ export class LevelService {
           type,
           name: `${type === 'rich' ? 'Rich' : 'Charm'} Level 1`,
           minCoins: 0,
-          maxCoins: 5000,
+          maxCoins: 20000,
           color: defaultColor,
           image: null,
           imageUrl: null,
-          levelRange: '1-5',
-          rangeText: '1-5',
+          levelRange: '1-9',
+          rangeText: '1-9',
         },
         nextLevel: null,
         progressPercentage: 0,
@@ -46,8 +51,9 @@ export class LevelService {
       currentLevel = levels[0];
     }
 
-    // Find the next level if it exists
-    const nextLevel = levels.find(l => l.levelNumber === currentLevel!.levelNumber + 1) || null;
+    // Find the next level in sequence
+    const currentIndex = levels.findIndex(l => l.levelNumber === currentLevel!.levelNumber);
+    const nextLevel = (currentIndex >= 0 && currentIndex < levels.length - 1) ? levels[currentIndex + 1] : null;
 
     let progressPercentage = 0;
     if (nextLevel) {

@@ -36,6 +36,7 @@ import teamApplication from './teamApplication';
 import contactMessage from './contactMessage';
 import websiteSettings from './websiteSettings';
 import beans from './beans';
+import report from './report';
 
 export default (router: Router): Router => {
   auth(router);
@@ -75,6 +76,7 @@ export default (router: Router): Router => {
   contactMessage(router);
   websiteSettings(router);
   beans(router);
+  report(router);
   return router;
 };
 

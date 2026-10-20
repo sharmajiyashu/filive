@@ -891,11 +891,11 @@ export default (router: Router) => {
   userRouter.put('/:id/video-verification', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const { status } = req.body;
+      const { status, reason, notes } = req.body;
       if (!['approved', 'rejected'].includes(status)) {
         throw new Error('Status must be approved or rejected');
       }
-      const user = await userService.updateVideoVerificationStatus(userId, status);
+      const user = await userService.updateVideoVerificationStatus(userId, status, reason, notes);
       return ResponseWrapper.success(res, user, `Video verification status updated to ${status}`);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -954,6 +954,7 @@ export default (router: Router) => {
       const users = await User.find(query)
         .populate('profileImage')
         .populate('videoVerificationVideo')
+        .populate('verificationDocumentPhoto')
         .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit);

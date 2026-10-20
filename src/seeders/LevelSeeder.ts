@@ -9,12 +9,16 @@ function generateSVGForLevel(levelNumber: number, color: string, name: string, t
   let secondaryColor = '#888888';
   if (levelNumber === 0) secondaryColor = type === 'rich' ? '#8B4513' : '#FFD1DC';
   else if (levelNumber === 1) secondaryColor = type === 'rich' ? '#708090' : '#FF69B4';
-  else if (levelNumber === 2) secondaryColor = type === 'rich' ? '#FF8C00' : '#FF1493';
-  else if (levelNumber === 3) secondaryColor = type === 'rich' ? '#778899' : '#DB7093';
-  else if (levelNumber === 4) secondaryColor = type === 'rich' ? '#1E90FF' : '#C71585';
+  else if (levelNumber <= 10) secondaryColor = type === 'rich' ? '#FF8C00' : '#FF1493';
+  else if (levelNumber <= 20) secondaryColor = type === 'rich' ? '#778899' : '#DB7093';
+  else if (levelNumber <= 30) secondaryColor = type === 'rich' ? '#1E90FF' : '#C71585';
+  else if (levelNumber <= 50) secondaryColor = type === 'rich' ? '#9C27B0' : '#E91E63';
+  else if (levelNumber <= 70) secondaryColor = type === 'rich' ? '#00BCD4' : '#FF4081';
+  else secondaryColor = type === 'rich' ? '#FFD700' : '#FF0055';
 
   const prefix = type === 'rich' ? 'R' : 'C';
   const label = type === 'rich' ? 'RICH' : 'CHARM';
+  const displayNum = levelNumber >= 100 ? '100' : `${levelNumber}`;
 
   // Hexagon polygon for rich levels, heart shape for charm levels
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
@@ -31,7 +35,7 @@ function generateSVGForLevel(levelNumber: number, color: string, name: string, t
       ? `<polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
       : `<path d="M12,30 A20,20 0 0,1 50,30 A20,20 0 0,1 88,30 Q88,60 50,90 Q12,60 12,30 Z" fill="url(#grad_${type}_${levelNumber})" filter="url(#shadow)"/>`
     }
-  <text x="50" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle" filter="url(#shadow)">${prefix}${levelNumber}</text>
+  <text x="50" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF" text-anchor="middle" filter="url(#shadow)">${prefix}${displayNum}</text>
   <text x="50" y="75" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="600" fill="#FFFFFF" text-anchor="middle" opacity="0.9">${label}</text>
 </svg>`;
   return svg;
@@ -53,97 +57,32 @@ export async function seedLevels() {
 
     const levels = [
       // Rich (Wealth) Levels
-      {
-        levelNumber: 0,
-        type: 'rich',
-        name: 'Rich Level 0',
-        minCoins: 0,
-        maxCoins: 5000,
-        color: '#CD7F32',
-        image: '',
-      },
-      {
-        levelNumber: 1,
-        type: 'rich',
-        name: 'Rich Level 1',
-        minCoins: 5000,
-        maxCoins: 20000,
-        color: '#C0C0C0',
-        image: '',
-      },
-      {
-        levelNumber: 2,
-        type: 'rich',
-        name: 'Rich Level 2',
-        minCoins: 20000,
-        maxCoins: 40000,
-        color: '#FFD700',
-        image: '',
-      },
-      {
-        levelNumber: 3,
-        type: 'rich',
-        name: 'Rich Level 3',
-        minCoins: 40000,
-        maxCoins: 60000,
-        color: '#E5E4E2',
-        image: '',
-      },
-      {
-        levelNumber: 4,
-        type: 'rich',
-        name: 'Rich Level 4',
-        minCoins: 60000,
-        maxCoins: 82200,
-        color: '#0F52BA',
-        image: '',
-      },
+      { levelNumber: 0, type: 'rich', name: 'Rich Level 0', minCoins: 0, maxCoins: 5000, color: '#CD7F32', rangeText: '0', image: '' },
+      { levelNumber: 1, type: 'rich', name: 'Rich Level 1-9', minCoins: 5000, maxCoins: 20000, color: '#FF4B8A', rangeText: '1-9', image: '' },
+      { levelNumber: 10, type: 'rich', name: 'Rich Level 10-19', minCoins: 20000, maxCoins: 100000, color: '#6A85F1', rangeText: '10-19', image: '' },
+      { levelNumber: 20, type: 'rich', name: 'Rich Level 20-29', minCoins: 100000, maxCoins: 300000, color: '#FFD700', rangeText: '20-29', image: '' },
+      { levelNumber: 30, type: 'rich', name: 'Rich Level 30-39', minCoins: 300000, maxCoins: 700000, color: '#7C6FCD', rangeText: '30-39', image: '' },
+      { levelNumber: 40, type: 'rich', name: 'Rich Level 40-49', minCoins: 700000, maxCoins: 1500000, color: '#E040FB', rangeText: '40-49', image: '' },
+      { levelNumber: 50, type: 'rich', name: 'Rich Level 50-59', minCoins: 1500000, maxCoins: 3000000, color: '#FF5722', rangeText: '50-59', image: '' },
+      { levelNumber: 60, type: 'rich', name: 'Rich Level 60-69', minCoins: 3000000, maxCoins: 6000000, color: '#00E676', rangeText: '60-69', image: '' },
+      { levelNumber: 70, type: 'rich', name: 'Rich Level 70-79', minCoins: 6000000, maxCoins: 10000000, color: '#00B0FF', rangeText: '70-79', image: '' },
+      { levelNumber: 80, type: 'rich', name: 'Rich Level 80-89', minCoins: 10000000, maxCoins: 16000000, color: '#651FFF', rangeText: '80-89', image: '' },
+      { levelNumber: 90, type: 'rich', name: 'Rich Level 90-99', minCoins: 16000000, maxCoins: 25000000, color: '#FF1744', rangeText: '90-99', image: '' },
+      { levelNumber: 100, type: 'rich', name: 'Rich Level 100', minCoins: 25000000, maxCoins: 50000000, color: '#FFD700', rangeText: '100', image: '' },
+
       // Charm Levels
-      {
-        levelNumber: 0,
-        type: 'charm',
-        name: 'Charm Level 0',
-        minCoins: 0,
-        maxCoins: 5000,
-        color: '#FFB6C1',
-        image: '',
-      },
-      {
-        levelNumber: 1,
-        type: 'charm',
-        name: 'Charm Level 1',
-        minCoins: 5000,
-        maxCoins: 20000,
-        color: '#FF69B4',
-        image: '',
-      },
-      {
-        levelNumber: 2,
-        type: 'charm',
-        name: 'Charm Level 2',
-        minCoins: 20000,
-        maxCoins: 40000,
-        color: '#FF1493',
-        image: '',
-      },
-      {
-        levelNumber: 3,
-        type: 'charm',
-        name: 'Charm Level 3',
-        minCoins: 40000,
-        maxCoins: 60000,
-        color: '#DB7093',
-        image: '',
-      },
-      {
-        levelNumber: 4,
-        type: 'charm',
-        name: 'Charm Level 4',
-        minCoins: 60000,
-        maxCoins: 82200,
-        color: '#C71585',
-        image: '',
-      },
+      { levelNumber: 0, type: 'charm', name: 'Charm Level 0', minCoins: 0, maxCoins: 5000, color: '#FFB6C1', rangeText: '0', image: '' },
+      { levelNumber: 1, type: 'charm', name: 'Charm Level 1-9', minCoins: 5000, maxCoins: 20000, color: '#FF4B8A', rangeText: '1-9', image: '' },
+      { levelNumber: 10, type: 'charm', name: 'Charm Level 10-19', minCoins: 20000, maxCoins: 100000, color: '#6A85F1', rangeText: '10-19', image: '' },
+      { levelNumber: 20, type: 'charm', name: 'Charm Level 20-29', minCoins: 100000, maxCoins: 300000, color: '#FFD700', rangeText: '20-29', image: '' },
+      { levelNumber: 30, type: 'charm', name: 'Charm Level 30-39', minCoins: 300000, maxCoins: 700000, color: '#7C6FCD', rangeText: '30-39', image: '' },
+      { levelNumber: 40, type: 'charm', name: 'Charm Level 40-49', minCoins: 700000, maxCoins: 1500000, color: '#E040FB', rangeText: '40-49', image: '' },
+      { levelNumber: 50, type: 'charm', name: 'Charm Level 50-59', minCoins: 1500000, maxCoins: 3000000, color: '#FF5722', rangeText: '50-59', image: '' },
+      { levelNumber: 60, type: 'charm', name: 'Charm Level 60-69', minCoins: 3000000, maxCoins: 6000000, color: '#00E676', rangeText: '60-69', image: '' },
+      { levelNumber: 70, type: 'charm', name: 'Charm Level 70-79', minCoins: 6000000, maxCoins: 10000000, color: '#00B0FF', rangeText: '70-79', image: '' },
+      { levelNumber: 80, type: 'charm', name: 'Charm Level 80-89', minCoins: 10000000, maxCoins: 16000000, color: '#651FFF', rangeText: '80-89', image: '' },
+      { levelNumber: 90, type: 'charm', name: 'Charm Level 90-99', minCoins: 16000000, maxCoins: 25000000, color: '#FF1744', rangeText: '90-99', image: '' },
+      { levelNumber: 100, type: 'charm', name: 'Charm Level 100', minCoins: 25000000, maxCoins: 50000000, color: '#FFD700', rangeText: '100', image: '' },
     ];
 
     // Clear old levels to avoid duplicate key errors on old unique indexes
@@ -177,7 +116,7 @@ export async function seedLevels() {
         secureUrl = `${appUrl.replace(/\/$/, '')}/${secureUrl.replace(/^\//, '')}`;
       }
 
-      const rangeTextVal = lvl.levelNumber === 0 ? '0' : `${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 1}-${Math.floor((lvl.levelNumber - 1) / 5) * 5 + 5}`;
+      const rangeTextVal = lvl.rangeText || (lvl.levelNumber === 0 ? '0' : (lvl.levelNumber >= 100 ? '100' : `${lvl.levelNumber}-${lvl.levelNumber + 9}`));
 
       // Create a Media record for this level icon
       const media = await Media.create({

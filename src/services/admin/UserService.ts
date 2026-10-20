@@ -936,15 +936,53 @@ export class UserService {
     return user;
   }
 
-  public async updateVideoVerificationStatus(userId: string, status: 'approved' | 'rejected') {
+  public async updateVideoVerificationStatus(
+    userId: string,
+    status: 'approved' | 'rejected',
+    reason?: string,
+    notes?: string
+  ) {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
     user.videoVerificationStatus = status;
     if (status === 'approved') {
       user.isVerified = true;
+      user.verificationRejectReason = undefined;
+    } else {
+      user.isVerified = false;
+      user.verificationRejectReason = reason || 'Documents did not meet verification criteria';
     }
+
+    if (notes) {
+      user.verificationAdminNotes = notes;
+    }
+
     await user.save();
+
+    // Send official system message to user
+    try {
+      const { ReportService } = await import('../app/ReportService');
+      const reportService = Container.get(ReportService);
+      if (status === 'approved') {
+        await reportService.sendOfficialSystemMessage(
+          userId,
+          'Identity Verification Approved! 🎉',
+          'Congratulations! Your Photo ID and video verification have been approved by the moderation team. Your profile now proudly displays the verified creator badge.',
+          { type: 'verification_result', status: 'approved' }
+        );
+      } else {
+        await reportService.sendOfficialSystemMessage(
+          userId,
+          'Identity Verification Update',
+          `Your verification request could not be approved. Reason: ${user.verificationRejectReason}. You may re-submit your verification with a clear Photo ID and 30-sec video.`,
+          { type: 'verification_result', status: 'rejected', reason: user.verificationRejectReason }
+        );
+      }
+    } catch (err: any) {
+      AppLogger.warn(`[UserService] verification notify failed: ${err?.message}`);
+    }
+
     return user;
   }
 
