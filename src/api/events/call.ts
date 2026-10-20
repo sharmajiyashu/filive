@@ -43,8 +43,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // 1. Initiate a Call Request
   socket.on('initiate_call', async (data: { receiverId: string; callType: 'voice' | 'video' }, callback?: any) => {
-    AppLogger.info(`[Socket Event: initiate_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: initiate_call] Entered. userId=${userId}`);
       const { receiverId, callType } = data || {};
       if (!receiverId || !callType) {
         emitSocketError(socket, 'initiate_call', 'receiverId and callType are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -103,8 +103,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // 2. Accept Incoming Call
   socket.on('accept_call', async (data: { callId: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: accept_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: accept_call] Entered. userId=${userId}`);
       const { callId } = data || {};
       if (!callId) {
         emitSocketError(socket, 'accept_call', 'callId is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -135,8 +135,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // 3. Reject Incoming Call
   socket.on('reject_call', async (data: { callId: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: reject_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: reject_call] Entered. userId=${userId}`);
       const { callId } = data || {};
       if (!callId) {
         emitSocketError(socket, 'reject_call', 'callId is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -170,8 +170,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // 4. End Call
   socket.on('end_call', async (data: { callId: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: end_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: end_call] Entered. userId=${userId}`);
       const { callId } = data || {};
       if (!callId) {
         emitSocketError(socket, 'end_call', 'callId is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -235,8 +235,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // 5. Send Gift inside Call context
   socket.on('send_gift_in_call', async (data: { callId: string; giftId: string; quantity?: number }, callback?: any) => {
-    AppLogger.info(`[Socket Event: send_gift_in_call] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: send_gift_in_call] Entered. userId=${userId}`);
       const { callId, giftId, quantity } = data || {};
       if (!callId || !giftId) {
         emitSocketError(socket, 'send_gift_in_call', 'callId and giftId are required', 'Validation failed', 'VALIDATION_FAILED', callback);

@@ -2,6 +2,9 @@ import { Response } from "express";
 
 export class ResponseWrapper {
   static success<T>(res: Response, data: T, message: string = 'Success', code: number = 200) {
+    if (res.headersSent) {
+      return;
+    }
     return res.status(code).json({
       success: true,
       data,
@@ -10,6 +13,9 @@ export class ResponseWrapper {
   }
 
   static error(res: Response, error: any, code: number = 400) {
+    if (res.headersSent) {
+      return;
+    }
     let errorMessage = 'An error occurred';
 
     if (typeof error === 'string') {

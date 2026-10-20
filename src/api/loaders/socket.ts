@@ -12,7 +12,7 @@ export default (httpServer: HttpServer): Server => {
             credentials: true
         },
         transports: ['websocket', 'polling'],
-        maxHttpBufferSize: 1e8,
+        maxHttpBufferSize: 1e7, // 10MB safe limit (prevents 100MB heap exhaustion)
         pingTimeout: 60000,
         pingInterval: 25000
     });

@@ -16,15 +16,36 @@ import appLoader from './api/loaders';
 import socketLoader from './api/loaders/socket';
 import socketDI from './api/loaders/diSocket';
 
+process.on('uncaughtException', (error: Error) => {
+  AppLogger.error(`💥 UncaughtException: ${error.message}`, { stack: error.stack });
+});
+
 process.on('unhandledRejection', (reason) => {
   AppLogger.error({ name: 'UnhandledRejection', reason });
 });
+
+let serverInstance: any = null;
+
+const gracefulShutdown = (signal: string) => {
+  AppLogger.info(`Received ${signal}. Shutting down gracefully...`);
+  if (serverInstance) {
+    serverInstance.close(() => {
+      AppLogger.info('HTTP server closed successfully.');
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 async function startServer() {
   const app: Express = express();
   await appLoader(app);
 
-  return app.listen(config.port, () => {
+  serverInstance = app.listen(config.port, () => {
     AppLogger.info(`👌 Server Listening on Port: ${config.port}
         **********************************
                 Filive API
@@ -32,8 +53,9 @@ async function startServer() {
         DB Connection: MongoDB Atlas
         **********************************
         `);
-
   });
+
+  return serverInstance;
 }
 
 startServer()
@@ -42,5 +64,5 @@ startServer()
     await socketDI(socket);
   })
   .catch(e => {
-    AppLogger.error(`Server Failed to Start because${e.stack}`);
+    AppLogger.error(`Server Failed to Start because ${e.stack || e}`);
   });

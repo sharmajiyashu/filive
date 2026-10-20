@@ -56,6 +56,10 @@ export default (app: Express): void => {
     app.use('/v1/api', routes());
 
     app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+        if (res.headersSent) {
+            return _next(error);
+        }
+
         if (error.name === 'ZodError') {
             return res.status(400).json({
                 success: false,
@@ -68,6 +72,10 @@ export default (app: Express): void => {
 
         const status = error.status || 500;
         const message = error.message || 'Internal server error';
+
+        if (status >= 500) {
+            AppLogger.error(`[Express Error ${status}]: ${error.message}`, { stack: error.stack });
+        }
 
         res.status(status).json({
             success: false,

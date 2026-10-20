@@ -15,15 +15,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   const userId = socket.user.id;
 
   socket.on('join_random_match', async (data: { callType: RandomCallType }, callback?: any) => {
-    AppLogger.info(`[Socket Event: join_random_match] userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: join_random_match] userId=${userId}`);
       const rawType = (data?.callType as any)?.toString()?.trim()?.toLowerCase();
       const callType: RandomCallType =
         rawType === 'voice' || rawType === 'audio'
           ? 'voice'
           : rawType === 'video'
-          ? 'video'
-          : ('' as any);
+            ? 'video'
+            : ('' as any);
 
       if (!callType) {
         emitSocketError(
@@ -72,10 +72,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   socket.on(
     'set_random_call_available',
     async (data: { available: boolean; callTypes?: (RandomCallType | 'audio')[] }, callback?: any) => {
-      AppLogger.info(
-        `[Socket Event: set_random_call_available] userId=${userId}, data=${JSON.stringify(data)}`
-      );
       try {
+        AppLogger.info(`[Socket Event: set_random_call_available] userId=${userId}`);
         if (typeof data?.available !== 'boolean') {
           emitSocketError(
             socket,
@@ -90,8 +88,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
         const normalizedTypes: RandomCallType[] | undefined = data.callTypes
           ? (data.callTypes
-              .map((t) => (t === 'audio' ? 'voice' : t))
-              .filter((t): t is RandomCallType => t === 'voice' || t === 'video'))
+            .map((t) => (t === 'audio' ? 'voice' : t))
+            .filter((t): t is RandomCallType => t === 'voice' || t === 'video'))
           : undefined;
 
         await randomMatchService.setHostAvailability(

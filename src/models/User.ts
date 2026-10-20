@@ -303,16 +303,4 @@ UserSchema.pre('save', async function (next) {
   next();
 });
 
-setTimeout(async () => {
-  try {
-    const Model = mongoose.model('User');
-    const usersWithoutId = await Model.find({ userId: { $exists: false } });
-    for (const user of usersWithoutId) {
-      await user.save();
-    }
-  } catch (error) {
-    console.error('Error migrating existing users to generate userId:', error);
-  }
-}, 5000);
-
 export default mongoose.model<IUser>('User', UserSchema);

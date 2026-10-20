@@ -39,8 +39,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handler for joining a room (supports join_live and join_room)
   const handleJoin = async (data: JoinLiveStreamData, callback?: any) => {
-    AppLogger.info(`[Socket Event: join_room/join_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: join_room/join_live] Entered. socket.id=${socket.id}, userId=${userId}`);
       const { channelName } = data || {};
       if (!channelName) {
         AppLogger.warn(`[Socket Event: join_room/join_live] Validation failed. Channel name is required. userId=${userId}`);
@@ -162,8 +162,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handler for leaving a room (supports leave_live and leave_room)
   const handleLeave = async (data: LeaveLiveStreamData, callback?: any) => {
-    AppLogger.info(`[Socket Event: leave_room/leave_live] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: leave_room/leave_live] Entered. socket.id=${socket.id}, userId=${userId}`);
       const { channelName } = data || {};
       if (!channelName) {
         AppLogger.warn(`[Socket Event: leave_room/leave_live] Validation failed. Channel name is missing. userId=${userId}`);
@@ -241,8 +241,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handler for room messages/comments (supports live_comment, room_comment, room_message)
   const handleComment = async (data: LiveCommentData, callback?: any) => {
-    AppLogger.info(`[Socket Event: comment] Entered. socket.id=${socket.id}, userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: comment] Entered. socket.id=${socket.id}, userId=${userId}`);
       const { channelName, message } = data || {};
       if (!channelName || !message) {
         AppLogger.warn(`[Socket Event: comment] Validation failed. channelName or message missing. userId=${userId}`);
@@ -328,8 +328,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handle Music events
   socket.on('play_music', async (data: { channelName: string; musicUrl: string; musicTitle: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: play_music] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: play_music] Entered. userId=${userId}`);
       const { channelName, musicUrl, musicTitle } = data || {};
       if (!channelName || !musicUrl) {
         emitSocketError(socket, 'play_music', 'channelName and musicUrl are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -348,8 +348,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   socket.on('stop_music', async (data: { channelName: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: stop_music] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: stop_music] Entered. userId=${userId}`);
       const { channelName } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'stop_music', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -369,8 +369,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Toggle Public Chat event
   socket.on('toggle_public_chat', async (data: { channelName: string; enabled: boolean }, callback?: any) => {
-    AppLogger.info(`[Socket Event: toggle_public_chat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: toggle_public_chat] Entered. userId=${userId}`);
       const { channelName, enabled } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'toggle_public_chat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -395,8 +395,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handle Game events
   socket.on('start_game', async (data: { channelName: string; gameId: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: start_game] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: start_game] Entered. userId=${userId}`);
       const { channelName, gameId } = data || {};
       if (!channelName || !gameId) {
         emitSocketError(socket, 'start_game', 'channelName and gameId are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -431,8 +431,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   socket.on('end_game', async (data: { channelName: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: end_game] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: end_game] Entered. userId=${userId}`);
       const { channelName } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'end_game', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -461,8 +461,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handle Emoji and GIF events
   socket.on('send_emoji', async (data: { channelName: string; emoji: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: send_emoji] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: send_emoji] Entered. userId=${userId}`);
       const { channelName, emoji } = data || {};
       if (!channelName || !emoji) {
         emitSocketError(socket, 'send_emoji', 'channelName and emoji are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -481,8 +481,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   socket.on('send_gif', async (data: { channelName: string; gifUrl: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: send_gif] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: send_gif] Entered. userId=${userId}`);
       const { channelName, gifUrl } = data || {};
       if (!channelName || !gifUrl) {
         emitSocketError(socket, 'send_gif', 'channelName and gifUrl are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -502,8 +502,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handle gift sending via sockets
   socket.on('send_gift', async (data: { channelName: string; giftId: string; receiverId?: string; receiverIds?: string[]; contextType?: 'live_stream' | 'party_room' | 'audio_call' | 'video_call'; quantity?: number }, callback?: any) => {
-    AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: send_gift] Entered. userId=${userId}`);
       const { channelName, giftId, receiverId, receiverIds, contextType, quantity } = data || {};
       if (!giftId) {
         emitSocketError(socket, 'send_gift', 'giftId is required', 'Validation failed', 'GIFT_ID_REQUIRED', callback);
@@ -598,8 +598,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // User joins a seat in a party room
   socket.on('join_seat', async (data: { channelName: string; seatIndex: number }, callback?: any) => {
-    AppLogger.info(`[Socket Event: join_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: join_seat] Entered. userId=${userId}`);
       const { channelName, seatIndex } = data || {};
       if (!channelName || seatIndex === undefined) {
         emitSocketError(socket, 'join_seat', 'channelName and seatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -618,8 +618,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // User leaves a seat in a party room
   socket.on('leave_seat', async (data: { channelName: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}`);
       const { channelName } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'leave_seat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -638,8 +638,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Handle blocking user from host
   socket.on('block_user', async (data: { channelName: string; userIdToBlock: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: block_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: block_user] Entered. userId=${userId}`);
       const { channelName, userIdToBlock } = data || {};
       if (!channelName || !userIdToBlock) {
         emitSocketError(socket, 'block_user', 'channelName and userIdToBlock are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -659,8 +659,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Change seat
   socket.on('change_seat', async (data: { channelName: string; newSeatIndex: number }, callback?: any) => {
-    AppLogger.info(`[Socket Event: change_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: change_seat] Entered. userId=${userId}`);
       const { channelName, newSeatIndex } = data || {};
       if (!channelName || newSeatIndex === undefined) {
         emitSocketError(socket, 'change_seat', 'channelName and newSeatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -679,8 +679,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Lock seat
   socket.on('lock_seat', async (data: { channelName: string; seatIndex: number; lock: boolean }, callback?: any) => {
-    AppLogger.info(`[Socket Event: lock_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: lock_seat] Entered. userId=${userId}`);
       const { channelName, seatIndex, lock } = data || {};
       if (!channelName || seatIndex === undefined || lock === undefined) {
         emitSocketError(socket, 'lock_seat', 'channelName, seatIndex, and lock are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -699,8 +699,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Mute seat
   socket.on('mute_seat', async (data: { channelName: string; seatIndex: number; mute: boolean }, callback?: any) => {
-    AppLogger.info(`[Socket Event: mute_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: mute_seat] Entered. userId=${userId}`);
       const { channelName, seatIndex, mute } = data || {};
       if (!channelName || seatIndex === undefined || mute === undefined) {
         emitSocketError(socket, 'mute_seat', 'channelName, seatIndex, and mute are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -719,8 +719,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Mute all seats
   socket.on('mute_all_seats', async (data: { channelName: string; mute: boolean }, callback?: any) => {
-    AppLogger.info(`[Socket Event: mute_all_seats] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: mute_all_seats] Entered. userId=${userId}`);
       const { channelName, mute } = data || {};
       if (!channelName || mute === undefined) {
         emitSocketError(socket, 'mute_all_seats', 'channelName and mute are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -739,8 +739,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Kick user
   socket.on('kick_user', async (data: { channelName: string; targetUserId: string }, callback?: any) => {
-    AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: kick_user] Entered. userId=${userId}`);
       const { channelName, targetUserId } = data || {};
       if (!channelName || !targetUserId) {
         emitSocketError(socket, 'kick_user', 'channelName and targetUserId are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -759,8 +759,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Invite to seat
   socket.on('invite_to_seat', async (data: { channelName: string; targetUserId: string; seatIndex: number }, callback?: any) => {
-    AppLogger.info(`[Socket Event: invite_to_seat] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: invite_to_seat] Entered. userId=${userId}`);
       const { channelName, targetUserId, seatIndex } = data || {};
       if (!channelName || !targetUserId || seatIndex === undefined) {
         emitSocketError(socket, 'invite_to_seat', 'channelName, targetUserId, and seatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
@@ -778,8 +778,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
   // Make admin
   socket.on('make_admin', async (data: { channelName: string; targetUserId: string; isAdmin: boolean }, callback?: any) => {
-    AppLogger.info(`[Socket Event: make_admin] Entered. userId=${userId}, data=${JSON.stringify(data)}`);
     try {
+      AppLogger.info(`[Socket Event: make_admin] Entered. userId=${userId}`);
       const { channelName, targetUserId, isAdmin } = data || {};
       if (!channelName || !targetUserId || isAdmin === undefined) {
         emitSocketError(socket, 'make_admin', 'channelName, targetUserId and isAdmin are required', 'Validation failed', 'VALIDATION_FAILED', callback);
