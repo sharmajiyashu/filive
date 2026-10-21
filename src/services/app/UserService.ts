@@ -447,6 +447,8 @@ export class UserService {
     const charmCoins = user.charmCoins || 0;
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+    const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+    const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
 
     let isChatCreated = false;
     let chatId = null;
@@ -467,10 +469,18 @@ export class UserService {
     }
 
     // Check if the user has an active livestream or party room
-    const activeLive = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'livestream' }).populate('roomPhoto');
-    let activeParty = await Room.findOne({ hostId: user._id, status: 'live', roomType: 'party_room' }).populate('roomPhoto');
-    if (!activeParty) {
-      activeParty = await Room.findOne({ hostId: user._id, roomType: 'party_room' }).sort({ updatedAt: -1 }).populate('roomPhoto');
+    const userObjId = mongoose.Types.ObjectId.isValid(user._id) ? new mongoose.Types.ObjectId(user._id) : null;
+    const activeLive = userObjId
+      ? await Room.findOne({ hostId: userObjId, status: 'live', roomType: 'livestream' }).populate('roomPhoto')
+      : null;
+
+    const { LiveStreamService } = await import('./LiveStreamService');
+    const liveStreamService = Container.get(LiveStreamService);
+    const activeParty = await liveStreamService.getActiveRoomForHost(user._id.toString(), 'party_room');
+    if (activeParty && currentUserId) {
+      const isMine = currentUserId.toString() === user._id.toString();
+      activeParty.isMine = isMine;
+      activeParty.isFollowingRoom = !isMine;
     }
 
     // Fetch user's family membership details
@@ -532,6 +542,10 @@ export class UserService {
         height: userObj.height || '',
         weight: userObj.weight || '',
         maritalStatus: userObj.maritalStatus || '',
+        level: richLevelNum,
+        levelNumber: richLevelNum,
+        wealthLevel: richLevelNum,
+        charmLevel: charmLevelNum,
         levelInfo: richLevelInfo, // backward compatibility
         richLevelInfo,
         charmLevelInfo,
@@ -543,8 +557,8 @@ export class UserService {
         isPinned,
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null,
-        partyRoom: activeParty ? activeParty.toObject() : null,
-        activePartyRoom: activeParty ? activeParty.toObject() : null,
+        partyRoom: activeParty,
+        activePartyRoom: activeParty,
         followedLiveStreams,
         followedLiveRooms: followedLiveStreams,
         isBlock
@@ -566,9 +580,13 @@ export class UserService {
       familyRole,
       isLive: !!activeLive,
       liveStream: activeLive ? activeLive.toObject() : null,
-      partyRoom: activeParty ? activeParty.toObject() : null,
-      activePartyRoom: activeParty ? activeParty.toObject() : null,
+      partyRoom: activeParty,
+      activePartyRoom: activeParty,
       groups: groupChats,
+      level: richLevelNum,
+      levelNumber: richLevelNum,
+      wealthLevel: richLevelNum,
+      charmLevel: charmLevelNum,
       richLevelInfo,
       charmLevelInfo,
       levelInfo: richLevelInfo,

@@ -191,6 +191,8 @@ export class RankingService {
           wealthCoins: user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0),
           charmCoins: user.charmCoins || 0,
           level: hideWealth ? null : levels.level,
+          levelNumber: hideWealth ? null : levels.levelNumber,
+          wealthLevel: hideWealth ? null : levels.wealthLevel,
           charmLevel: hideCharm ? null : levels.charmLevel,
           levelInfo: hideWealth ? null : levels.levelInfo,
           richLevelInfo: hideWealth ? null : levels.richLevelInfo,

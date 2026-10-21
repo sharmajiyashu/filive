@@ -104,14 +104,19 @@ export class SocialService {
             this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
             this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
           ]);
+          const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+          const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
           fObj.followerId = {
             ...u,
             wealthCoins,
             charmCoins,
-            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
-            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            level: richLevelNum,
+            levelNumber: richLevelNum,
+            wealthLevel: richLevelNum,
+            charmLevel: charmLevelNum,
             richLevelInfo,
             charmLevelInfo,
+            levelInfo: richLevelInfo,
           };
         }
         return fObj;
@@ -166,14 +171,19 @@ export class SocialService {
             this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
             this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
           ]);
+          const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+          const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
           fObj.followingId = {
             ...u,
             wealthCoins,
             charmCoins,
-            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
-            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            level: richLevelNum,
+            levelNumber: richLevelNum,
+            wealthLevel: richLevelNum,
+            charmLevel: charmLevelNum,
             richLevelInfo,
             charmLevelInfo,
+            levelInfo: richLevelInfo,
           };
         }
         return fObj;
@@ -226,14 +236,19 @@ export class SocialService {
             this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
             this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
           ]);
+          const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+          const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
           fObj.followerId = {
             ...u,
             wealthCoins,
             charmCoins,
-            wealthLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
-            charmLevel: charmLevelInfo?.currentLevel?.levelNumber || 1,
+            level: richLevelNum,
+            levelNumber: richLevelNum,
+            wealthLevel: richLevelNum,
+            charmLevel: charmLevelNum,
             richLevelInfo,
             charmLevelInfo,
+            levelInfo: richLevelInfo,
           };
         }
         return fObj;

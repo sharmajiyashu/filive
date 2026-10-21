@@ -2,10 +2,13 @@ import { Router, Response } from 'express';
 import Container from 'typedi';
 import { ReportAdminService } from '../../../services/admin/ReportAdminService';
 import { ResponseWrapper } from '../../responseWrapper';
+import { adminAuthMiddleware } from '../../middleware/adminAuthMiddleware';
 
 export default (router: Router) => {
   const reportAdminService = Container.get(ReportAdminService);
   const reportRouter = Router();
+
+  router.use('/reports', adminAuthMiddleware, reportRouter);
 
   /**
    * @swagger
@@ -53,6 +56,47 @@ export default (router: Router) => {
       });
 
       return ResponseWrapper.success(res, result, 'Reports fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/appeals:
+   *   get:
+   *     summary: List appeals submitted by users
+   *     tags: [Admin - Reports]
+   */
+  reportRouter.get('/all/appeals', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1');
+      const limit = parseInt(req.query.limit?.toString() || '10');
+      const status = req.query.status?.toString();
+
+      const result = await reportAdminService.getAppeals({ page, limit, status });
+      return ResponseWrapper.success(res, result, 'Appeals fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/appeals/{id}/review:
+   *   put:
+   *     summary: Review appeal (accept and revoke penalty or reject)
+   *     tags: [Admin - Reports]
+   */
+  reportRouter.put('/appeals/:id/review', async (req: any, res: Response) => {
+    try {
+      const adminUser = {
+        id: req.user?.id,
+        name: req.user?.name || req.user?.email || 'Admin',
+      };
+
+      const result = await reportAdminService.reviewAppeal(req.params.id, adminUser, req.body);
+      return ResponseWrapper.success(res, result, 'Appeal reviewed successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -121,47 +165,4 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
-
-  /**
-   * @swagger
-   * /admin/appeals:
-   *   get:
-   *     summary: List appeals submitted by users
-   *     tags: [Admin - Reports]
-   */
-  reportRouter.get('/all/appeals', async (req: any, res: Response) => {
-    try {
-      const page = parseInt(req.query.page?.toString() || '1');
-      const limit = parseInt(req.query.limit?.toString() || '10');
-      const status = req.query.status?.toString();
-
-      const result = await reportAdminService.getAppeals({ page, limit, status });
-      return ResponseWrapper.success(res, result, 'Appeals fetched successfully');
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
-
-  /**
-   * @swagger
-   * /admin/appeals/{id}/review:
-   *   put:
-   *     summary: Review appeal (accept and revoke penalty or reject)
-   *     tags: [Admin - Reports]
-   */
-  reportRouter.put('/appeals/:id/review', async (req: any, res: Response) => {
-    try {
-      const adminUser = {
-        id: req.user?.id,
-        name: req.user?.name || req.user?.email || 'Admin',
-      };
-
-      const result = await reportAdminService.reviewAppeal(req.params.id, adminUser, req.body);
-      return ResponseWrapper.success(res, result, 'Appeal reviewed successfully');
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
-
-  router.use('/reports', reportRouter);
 };

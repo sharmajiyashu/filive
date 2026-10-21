@@ -15,24 +15,43 @@ function getLevelRangeText(levelNumber: number): string {
 
 @Service()
 export class LevelService {
-  public async getLevelInfoForCoins(coins: number, type: 'rich' | 'charm' = 'rich') {
-    // Fetch levels sorted by levelNumber
+  private cache: { [key: string]: { data: any[]; expiresAt: number } } = {};
+
+  public clearCache() {
+    this.cache = {};
+  }
+
+  private async getCachedLevels(type: 'rich' | 'charm'): Promise<any[]> {
+    const now = Date.now();
+    if (this.cache[type] && this.cache[type].expiresAt > now) {
+      return this.cache[type].data;
+    }
     const levels = await Level.find({ type }).populate('image').sort({ levelNumber: 1 });
+    this.cache[type] = {
+      data: levels,
+      expiresAt: now + 60000, // 60 seconds TTL
+    };
+    return levels;
+  }
+
+  public async getLevelInfoForCoins(coins: number, type: 'rich' | 'charm' = 'rich') {
+    // Fetch levels sorted by levelNumber from cache
+    const levels = await this.getCachedLevels(type);
 
     if (levels.length === 0) {
       const defaultColor = type === 'rich' ? '#CD7F32' : '#FFB6C1';
       return {
         currentLevel: {
-          levelNumber: 1,
+          levelNumber: 0,
           type,
-          name: `${type === 'rich' ? 'Rich' : 'Charm'} Level 1`,
+          name: `${type === 'rich' ? 'Rich' : 'Charm'} Level 0`,
           minCoins: 0,
-          maxCoins: 20000,
+          maxCoins: 5000,
           color: defaultColor,
           image: null,
           imageUrl: null,
-          levelRange: '1-9',
-          rangeText: '1-9',
+          levelRange: '0',
+          rangeText: '0',
         },
         nextLevel: null,
         progressPercentage: 0,
@@ -101,6 +120,7 @@ export class LevelService {
       const obj = l.toObject ? l.toObject() : { ...l };
       obj.levelRange = getLevelRangeText(obj.levelNumber);
       obj.rangeText = getLevelRangeText(obj.levelNumber);
+      obj.imageUrl = obj.image?.url || (typeof obj.image === 'string' ? obj.image : null);
       return obj;
     });
   }

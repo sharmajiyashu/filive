@@ -126,11 +126,17 @@ export class ProfileService {
       }
     }
 
-    const activeLive = await Room.findOne({ hostId: userId, status: 'live', roomType: 'livestream' }).populate('roomPhoto');
-    let activeParty: any = await Room.findOne({ hostId: userId, status: 'live', roomType: 'party_room' }).populate('roomPhoto');
-    if (!activeParty) {
-      activeParty = await Room.findOne({ hostId: userId, roomType: 'party_room' }).sort({ updatedAt: -1 }).populate('roomPhoto');
-    }
+    const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+    const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
+
+    const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+    const activeLive = userObjId
+      ? await Room.findOne({ hostId: userObjId, status: 'live', roomType: 'livestream' }).populate('roomPhoto')
+      : null;
+
+    const { LiveStreamService } = await import('./LiveStreamService');
+    const liveStreamService = Container.get(LiveStreamService);
+    const activeParty = await liveStreamService.getActiveRoomForHost(userId, 'party_room');
 
     return {
       ...profileData,
@@ -143,6 +149,10 @@ export class ProfileService {
       followingCount,
       friendsCount,
       visitorsCount,
+      level: richLevelNum,
+      levelNumber: richLevelNum,
+      wealthLevel: richLevelNum,
+      charmLevel: charmLevelNum,
       levelInfo: richLevelInfo,
       richLevelInfo,
       charmLevelInfo,
@@ -154,8 +164,8 @@ export class ProfileService {
       familyRole,
       isLive: !!activeLive,
       liveStream: activeLive ? (typeof (activeLive as any).toObject === 'function' ? (activeLive as any).toObject() : activeLive) : null,
-      partyRoom: activeParty ? (typeof activeParty.toObject === 'function' ? activeParty.toObject() : activeParty) : null,
-      activePartyRoom: activeParty ? (typeof activeParty.toObject === 'function' ? activeParty.toObject() : activeParty) : null,
+      partyRoom: activeParty,
+      activePartyRoom: activeParty,
     };
   }
 
@@ -327,6 +337,8 @@ export class ProfileService {
     const charmCoins = updatedUser.charmCoins || 0;
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+    const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+    const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
 
     const ownedAgency = await Agency.findOne({ creatorId: userId })
       .populate('countryId')
@@ -375,6 +387,10 @@ export class ProfileService {
         followingCount,
         friendsCount,
         visitorsCount,
+        level: richLevelNum,
+        levelNumber: richLevelNum,
+        wealthLevel: richLevelNum,
+        charmLevel: charmLevelNum,
         levelInfo: richLevelInfo,
         richLevelInfo,
         charmLevelInfo,

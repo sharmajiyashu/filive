@@ -375,11 +375,11 @@ export class UserService {
         if (userObj.userRole === 'admin') roleBadge = 'Admin';
         else if (userObj.isCoinseller) roleBadge = 'CoinSeller';
 
-        const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1);
+        const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 0);
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
         const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
 
-        const charmLevelNum = typeof charmLevel === 'number' ? charmLevel : (typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 1);
+        const charmLevelNum = typeof charmLevel === 'number' ? charmLevel : (typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0);
         const charmNameVal = charmLevelInfo?.currentLevel?.name || charmLevelInfo?.name;
         const charmNameStr = typeof charmNameVal === 'string' ? charmNameVal : (typeof charmNameVal === 'object' && charmNameVal?.en ? charmNameVal.en : 'Rising Star');
 

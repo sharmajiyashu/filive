@@ -1644,6 +1644,47 @@ export class LiveStreamService {
   }
 
   /**
+   * Auto-provisions a default permanent party room for a host user if they don't have one
+   */
+  public async createDefaultPartyRoomForUser(hostId: string) {
+    if (!mongoose.Types.ObjectId.isValid(hostId)) return null;
+    const user = await User.findById(hostId).populate('profileImage');
+    if (!user) return null;
+
+    const channelName = `party_${hostId}_${Date.now()}`;
+    let token = '';
+    try {
+      token = this.generateAgoraToken(channelName, 0, 'publisher');
+    } catch (e) {
+      token = '';
+    }
+
+    const initialSeats: any[] = [];
+    for (let i = 0; i < 8; i++) {
+      initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+    }
+
+    const newRoom = await Room.create({
+      hostId: new mongoose.Types.ObjectId(hostId),
+      channelName,
+      title: `${user.name || 'User'}'s Party Room`,
+      roomPhoto: user.profileImage?._id || user.profileImage || undefined,
+      roomType: 'party_room',
+      partyRoomOption: 'live',
+      status: 'ended',
+      token,
+      viewerCount: 0,
+      viewers: [],
+      maxSeats: 8,
+      seats: initialSeats,
+      startedAt: new Date(),
+    });
+
+    await this.ensureRoomId(newRoom);
+    return newRoom;
+  }
+
+  /**
    * Retrieves the active room for a given host user
    */
   public async getActiveRoomForHost(hostId: string, roomType?: 'livestream' | 'party_room') {
@@ -1655,6 +1696,8 @@ export class LiveStreamService {
       liveQuery.roomType = roomType;
     }
     let activeStream = await Room.findOne(liveQuery)
+      .populate('roomPhoto')
+      .populate('roomTheme')
       .populate({
         path: 'hostId',
         select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
@@ -1667,13 +1710,30 @@ export class LiveStreamService {
         fallbackQuery.roomType = roomType;
       }
       activeStream = await Room.findOne(fallbackQuery)
-        .sort({ createdAt: -1 })
+        .sort({ status: -1, updatedAt: -1, createdAt: -1 })
+        .populate('roomPhoto')
+        .populate('roomTheme')
         .populate({
           path: 'hostId',
           select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
           populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
         });
     }
+
+    if (!activeStream && roomType === 'party_room') {
+      activeStream = await this.createDefaultPartyRoomForUser(hostId);
+      if (activeStream) {
+        activeStream = await Room.findById(activeStream._id)
+          .populate('roomPhoto')
+          .populate('roomTheme')
+          .populate({
+            path: 'hostId',
+            select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+            populate: [{ path: 'profileImage' }, { path: 'countryId' }, ...ACTIVE_STORE_POPULATE]
+          });
+      }
+    }
+
     return await this.populateRoomWithDailyRank(activeStream, hostId);
   }
 
@@ -1792,10 +1852,17 @@ export class LiveStreamService {
         ? new Date(host.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
         : false;
 
+      const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+      const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
+
       host.id = host._id || null;
       host.userId = host.userId ?? null;
       host.name = host.name ?? null;
       host.profileImage = host.profileImage ?? null;
+      host.level = richLevelNum;
+      host.levelNumber = richLevelNum;
+      host.wealthLevel = richLevelNum;
+      host.charmLevel = charmLevelNum;
       host.richLevelInfo = richLevelInfo;
       host.charmLevelInfo = charmLevelInfo;
       host.levelInfo = richLevelInfo;
@@ -1829,6 +1896,12 @@ export class LiveStreamService {
           this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
           this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
         ]);
+        const seatedRichLvl = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+        const seatedCharmLvl = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
+        enriched.level = seatedRichLvl;
+        enriched.levelNumber = seatedRichLvl;
+        enriched.wealthLevel = seatedRichLvl;
+        enriched.charmLevel = seatedCharmLvl;
         enriched.richLevelInfo = richLevelInfo;
         enriched.charmLevelInfo = charmLevelInfo;
         enriched.levelInfo = richLevelInfo;

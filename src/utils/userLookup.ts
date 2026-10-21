@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { Container } from 'typedi';
 import Country from '../models/Country';
 import User from '../models/User';
 import { LevelService } from '../services/app/LevelService';
@@ -10,9 +11,11 @@ export function toPlainObject(doc: any) {
 
 export function formatLevelInfo(levelInfo: any) {
   if (!levelInfo) return null;
+  const lvl = typeof levelInfo.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 0;
   return {
     ...levelInfo,
-    level: typeof levelInfo.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 1,
+    level: lvl,
+    levelNumber: lvl,
   };
 }
 
@@ -124,8 +127,8 @@ export type UserCountryAgeFields = {
 
 export async function attachUserCountryAndAge<T extends Record<string, any>>(
   user: T
-): Promise<T & UserCountryAgeFields> {
-  const payload = (user ?? {}) as T & UserCountryAgeFields;
+): Promise<T & UserCountryAgeFields & { level: number; levelNumber: number; wealthLevel: number; charmLevel: number; richLevelInfo: any; charmLevelInfo: any; levelInfo: any }> {
+  const payload = (user ?? {}) as any;
   if (!user) return payload;
   const rawUser = user as any;
   const country = await resolveCountryObject(user);
@@ -134,17 +137,46 @@ export async function attachUserCountryAndAge<T extends Record<string, any>>(
   payload.countryCode = country?.code ?? (typeof rawUser.countryCode === 'string' ? rawUser.countryCode : null);
   payload.country_flag = country?.flag ?? (typeof rawUser.country_flag === 'string' ? rawUser.country_flag : null);
   payload.age = ageFromDob(rawUser.dob);
+
+  try {
+    const levelService = Container.get(LevelService);
+    const richCoins = rawUser.wealthCoins !== undefined ? rawUser.wealthCoins : (rawUser.coins || 0);
+    const charmCoins = rawUser.charmCoins || 0;
+    const [richLevelInfo, charmLevelInfo] = await Promise.all([
+      levelService.getLevelInfoForCoins(richCoins, 'rich'),
+      levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+    ]);
+    const formattedRich = formatLevelInfo(richLevelInfo);
+    const formattedCharm = formatLevelInfo(charmLevelInfo);
+    const richLevelNum = typeof formattedRich?.level === 'number' ? formattedRich.level : 0;
+    const charmLevelNum = typeof formattedCharm?.level === 'number' ? formattedCharm.level : 0;
+
+    payload.level = richLevelNum;
+    payload.levelNumber = richLevelNum;
+    payload.wealthLevel = richLevelNum;
+    payload.charmLevel = charmLevelNum;
+    payload.richLevelInfo = formattedRich;
+    payload.charmLevelInfo = formattedCharm;
+    payload.levelInfo = formattedRich;
+  } catch (err) {
+    payload.level = payload.level ?? 0;
+    payload.levelNumber = payload.levelNumber ?? 0;
+    payload.wealthLevel = payload.wealthLevel ?? 0;
+    payload.charmLevel = payload.charmLevel ?? 0;
+  }
+
   return payload;
 }
 
 export async function getUserCountryAndLevels(
-  user: InstanceType<typeof User>,
+  user: InstanceType<typeof User> | Record<string, any>,
   levelService: LevelService
 ) {
-  const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);
-  const charmCoins = user.charmCoins || 0;
+  const rawUser = (user as any) || {};
+  const richCoins = rawUser.wealthCoins !== undefined ? rawUser.wealthCoins : (rawUser.coins || 0);
+  const charmCoins = rawUser.charmCoins || 0;
   const [country, richLevelInfo, charmLevelInfo] = await Promise.all([
-    resolveCountryObject(user),
+    resolveCountryObject(rawUser),
     levelService.getLevelInfoForCoins(richCoins, 'rich'),
     levelService.getLevelInfoForCoins(charmCoins, 'charm'),
   ]);
@@ -152,13 +184,18 @@ export async function getUserCountryAndLevels(
   const levelInfo = formatLevelInfo(richLevelInfo);
   const charmLevel = formatLevelInfo(charmLevelInfo);
 
+  const richLevelNum = typeof levelInfo?.level === 'number' ? levelInfo.level : 0;
+  const charmLevelNum = typeof charmLevel?.level === 'number' ? charmLevel.level : 0;
+
   return {
     country,
-    countryId: country?._id ?? user.countryId ?? null,
-    level: levelInfo?.level ?? null,
+    countryId: country?._id ?? rawUser.countryId ?? null,
+    level: richLevelNum,
+    levelNumber: richLevelNum,
+    wealthLevel: richLevelNum,
+    charmLevel: charmLevelNum,
     levelInfo,
     richLevelInfo: levelInfo,
     charmLevelInfo: charmLevel,
-    charmLevel: charmLevel?.level ?? null,
   };
 }
