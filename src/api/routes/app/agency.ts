@@ -13,42 +13,11 @@ export default (router: Router) => {
 
   router.use('/agencies', appAuthMiddleware, agencyRouter);
 
-  const assertAgencyFeature = async (flag: string, res: Response) => {
-    const appSettingService = Container.get(AppSettingService);
-    const enabled = await appSettingService.getSettingValue(flag);
-    if (enabled) return true;
-    ResponseWrapper.error(res, new Error('FEATURE_DISABLED: This agency feature is disabled for the current release'));
-    return false;
-  };
-
-  agencyRouter.use(async (req: any, res: Response, next: any) => {
-    try {
-      const p = req.path || '';
-      const isInvite =
-        p === '/create' ||
-        p === '/verify' ||
-        p === '/join-by-user-id';
-      const isHostApp =
-        p.startsWith('/host-requests') ||
-        p.startsWith('/requests') ||
-        p === '/become-host' ||
-        p.startsWith('/verify-user') ||
-        p.startsWith('/verify-agency-user') ||
-        p.includes('/join') ||
-        p.includes('/add-host') ||
-        p.includes('/host-history') ||
-        (req.method === 'DELETE' && p.startsWith('/hosts'));
-      const flag = isInvite
-        ? 'agency_invite_enabled'
-        : isHostApp
-          ? 'host_application_enabled'
-          : 'agency_data_enabled';
-      const ok = await assertAgencyFeature(flag, res);
-      if (!ok) return;
-      next();
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
+  agencyRouter.use((req: any, res: Response, next: any) => {
+    if (req.url) {
+      req.url = req.url.replace(/\/{2,}/g, '/');
     }
+    next();
   });
 
   /**
@@ -842,11 +811,11 @@ export default (router: Router) => {
       const adminUserId = req.user.id;
       const targetUserId = parseInt(req.params.userId);
       const { agencyId } = req.body || {};
-      
+
       if (isNaN(targetUserId)) {
         throw new Error('userId must be a valid number');
       }
-      
+
       const result = await agencyService.verifyUserForHost(targetUserId, adminUserId, agencyId);
       return ResponseWrapper.success(res, result, 'User checked successfully for host invite');
     } catch (error: any) {

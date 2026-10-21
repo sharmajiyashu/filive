@@ -444,12 +444,12 @@ export class CoinService {
     if (!user) throw new Error('User not found');
 
     if (audience === 'seller') {
-      if (!user.isCoinseller) {
-        throw new Error('Only coin sellers can recharge seller packages');
-      }
       await User.findByIdAndUpdate(
         userId,
-        { $inc: { coinSellerCoins: pkg.coins } },
+        {
+          $inc: { coinSellerCoins: pkg.coins },
+          $set: { isCoinseller: true, isCoinsellerActive: true }
+        },
         { session }
       );
       return { wallet: 'coinSellerCoins' as const };
@@ -493,7 +493,7 @@ export class CoinService {
       const user = await User.findById(userId).select('isCoinseller');
       if (!user) throw new Error('User not found');
       if (!user.isCoinseller) {
-        throw new Error('Only coin sellers can use seller recharge');
+        await User.findByIdAndUpdate(userId, { isCoinseller: true, isCoinsellerActive: true });
       }
     }
 
@@ -533,7 +533,7 @@ export class CoinService {
     if (audience === 'seller') {
       const user = await User.findById(userId).select('isCoinseller');
       if (!user?.isCoinseller) {
-        throw new Error('Only coin sellers can recharge seller packages');
+        await User.findByIdAndUpdate(userId, { isCoinseller: true, isCoinsellerActive: true });
       }
     }
 

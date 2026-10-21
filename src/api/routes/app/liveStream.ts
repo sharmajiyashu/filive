@@ -1127,6 +1127,17 @@ export default (router: Router) => {
     }
   });
 
+  liveRouter.post('/seat/leave', async (req: any, res: Response) => {
+    const userId = req.user?.id;
+    try {
+      const { channelName } = req.body;
+      const result = await liveStreamService.leaveSeat(userId, channelName);
+      return ResponseWrapper.success(res, result, 'Seat vacated');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   /**
    * @swagger
    * /app/room/seat/lock:

@@ -55,6 +55,10 @@ export default (router: Router) => {
       { name: 'party_room_banners', maxCount: 10 },
       { name: 'recharge_offer_banners', maxCount: 10 },
       { name: 'default_album_image', maxCount: 1 },
+      { name: 'host_role_image', maxCount: 1 },
+      { name: 'agency_role_image', maxCount: 1 },
+      { name: 'coin_trader_role_image', maxCount: 1 },
+      { name: 'bd_role_image', maxCount: 1 },
     ]),
     async (req: any, res: Response) => {
       try {
@@ -139,6 +143,25 @@ export default (router: Router) => {
           if (uploadResults.length > 0) {
             const media = await mediaService.createMedia({ ...uploadResults[0] });
             payload.default_album_image_url = media.url;
+          }
+        }
+
+        const roleImageFields = [
+          'host_role_image',
+          'agency_role_image',
+          'coin_trader_role_image',
+          'bd_role_image',
+        ];
+        for (const fieldName of roleImageFields) {
+          const files = req.files?.[fieldName];
+          if (files && files.length > 0) {
+            const file = files[0];
+            const mediaType = resolveMediaType(file);
+            const uploadResults = await cloudinaryService.uploadMedia(mediaType, [file], 'role_tags');
+            if (uploadResults.length > 0) {
+              const media = await mediaService.createMedia({ ...uploadResults[0] });
+              payload[fieldName] = media.url;
+            }
           }
         }
 

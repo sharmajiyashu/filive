@@ -616,11 +616,14 @@ export class LiveStreamService {
     }
 
     // Only host or admin can block
-    if (liveStream.hostId.toString() !== hostId) {
-      // Find host to see if they are an admin
+    if (liveStream.hostId.toString() !== hostId && hostId !== 'admin' && hostId !== 'system_admin') {
       const requestor = await User.findById(hostId);
-      if (!requestor || requestor.userRole !== 'admin') {
-        throw new Error('Unauthorized. Only the host or admin can block users.');
+      if (!requestor || (requestor.userRole !== 'admin' && !(requestor as any).isAdmin)) {
+        const AdminUser = mongoose.models.AdminUser;
+        const admin = AdminUser ? await AdminUser.findById(hostId) : null;
+        if (!admin) {
+          throw new Error('Unauthorized. Only the host or admin can block users.');
+        }
       }
     }
 
@@ -633,13 +636,31 @@ export class LiveStreamService {
       liveStream.blockedUsers.push(blockObjectId);
     }
 
+    // Vacate seat if user is on one
+    let seatVacated = false;
+    let vacatedSeatIndex = -1;
+    if (liveStream.seats) {
+      for (const s of liveStream.seats) {
+        const sUserId = s.userId ? (s.userId._id ? s.userId._id.toString() : s.userId.toString()) : null;
+        if (sUserId && sUserId === userIdToBlock) {
+          s.userId = undefined;
+          s.status = 'open';
+          seatVacated = true;
+          vacatedSeatIndex = s.seatIndex;
+        }
+      }
+      if (seatVacated) {
+        liveStream.markModified('seats');
+      }
+    }
+
     // Remove from active viewers list
     liveStream.viewers = liveStream.viewers.filter(uid => uid.toString() !== userIdToBlock);
     liveStream.viewerCount = liveStream.viewers.length;
 
     await liveStream.save();
 
-    // Trigger socket kick
+    // Trigger socket kick and seat updates
     const io = this.getSocketIo();
     if (io) {
       const payload = {
@@ -648,6 +669,28 @@ export class LiveStreamService {
         message: 'You have been blocked and kicked from this room'
       };
       io.to(`live_${channelName}`).to(`room_${channelName}`).emit('user_blocked', payload);
+      this.broadcastToRoom(liveStream.channelName, 'user_kicked', {
+        userId: userIdToBlock,
+        channelName: liveStream.channelName
+      });
+
+      if (seatVacated) {
+        await liveStream.populate(this.seatPopulate());
+        const formattedSeats = await this.formatSeats(liveStream.toObject().seats || []);
+        const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+        this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+          channelName: liveStream.channelName,
+          maxSeats: liveStream.maxSeats || (liveStream.seats ? liveStream.seats.length : 0),
+          seats: formattedSeats,
+          roomAdmins,
+          roomAdmin: roomAdmins
+        });
+        this.broadcastToRoom(liveStream.channelName, 'seat_vacated', {
+          channelName: liveStream.channelName,
+          seatIndex: vacatedSeatIndex,
+          userId: userIdToBlock
+        });
+      }
     }
 
     return liveStream;
@@ -1167,129 +1210,7 @@ export class LiveStreamService {
     return await this.populateRoomWithDailyRank(populatedStream || liveStream, userId);
   }
 
-  /**
-   * User joins a seat in a party room
-   */
-  public async joinSeat(userId: string, channelName: string, seatIndex: number) {
-    AppLogger.info(`[LiveStreamService: joinSeat] Entered. userId=${userId}, channelName=${channelName}, seatIndex=${seatIndex}`);
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      throw new Error('Invalid user ID');
-    }
 
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
-    if (!liveStream) {
-      throw new Error('Active room/party room not found');
-    }
-
-    if (liveStream.roomType !== 'party_room') {
-      throw new Error('This room is not a party room');
-    }
-
-    if (liveStream.blockedUsers && liveStream.blockedUsers.some(id => id.toString() === userId)) {
-      throw new Error('You are blocked from this room');
-    }
-
-    if (!liveStream.seats) {
-      liveStream.seats = [];
-    }
-
-    // Check if the seat is already occupied
-    const targetSeat = liveStream.seats.find(seat => seat.seatIndex === seatIndex);
-    if (!targetSeat) {
-      throw new Error(`Seat ${seatIndex} not found`);
-    }
-    if (targetSeat.status !== 'open') {
-      throw new Error(`Seat ${seatIndex} is not open`);
-    }
-
-    // If the user is already on another seat, flush mic time then remove them
-    const oldSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
-    if (oldSeat) {
-      await this.flushSeatMicTime(liveStream.hostId.toString(), oldSeat);
-      oldSeat.userId = undefined;
-      oldSeat.status = 'open';
-      oldSeat.occupiedAt = undefined;
-    }
-
-    // Add user to the new seat
-    targetSeat.userId = new mongoose.Types.ObjectId(userId);
-    targetSeat.status = 'occupied';
-    targetSeat.occupiedAt = new Date();
-    let roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
-    if (roomSetting && roomSetting.muteAllSeats) {
-      targetSeat.isMuted = true;
-    }
-
-    await liveStream.save();
-
-    // Emit socket event
-    const io = this.getSocketIo();
-    if (io) {
-      await liveStream.populate(this.seatPopulate());
-      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-      const payload = {
-        channelName,
-        seats: liveStream.seats,
-        roomAdmins,
-        roomAdmin: roomAdmins
-      };
-      AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
-      io.to(`live_${channelName}`).emit('seat_updated', payload);
-    }
-
-    return liveStream;
-  }
-
-  /**
-   * User leaves a seat in a party room
-   */
-  public async leaveSeat(userId: string, channelName: string) {
-    AppLogger.info(`[LiveStreamService: leaveSeat] Entered. userId=${userId}, channelName=${channelName}`);
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      throw new Error('Invalid user ID');
-    }
-
-    const liveStream = await Room.findOne({ channelName, status: 'live' });
-    if (!liveStream) {
-      throw new Error('Active room/party room not found');
-    }
-
-    if (!liveStream.seats) {
-      liveStream.seats = [];
-    }
-
-    // Remove user from seats
-    let seatUpdated = false;
-    const targetSeat = liveStream.seats.find(seat => seat.userId && seat.userId.toString() === userId);
-    if (targetSeat) {
-      await this.flushSeatMicTime(liveStream.hostId.toString(), targetSeat);
-      targetSeat.userId = undefined;
-      targetSeat.status = 'open';
-      targetSeat.occupiedAt = undefined;
-      seatUpdated = true;
-    }
-
-    if (seatUpdated) {
-      await liveStream.save();
-
-      // Emit socket event
-      const io = this.getSocketIo();
-      if (io) {
-        await liveStream.populate(this.seatPopulate());
-        const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
-        const payload = {
-          channelName,
-          seats: liveStream.seats,
-          roomAdmins,
-          roomAdmin: roomAdmins
-        };
-        AppLogger.info(`[Socket] Emitting seat_updated to live_${channelName}. payload=${JSON.stringify(payload)}`);
-        io.to(`live_${channelName}`).emit('seat_updated', payload);
-      }
-    }
-
-    return liveStream;
-  }
 
   /**
    * Gets list of all active live streams with optional country filter
@@ -1797,6 +1718,43 @@ export class LiveStreamService {
     return this.buildLiveRoomPayload(room, currentUserId);
   }
 
+  public async formatSeats(seats: any[]): Promise<any[]> {
+    if (!Array.isArray(seats)) return [];
+    return Promise.all(seats.map(async (seat: any) => {
+      const seatObj = seat?.toObject ? seat.toObject() : { ...seat };
+      if (!seatObj?.userId || typeof seatObj.userId !== 'object') return seatObj;
+      let seated = seatObj.userId?.toObject ? seatObj.userId.toObject() : { ...seatObj.userId };
+      if (seated._id && (!seated.activeFrame || typeof seated.activeFrame === 'string')) {
+        const populatedSeated = await User.findById(seated._id)
+          .select(HOST_SAFE_SELECT)
+          .populate('profileImage')
+          .populate('countryId')
+          .populate([...ACTIVE_STORE_POPULATE] as any);
+        if (populatedSeated) {
+          seated = populatedSeated.toObject ? populatedSeated.toObject() : populatedSeated;
+        }
+      }
+      seated = await formatUserActiveStoreItems(seated, false);
+      const wealthCoins = seated.wealthCoins || 0;
+      const charmCoins = seated.charmCoins || 0;
+      const [enriched, richLevelInfo, charmLevelInfo] = await Promise.all([
+        attachUserCountryAndAge(seated),
+        this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
+        this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
+      ]);
+      const seatedRichLvl = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
+      const seatedCharmLvl = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
+      enriched.level = seatedRichLvl;
+      enriched.levelNumber = seatedRichLvl;
+      enriched.wealthLevel = seatedRichLvl;
+      enriched.charmLevel = seatedCharmLvl;
+      enriched.richLevelInfo = richLevelInfo;
+      enriched.charmLevelInfo = charmLevelInfo;
+      enriched.levelInfo = richLevelInfo;
+      return { ...seatObj, userId: enriched };
+    }));
+  }
+
   public async buildLiveRoomPayload(room: any, currentUserId?: string) {
     if (!room) return room;
 
@@ -1875,38 +1833,7 @@ export class LiveStreamService {
     }
 
     if (Array.isArray(roomObj.seats)) {
-      roomObj.seats = await Promise.all(roomObj.seats.map(async (seat: any) => {
-        if (!seat?.userId || typeof seat.userId !== 'object') return seat;
-        let seated = seat.userId.toObject ? seat.userId.toObject() : { ...seat.userId };
-        if (seated._id && (!seated.activeFrame || typeof seated.activeFrame === 'string')) {
-          const populatedSeated = await User.findById(seated._id)
-            .select(HOST_SAFE_SELECT)
-            .populate('profileImage')
-            .populate('countryId')
-            .populate([...ACTIVE_STORE_POPULATE] as any);
-          if (populatedSeated) {
-            seated = populatedSeated.toObject ? populatedSeated.toObject() : populatedSeated;
-          }
-        }
-        seated = await formatUserActiveStoreItems(seated, false);
-        const wealthCoins = seated.wealthCoins || 0;
-        const charmCoins = seated.charmCoins || 0;
-        const [enriched, richLevelInfo, charmLevelInfo] = await Promise.all([
-          attachUserCountryAndAge(seated),
-          this.levelService.getLevelInfoForCoins(wealthCoins, 'rich'),
-          this.levelService.getLevelInfoForCoins(charmCoins, 'charm'),
-        ]);
-        const seatedRichLvl = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
-        const seatedCharmLvl = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
-        enriched.level = seatedRichLvl;
-        enriched.levelNumber = seatedRichLvl;
-        enriched.wealthLevel = seatedRichLvl;
-        enriched.charmLevel = seatedCharmLvl;
-        enriched.richLevelInfo = richLevelInfo;
-        enriched.charmLevelInfo = charmLevelInfo;
-        enriched.levelInfo = richLevelInfo;
-        return { ...seat, userId: enriched };
-      }));
+      roomObj.seats = await this.formatSeats(roomObj.seats);
     }
 
     const hostIdStr = roomObj.hostId
@@ -2176,35 +2103,133 @@ export class LiveStreamService {
   public async changeSeat(userId: string, channelName: string, newSeatIndex: number) {
     AppLogger.info(`[LiveStreamService: changeSeat] userId=${userId}, channelName=${channelName}, newSeatIndex=${newSeatIndex}`);
     const liveStream = await this.findRoomByChannelOrAny(channelName, userId);
-    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+    if (!liveStream) throw new Error('Active room not found');
+    if (!liveStream.seats) liveStream.seats = [];
+
+    // Negative index signifies leaving/vacating seat
+    if (newSeatIndex < 0) {
+      return this.leaveSeat(userId, channelName);
+    }
+
+    const maxSeats = Math.max(newSeatIndex + 1, liveStream.maxSeats || 10, 10);
+    if (!liveStream.maxSeats || liveStream.maxSeats < maxSeats) {
+      liveStream.maxSeats = maxSeats;
+    }
+
+    // Ensure all seats up to maxSeats exist
+    for (let i = 0; i < maxSeats; i++) {
+      if (!liveStream.seats.find((s: any) => s.seatIndex === i)) {
+        liveStream.seats.push({
+          seatIndex: i,
+          status: 'open',
+          isMuted: false,
+          isLocked: false,
+        });
+      }
+    }
 
     const targetSeat = liveStream.seats.find((s: any) => s.seatIndex === newSeatIndex);
     if (!targetSeat) throw new Error('Seat index not found');
-    if (targetSeat.status !== 'open') throw new Error('Seat is not open');
+    if (targetSeat.status === 'locked' || targetSeat.isLocked) throw new Error('Seat is locked');
 
-    // Remove user from old seat
-    const oldSeat = liveStream.seats.find((s: any) => s.userId && s.userId.toString() === userId);
-    if (oldSeat) {
-      oldSeat.userId = undefined;
-      oldSeat.status = 'open';
+    // If occupied by someone else
+    if (targetSeat.userId && targetSeat.userId.toString() !== userId) {
+      throw new Error('Seat is already occupied');
+    }
+
+    // Remove user from any other seat in this room
+    for (const s of liveStream.seats) {
+      if (s.userId && s.userId.toString() === userId && s.seatIndex !== newSeatIndex) {
+        s.userId = undefined;
+        s.status = 'open';
+      }
     }
 
     // Assign to new seat
     targetSeat.userId = new mongoose.Types.ObjectId(userId);
     targetSeat.status = 'occupied';
 
+    liveStream.markModified('seats');
     await liveStream.save();
-    const io = this.getSocketIo();
     await liveStream.populate(this.seatPopulate());
+    const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
     const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+
+    const io = this.getSocketIo();
     if (io) {
       this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
         channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || liveStream.seats.length,
-        seats: liveStream.toObject().seats,
+        seats: formattedSeats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
+    }
+
+    return liveStream;
+  }
+
+  public async joinSeat(userId: string, channelName: string, seatIndex: number) {
+    return this.changeSeat(userId, channelName, seatIndex);
+  }
+
+  public async leaveSeat(userId: string, channelName: string, requesterId?: string, seatIndex?: number) {
+    AppLogger.info(`[LiveStreamService: leaveSeat] userId=${userId}, channelName=${channelName}, requesterId=${requesterId}, seatIndex=${seatIndex}`);
+    const liveStream = await this.findRoomByChannelOrAny(channelName, requesterId || userId);
+    if (!liveStream || !liveStream.seats) throw new Error('Active room not found');
+
+    if (requesterId && requesterId !== userId) {
+      await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+    }
+
+    let seatVacated = false;
+    let vacatedSeatIndex = -1;
+    for (const s of liveStream.seats) {
+      const matchSeat = seatIndex !== undefined && seatIndex >= 0 ? s.seatIndex === seatIndex : true;
+      const sUserId = s.userId ? (s.userId._id ? s.userId._id.toString() : s.userId.toString()) : null;
+      if (matchSeat && sUserId && sUserId === userId) {
+        s.userId = undefined;
+        s.status = 'open';
+        vacatedSeatIndex = s.seatIndex;
+        seatVacated = true;
+      }
+    }
+
+    // Fallback: If seatIndex was specified by host/admin and seat has an occupant, vacate that seat
+    if (!seatVacated && seatIndex !== undefined && seatIndex >= 0 && requesterId && requesterId !== userId) {
+      const s = liveStream.seats.find((seat: any) => seat.seatIndex === seatIndex);
+      if (s && s.userId) {
+        const removedUserId = s.userId._id ? s.userId._id.toString() : s.userId.toString();
+        s.userId = undefined;
+        s.status = 'open';
+        vacatedSeatIndex = s.seatIndex;
+        seatVacated = true;
+        userId = removedUserId;
+      }
+    }
+
+    if (seatVacated) {
+      liveStream.markModified('seats');
+      await liveStream.save();
+      await liveStream.populate(this.seatPopulate());
+      const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
+      const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+
+      const io = this.getSocketIo();
+      if (io) {
+        this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
+          channelName: liveStream.channelName,
+          maxSeats: liveStream.maxSeats || liveStream.seats.length,
+          seats: formattedSeats,
+          roomAdmins,
+          roomAdmin: roomAdmins
+        });
+        this.broadcastToRoom(liveStream.channelName, 'seat_vacated', {
+          channelName: liveStream.channelName,
+          seatIndex: vacatedSeatIndex,
+          userId
+        });
+      }
     }
 
     return liveStream;
@@ -2247,10 +2272,11 @@ export class LiveStreamService {
     if (io) {
       await liveStream.populate(this.seatPopulate());
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
       this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
         channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || liveStream.seats.length,
-        seats: liveStream.toObject().seats,
+        seats: formattedSeats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
@@ -2296,10 +2322,11 @@ export class LiveStreamService {
       const userIdStr = userObj ? (userObj._id ? userObj._id.toString() : userObj.toString()) : null;
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
       this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
         channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || liveStream.seats.length,
-        seats: liveStream.toObject().seats,
+        seats: formattedSeats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
@@ -2345,12 +2372,13 @@ export class LiveStreamService {
       await liveStream.populate(this.seatPopulate());
 
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
 
       // Emit seat_updated with populated seats (same as muteSeat does)
       this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
         channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || (liveStream.seats ? liveStream.seats.length : 0),
-        seats: liveStream.toObject().seats,
+        seats: formattedSeats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
@@ -2394,10 +2422,11 @@ export class LiveStreamService {
       await liveStream.populate(this.seatPopulate());
       const user = await User.findById(userIdToKick).select('-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins').populate('profileImage');
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
+      const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
       this.broadcastToRoom(liveStream.channelName, 'seat_updated', {
         channelName: liveStream.channelName,
         maxSeats: liveStream.maxSeats || (liveStream.seats ? liveStream.seats.length : 0),
-        seats: liveStream.toObject().seats,
+        seats: formattedSeats,
         roomAdmins,
         roomAdmin: roomAdmins
       });
@@ -2503,14 +2532,21 @@ export class LiveStreamService {
 
   private async verifyAdmin(requesterId: string, hostId: string) {
     if (requesterId === hostId) return true; // Host is always admin
+    if (requesterId === 'system_admin' || requesterId === 'admin') return true;
+
+    const requestor = await User.findById(requesterId);
+    if (requestor && (requestor.userRole === 'admin' || (requestor as any).isAdmin)) return true; // Super admin
+
+    const AdminUser = mongoose.models.AdminUser;
+    if (AdminUser) {
+      const admin = await AdminUser.findById(requesterId);
+      if (admin) return true;
+    }
 
     const roomSetting = await RoomSetting.findOne({ hostId });
     if (roomSetting && roomSetting.admins.some(id => id.toString() === requesterId)) {
       return true;
     }
-
-    const requestor = await User.findById(requesterId);
-    if (requestor && requestor.userRole === 'admin') return true; // Super admin
 
     throw new Error('Unauthorized. Only the host or room admin can perform this action.');
   }

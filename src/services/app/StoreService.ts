@@ -249,16 +249,27 @@ export class StoreService {
 
     if (type) {
       const norm = normalizeStoreTypeQuery(type);
-      items = items.filter((item: any) => item.storeItemId && (item.storeItemId.type === norm || (item.storeItemId as any).type === norm));
+      items = items.filter((item: any) => item.storeItemId && (normalizeStoreTypeQuery(item.storeItemId.type) === norm || (item.storeItemId as any).type === norm));
     }
 
+    const userDoc: any = await User.findById(userId).lean();
     const now = new Date();
+
     const paginatedItems = items.slice(skip, skip + limit).map((item: any) => {
       const obj = item.toObject ? item.toObject() : item;
       const formattedStoreItem = formatStoreItem(obj.storeItemId);
       const remainingMs = Math.max(0, new Date(obj.expiresAt).getTime() - now.getTime());
+      const sIdStr = (formattedStoreItem?._id || formattedStoreItem?.id || obj.storeItemId?._id || obj.storeItemId)?.toString();
+
+      const normItemType = normalizeStoreTypeQuery(formattedStoreItem?.type || (obj.storeItemId as any)?.type);
+      const activeFieldName = normItemType ? ACTIVE_STORE_FIELD_BY_TYPE[normItemType] : undefined;
+      const userActiveId = activeFieldName && userDoc ? (userDoc[activeFieldName]?._id || userDoc[activeFieldName])?.toString() : null;
+
+      const isEquipped = Boolean(obj.inUse || (userActiveId && sIdStr && userActiveId === sIdStr));
+
       return {
         ...obj,
+        inUse: isEquipped,
         storeItemId: formattedStoreItem,
         storeItem: formattedStoreItem,
         type: formattedStoreItem?.type || (obj.storeItemId as any)?.type || '',
@@ -280,9 +291,20 @@ export class StoreService {
 
   public async toggleItemInUse(userId: string, userStoreItemId: string, useStatus: boolean) {
     await clearExpiredActiveStoreItems(userId);
+
+    const isObjId = mongoose.Types.ObjectId.isValid(userStoreItemId);
+    const lookupConditions: any[] = [];
+    if (isObjId) {
+      const objId = new mongoose.Types.ObjectId(userStoreItemId);
+      lookupConditions.push({ _id: objId });
+      lookupConditions.push({ storeItemId: objId });
+    } else {
+      lookupConditions.push({ _id: userStoreItemId });
+    }
+
     const userStoreItem = await UserStoreItem.findOne({
-      _id: userStoreItemId,
-      userId,
+      $or: lookupConditions,
+      userId: new mongoose.Types.ObjectId(userId),
       expiresAt: { $gt: new Date() }
     }).populate({
       path: 'storeItemId',
@@ -293,13 +315,21 @@ export class StoreService {
       throw new Error('Purchased item not found or expired');
     }
 
-    const itemType = (userStoreItem.storeItemId as any)?.type;
+    const rawItemType = (userStoreItem.storeItemId as any)?.type;
+    const itemType = normalizeStoreTypeQuery(rawItemType) || rawItemType;
 
     if (useStatus && itemType) {
-      // Un-equip other items of the same type
-      const otherItems = await UserStoreItem.find({ userId, inUse: true, _id: { $ne: userStoreItemId } }).populate('storeItemId');
+      // Un-equip other items of the same type for this user
+      const otherItems = await UserStoreItem.find({
+        userId: new mongoose.Types.ObjectId(userId),
+        inUse: true,
+        _id: { $ne: userStoreItem._id }
+      }).populate('storeItemId');
+
       for (const other of otherItems) {
-        if ((other.storeItemId as any)?.type === itemType) {
+        const otherRawType = (other.storeItemId as any)?.type;
+        const otherType = normalizeStoreTypeQuery(otherRawType) || otherRawType;
+        if (otherType === itemType) {
           other.inUse = false;
           await other.save();
         }
@@ -309,20 +339,39 @@ export class StoreService {
     userStoreItem.inUse = useStatus;
     await userStoreItem.save();
 
-    // Update user profile fields
+    // Update user profile active equipment fields & aliases
     const user = await User.findById(userId);
     if (user && itemType) {
       const field = ACTIVE_STORE_FIELD_BY_TYPE[itemType];
+      const targetStoreItemId = (userStoreItem.storeItemId as any)?._id || userStoreItem.storeItemId;
+
       if (field) {
-        (user as any)[field] = useStatus ? (userStoreItem.storeItemId as any)?._id || userStoreItem.storeItemId : null;
-        await user.save();
+        (user as any)[field] = useStatus ? targetStoreItemId : null;
       }
+
+      if (itemType === 'frame') {
+        (user as any).frame = useStatus ? targetStoreItemId : null;
+      } else if (itemType === 'chat_bubble') {
+        (user as any).chatBubble = useStatus ? targetStoreItemId : null;
+        (user as any).chat_bubble = useStatus ? targetStoreItemId : null;
+      } else if (itemType === 'entry') {
+        (user as any).entry = useStatus ? targetStoreItemId : null;
+        (user as any).entity = useStatus ? targetStoreItemId : null;
+        (user as any).activeEntity = useStatus ? targetStoreItemId : null;
+      } else if (itemType === 'theme') {
+        (user as any).theme = useStatus ? targetStoreItemId : null;
+      } else if (itemType === 'ride') {
+        (user as any).ride = useStatus ? targetStoreItemId : null;
+      }
+
+      await user.save();
     }
 
     const formattedStoreItem = formatStoreItem(userStoreItem.storeItemId);
     const userStoreItemObj = userStoreItem.toObject ? userStoreItem.toObject() : userStoreItem;
     return {
       ...userStoreItemObj,
+      inUse: useStatus,
       storeItemId: formattedStoreItem,
       storeItem: formattedStoreItem,
       type: formattedStoreItem?.type || itemType || '',

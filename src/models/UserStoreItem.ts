@@ -16,6 +16,7 @@ const UserStoreItemSchema: Schema = new Schema(
     storeItemId: { type: Schema.Types.ObjectId, ref: 'StoreItem', required: true },
     purchasedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
+    inUse: { type: Boolean, default: false },
   },
   {
     timestamps: true,

@@ -71,6 +71,51 @@ export class AdminLiveService {
       );
       obj.newFans = obj.roomFollowerCount || 0;
     }
+
+    const maxSeats = obj.maxSeats || 8;
+    const seatMap = new Map<number, any>();
+    if (Array.isArray(obj.seats)) {
+      for (const s of obj.seats) {
+        seatMap.set(s.seatIndex, s);
+      }
+    }
+    const formattedSeats: any[] = [];
+    for (let i = 0; i < maxSeats; i++) {
+      const s = seatMap.get(i);
+      if (s) {
+        const u = s.userId;
+        const uObj = u && typeof u === 'object' && (u.toObject ? u.toObject() : u);
+        formattedSeats.push({
+          seatIndex: i,
+          status: s.status || (uObj ? 'occupied' : 'open'),
+          isMuted: !!s.isMuted,
+          isLocked: s.status === 'locked' || !!s.isLocked,
+          occupiedAt: s.occupiedAt,
+          user: uObj ? {
+            _id: uObj._id ? uObj._id.toString() : String(uObj),
+            userId: uObj.userId,
+            name: uObj.name || 'User',
+            email: uObj.email,
+            profileImage: uObj.profileImage,
+            wealthCoins: uObj.wealthCoins || 0,
+            isPremium: !!uObj.isPremium,
+            gender: uObj.gender,
+            country: uObj.country,
+          } : null,
+        });
+      } else {
+        formattedSeats.push({
+          seatIndex: i,
+          status: 'open',
+          isMuted: false,
+          isLocked: false,
+          user: null,
+        });
+      }
+    }
+    obj.formattedSeats = formattedSeats;
+    obj.maxSeats = maxSeats;
+
     return obj;
   }
 
@@ -132,7 +177,7 @@ export class AdminLiveService {
   public async getActiveList(opts: {
     page?: number;
     limit?: number;
-    roomType?: 'livestream' | 'party_room';
+    roomType?: 'livestream' | 'party_room' | 'all' | string;
     country?: string;
     search?: string;
   }) {
@@ -162,6 +207,15 @@ export class AdminLiveService {
           path: 'hostId',
           select: 'userId name email profileImage wealthCoins country countryId isPremium',
           populate: [{ path: 'profileImage' }, { path: 'countryId' }],
+        })
+        .populate({
+          path: 'seats.userId',
+          select: 'userId name email profileImage wealthCoins country countryId isPremium gender',
+          populate: { path: 'profileImage' },
+        })
+        .populate({
+          path: 'roomTheme',
+          populate: { path: 'media' },
         })
         .sort({ viewerCount: -1, startedAt: -1 })
         .skip((page - 1) * limit)
@@ -219,6 +273,15 @@ export class AdminLiveService {
         path: 'hostId',
         select: 'userId name email profileImage wealthCoins country countryId isPremium',
         populate: [{ path: 'profileImage' }, { path: 'countryId' }],
+      })
+      .populate({
+        path: 'seats.userId',
+        select: 'userId name email profileImage wealthCoins country countryId isPremium gender',
+        populate: { path: 'profileImage' },
+      })
+      .populate({
+        path: 'roomTheme',
+        populate: { path: 'media' },
       });
 
     if (!room) throw new Error('Room not found');

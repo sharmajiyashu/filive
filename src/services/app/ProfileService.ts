@@ -86,13 +86,17 @@ export class ProfileService {
     let becomeHostMessage: string | null = null;
 
     if (!ownedAgency) {
-      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' });
+      const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
       if (agencyHost) {
-        const joinedAgency = await Agency.findById(agencyHost.agencyId).select('name');
-        isBecomeHost = true;
-        becomeHostMessage = joinedAgency
-          ? `You are a host under ${joinedAgency.name}.`
-          : 'You have joined as an agency host.';
+        const joinedAgency = await Agency.findById(agencyHost.agencyId)
+          .populate('countryId')
+          .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+        if (joinedAgency) {
+          agency = joinedAgency;
+          isAgencyHost = true;
+          isBecomeHost = true;
+          becomeHostMessage = `You are a host under ${joinedAgency.name}.`;
+        }
       }
     }
 
@@ -350,13 +354,17 @@ export class ProfileService {
     let becomeHostMessage: string | null = null;
 
     if (!ownedAgency) {
-      const agencyHost = await AgencyHost.findOne({ userId, status: 'ACCEPTED' });
+      const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
       if (agencyHost) {
-        const joinedAgency = await Agency.findById(agencyHost.agencyId).select('name');
-        isBecomeHost = true;
-        becomeHostMessage = joinedAgency
-          ? `You are a host under ${joinedAgency.name}.`
-          : 'You have joined as an agency host.';
+        const joinedAgency = await Agency.findById(agencyHost.agencyId)
+          .populate('countryId')
+          .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+        if (joinedAgency) {
+          agency = joinedAgency;
+          isAgencyHost = true;
+          isBecomeHost = true;
+          becomeHostMessage = `You are a host under ${joinedAgency.name}.`;
+        }
       }
     }
 

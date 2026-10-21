@@ -147,14 +147,29 @@ export class HostDashboardService {
       if (!mongoose.Types.ObjectId.isValid(agencyId)) {
         throw new Error('Invalid agency_id');
       }
-      const agency = await Agency.findOne({ _id: agencyId, creatorId: ownerUserId }).populate('logo');
+      let agency = await Agency.findOne({ _id: agencyId, creatorId: ownerUserId }).populate('logo');
       if (!agency) {
-        throw new Error('Agency not found or you are not the owner');
+        const isHost = await AgencyHost.exists({ agencyId, userId: ownerUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+        if (isHost) {
+          agency = await Agency.findById(agencyId).populate('logo');
+        }
+      }
+      if (!agency) {
+        throw new Error('Agency not found or you are not authorized');
       }
       return agency;
     }
 
-    const agency = await Agency.findOne({ creatorId: ownerUserId }).populate('logo');
+    let agency = await Agency.findOne({ creatorId: ownerUserId }).populate('logo');
+    if (!agency) {
+      const hostMembership = await AgencyHost.findOne({
+        userId: ownerUserId,
+        status: { $in: ['ACCEPTED', 'approved'] }
+      });
+      if (hostMembership) {
+        agency = await Agency.findById(hostMembership.agencyId).populate('logo');
+      }
+    }
     if (!agency) {
       throw new Error('Agency not found for this user');
     }
@@ -593,6 +608,9 @@ export class HostDashboardService {
 
   public async removeHost(ownerUserId: string, hostId: string) {
     const agency = await this.getOwnerAgency(ownerUserId);
+    if (agency.creatorId.toString() !== ownerUserId) {
+      throw new Error('Only the agency owner can remove hosts');
+    }
     const membership = await this.resolveHostMembership(agency._id, hostId);
     const user = membership.userId as any;
 

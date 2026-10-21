@@ -134,7 +134,16 @@ export class AgencyService {
   }
 
   public async getAgencyDashboard(userId: string) {
-    const agency = await Agency.findOne({ creatorId: userId });
+    let agency = await Agency.findOne({ creatorId: userId });
+    if (!agency) {
+      const hostMembership = await AgencyHost.findOne({
+        userId,
+        status: { $in: ['ACCEPTED', 'approved'] }
+      });
+      if (hostMembership) {
+        agency = await Agency.findById(hostMembership.agencyId);
+      }
+    }
     if (!agency) throw new Error('Agency not found for this user');
     return this.agencyCommissionService.getDashboardStats(agency._id.toString(), userId);
   }
@@ -330,8 +339,10 @@ export class AgencyService {
 
     const result: any = agency.toObject();
 
-    const creatorId = (agency.creatorId as any)._id?.toString() || agency.creatorId.toString();
-    if (requesterId && creatorId === requesterId) {
+    const creatorId = (agency.creatorId as any)?._id?.toString() || agency.creatorId?.toString();
+    const isOwner = !requesterId || (creatorId === requesterId);
+    const isHost = requesterId ? await AgencyHost.exists({ agencyId: agency._id, userId: requesterId, status: { $in: ['ACCEPTED', 'approved'] } }) : false;
+    if (isOwner || isHost) {
       result.commissionDetails = await this.getCommissionDetails(agency);
     }
 
@@ -339,9 +350,21 @@ export class AgencyService {
   }
 
   public async getMyAgency(userId: string) {
-    const agency = await Agency.findOne({ creatorId: userId })
+    let agency = await Agency.findOne({ creatorId: userId })
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+
+    if (!agency) {
+      const hostMembership = await AgencyHost.findOne({
+        userId,
+        status: { $in: ['ACCEPTED', 'approved'] }
+      });
+      if (hostMembership) {
+        agency = await Agency.findById(hostMembership.agencyId)
+          .populate('countryId')
+          .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+      }
+    }
 
     if (!agency) {
       throw new Error('Agency not found for this user');
@@ -744,7 +767,12 @@ export class AgencyService {
 
   public async getAgencyHosts(agencyId: string, adminUserId: string, page: number = 1, limit: number = 10) {
     const agency = await Agency.findById(agencyId);
-    if (!agency || agency.creatorId.toString() !== adminUserId) {
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+    const isOwner = agency.creatorId.toString() === adminUserId;
+    const isHost = isOwner ? true : await AgencyHost.exists({ agencyId: agency._id, userId: adminUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+    if (!isOwner && !isHost) {
       throw new Error('Unauthorized or agency not found');
     }
     const skip = (page - 1) * limit;
@@ -753,7 +781,7 @@ export class AgencyService {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
-      
+
     const total = await AgencyHost.countDocuments({ agencyId, status: 'ACCEPTED' });
 
     return {
@@ -775,7 +803,7 @@ export class AgencyService {
       .populate('userId')
       .skip(skip)
       .limit(limit);
-      
+
     const total = await AgencyHost.countDocuments({ agencyId, status: 'PENDING', requestedBy: 'USER' });
 
     return {
@@ -794,7 +822,7 @@ export class AgencyService {
       .populate('userId')
       .skip(skip)
       .limit(limit);
-      
+
     const total = await AgencyHost.countDocuments({ userId });
 
     return {
@@ -828,8 +856,19 @@ export class AgencyService {
       message: 'User can be invited as host',
     };
 
-    if (agencyId) {
-      const agencyQuery = mongoose.Types.ObjectId.isValid(agencyId) ? { _id: agencyId } : { creatorId: agencyId };
+    let resolvedAgencyId = agencyId;
+    if (!resolvedAgencyId) {
+      const owned = await Agency.findOne({ creatorId: adminUserId });
+      if (owned) {
+        resolvedAgencyId = owned._id.toString();
+      } else {
+        const joined = await AgencyHost.findOne({ userId: adminUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+        if (joined) resolvedAgencyId = joined.agencyId.toString();
+      }
+    }
+
+    if (resolvedAgencyId) {
+      const agencyQuery = mongoose.Types.ObjectId.isValid(resolvedAgencyId) ? { _id: resolvedAgencyId } : { creatorId: resolvedAgencyId };
       const agencyDoc = await Agency.findOne(agencyQuery)
         .populate('countryId')
         .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
@@ -839,7 +878,9 @@ export class AgencyService {
       }
 
       const agencyCreatorId = (agencyDoc.creatorId as any)._id?.toString() || agencyDoc.creatorId.toString();
-      if (agencyCreatorId !== adminUserId) {
+      const isOwner = agencyCreatorId === adminUserId;
+      const isHost = isOwner ? true : await AgencyHost.exists({ agencyId: agencyDoc._id, userId: adminUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+      if (!isOwner && !isHost) {
         throw new Error('Unauthorized or agency not found');
       }
 
@@ -885,7 +926,12 @@ export class AgencyService {
 
   public async getHostAddHistory(agencyId: string, adminUserId: string, page: number = 1, limit: number = 10) {
     const agency = await Agency.findById(agencyId);
-    if (!agency || agency.creatorId.toString() !== adminUserId) {
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+    const isOwner = agency.creatorId.toString() === adminUserId;
+    const isHost = isOwner ? true : await AgencyHost.exists({ agencyId: agency._id, userId: adminUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+    if (!isOwner && !isHost) {
       throw new Error('Unauthorized or agency not found');
     }
 

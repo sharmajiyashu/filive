@@ -65,7 +65,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio location isPremium gender country activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .select('name userId profileImage bio location isPremium gender country activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins isCoinseller isBd isAgency isBecomeHost isAgencyHost userRole agency ownedAgency')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
@@ -181,7 +181,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       try {
         await callService.endUserActiveCalls(userId, 'left_live_room');
-      } catch (_) {}
+      } catch (_) { }
 
       AppLogger.info(`[Socket Event: leave_room/leave_live] Fetching User details for leave broadcast. userId=${userId}`);
       const userObj = await User.findById(userId)
@@ -272,7 +272,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
-        .select('name userId profileImage bio isPremium activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins')
+        .select('name userId profileImage bio isPremium activeFrame activeEntry activeChatBubble activeTheme activeRide wealthCoins charmCoins isCoinseller isBd isAgency isBecomeHost isAgencyHost userRole agency ownedAgency')
         .populate('profileImage')
         .populate([...ACTIVE_STORE_POPULATE] as any);
 
@@ -616,16 +616,18 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   });
 
-  // User leaves a seat in a party room
-  socket.on('leave_seat', async (data: { channelName: string }, callback?: any) => {
+  // User leaves a seat in a party room (or host removes a user from a seat)
+  socket.on('leave_seat', async (data: { channelName: string; targetUserId?: string; seatIndex?: number }, callback?: any) => {
     try {
       AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}`);
-      const { channelName } = data || {};
+      const { channelName, targetUserId, seatIndex } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'leave_seat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
         return;
       }
-      const result = await liveStreamService.leaveSeat(userId, channelName);
+      const userToLeave = (targetUserId && targetUserId !== userId) ? targetUserId : userId;
+      const parsedSeatIndex = seatIndex !== undefined ? Number(seatIndex) : undefined;
+      const result = await liveStreamService.leaveSeat(userToLeave, channelName, userId, parsedSeatIndex);
       AppLogger.info(`[Socket Event: leave_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'leave_seat', data: result });
@@ -658,22 +660,83 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Change seat
-  socket.on('change_seat', async (data: { channelName: string; newSeatIndex: number }, callback?: any) => {
+  socket.on('change_seat', async (data: { channelName: string; newSeatIndex?: number; seatIndex?: number }, callback?: any) => {
     try {
       AppLogger.info(`[Socket Event: change_seat] Entered. userId=${userId}`);
-      const { channelName, newSeatIndex } = data || {};
-      if (!channelName || newSeatIndex === undefined) {
-        emitSocketError(socket, 'change_seat', 'channelName and newSeatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
+      const { channelName } = data || {};
+      const targetIndex = data?.newSeatIndex !== undefined ? Number(data.newSeatIndex) : (data?.seatIndex !== undefined ? Number(data.seatIndex) : undefined);
+      if (!channelName || targetIndex === undefined || isNaN(targetIndex)) {
+        emitSocketError(socket, 'change_seat', 'channelName and newSeatIndex/seatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
         return;
       }
-      const result = await liveStreamService.changeSeat(userId, channelName, newSeatIndex);
-      AppLogger.info(`[Socket Event: change_seat] Success. userId=${userId}, response=${JSON.stringify(result)}`);
+      const result = await liveStreamService.changeSeat(userId, channelName, targetIndex);
+      AppLogger.info(`[Socket Event: change_seat] Success. userId=${userId}`);
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'change_seat', data: result });
       }
     } catch (error: any) {
       AppLogger.error(`[Socket Event: change_seat] Error for user ${userId}: ${error.message}`);
       emitSocketError(socket, 'change_seat', error, 'Failed to change seat', undefined, callback);
+    }
+  });
+
+  // Take seat (alias)
+  socket.on('take_seat', async (data: { channelName: string; newSeatIndex?: number; seatIndex?: number }, callback?: any) => {
+    try {
+      AppLogger.info(`[Socket Event: take_seat] Entered. userId=${userId}`);
+      const { channelName } = data || {};
+      const targetIndex = data?.newSeatIndex !== undefined ? Number(data.newSeatIndex) : (data?.seatIndex !== undefined ? Number(data.seatIndex) : undefined);
+      if (!channelName || targetIndex === undefined || isNaN(targetIndex)) {
+        emitSocketError(socket, 'take_seat', 'channelName and seatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      const result = await liveStreamService.changeSeat(userId, channelName, targetIndex);
+      AppLogger.info(`[Socket Event: take_seat] Success. userId=${userId}`);
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'take_seat', data: result });
+      }
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: take_seat] Error for user ${userId}: ${error.message}`);
+      emitSocketError(socket, 'take_seat', error, 'Failed to take seat', undefined, callback);
+    }
+  });
+
+  // Join seat (alias)
+  socket.on('join_seat', async (data: { channelName: string; newSeatIndex?: number; seatIndex?: number }, callback?: any) => {
+    try {
+      AppLogger.info(`[Socket Event: join_seat] Entered. userId=${userId}`);
+      const { channelName } = data || {};
+      const targetIndex = data?.newSeatIndex !== undefined ? Number(data.newSeatIndex) : (data?.seatIndex !== undefined ? Number(data.seatIndex) : undefined);
+      if (!channelName || targetIndex === undefined || isNaN(targetIndex)) {
+        emitSocketError(socket, 'join_seat', 'channelName and seatIndex are required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      const result = await liveStreamService.changeSeat(userId, channelName, targetIndex);
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'join_seat', data: result });
+      }
+    } catch (error: any) {
+      emitSocketError(socket, 'join_seat', error, 'Failed to join seat', undefined, callback);
+    }
+  });
+
+  // Leave seat
+  socket.on('leave_seat', async (data: { channelName: string }, callback?: any) => {
+    try {
+      AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}`);
+      const { channelName } = data || {};
+      if (!channelName) {
+        emitSocketError(socket, 'leave_seat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      const result = await liveStreamService.leaveSeat(userId, channelName);
+      AppLogger.info(`[Socket Event: leave_seat] Success. userId=${userId}`);
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'leave_seat', data: result });
+      }
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: leave_seat] Error for user ${userId}: ${error.message}`);
+      emitSocketError(socket, 'leave_seat', error, 'Failed to leave seat', undefined, callback);
     }
   });
 

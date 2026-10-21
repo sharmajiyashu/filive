@@ -249,7 +249,12 @@ export class AgencyCommissionService {
 
   public async getDashboardStats(agencyId: string, ownerUserId: string): Promise<AgencyDashboardStats> {
     const agency = await Agency.findById(agencyId);
-    if (!agency || agency.creatorId.toString() !== ownerUserId) {
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+    const isOwner = agency.creatorId.toString() === ownerUserId;
+    const isHost = isOwner ? true : await AgencyHost.exists({ agencyId: agency._id, userId: ownerUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+    if (!isOwner && !isHost) {
       throw new Error('Unauthorized or agency not found');
     }
 

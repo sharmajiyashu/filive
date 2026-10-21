@@ -187,24 +187,53 @@ export default (router: Router) => {
     }
   });
 
+  liveRouter.post('/seat/leave', async (req: any, res: Response) => {
+    try {
+      const { channelName, userId, seatIndex } = req.body;
+      if (!channelName || (!userId && seatIndex === undefined)) {
+        throw new Error('channelName and userId or seatIndex are required');
+      }
+      const result = await liveStreamService.leaveSeat(
+        userId || '',
+        channelName,
+        req.user?.id || 'admin',
+        seatIndex !== undefined ? Number(seatIndex) : undefined
+      );
+      return ResponseWrapper.success(res, result, 'User removed from seat successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  liveRouter.post('/kick', async (req: any, res: Response) => {
+    try {
+      const { channelName, userIdToKick } = req.body;
+      if (!channelName || !userIdToKick) {
+        throw new Error('channelName and userIdToKick are required');
+      }
+      const result = await liveStreamService.kickUser(
+        req.user?.id || 'admin',
+        channelName,
+        userIdToKick
+      );
+      return ResponseWrapper.success(res, result, 'User kicked from room successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   liveRouter.post('/block', async (req: any, res: Response) => {
     try {
       const { channelName, userIdToBlock } = req.body;
       if (!channelName || !userIdToBlock) {
         throw new Error('channelName and userIdToBlock are required');
       }
-      const room = await Room.findOneAndUpdate(
-        { channelName },
-        {
-          $addToSet: { blockedUsers: userIdToBlock },
-          $pull: { viewers: userIdToBlock },
-        },
-        { new: true }
+      const room = await liveStreamService.blockUserFromRoom(
+        req.user?.id || 'admin',
+        channelName,
+        userIdToBlock
       );
-      if (!room) {
-        throw new Error('Room not found');
-      }
-      return ResponseWrapper.success(res, room, 'User blocked in room successfully');
+      return ResponseWrapper.success(res, room, 'User blocked and kicked from room successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

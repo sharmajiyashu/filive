@@ -22,6 +22,30 @@ export function normalizeStoreTypeQuery(type?: string): string | undefined {
   return t;
 }
 
+let cachedRoleSettings: { settings: Record<string, string>; expiresAt: number } | null = null;
+export async function getCachedRoleSettings(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedRoleSettings && cachedRoleSettings.expiresAt > now) {
+    return cachedRoleSettings.settings;
+  }
+  try {
+    const AppSetting = mongoose.model('AppSetting');
+    const docs = await AppSetting.find({
+      key: { $in: ['host_role_image', 'agency_role_image', 'coin_trader_role_image', 'bd_role_image'] }
+    }).lean();
+    const map: Record<string, string> = {};
+    for (const d of docs) {
+      if (d.value && typeof d.value === 'string') {
+        map[d.key] = d.value.trim();
+      }
+    }
+    cachedRoleSettings = { settings: map, expiresAt: now + 30000 };
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 /** Nested populate so profile/user APIs return store items with media URL. */
 export const ACTIVE_STORE_POPULATE = [
   { path: 'activeEntry', populate: { path: 'media' } },
@@ -176,7 +200,7 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
           rawUser[field] = item;
         }
       }
-    } catch {}
+    } catch { }
   }
 
   // Fallback: If any active field is still missing and user exists, check inUse items from UserStoreItem
@@ -204,14 +228,85 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
           }
         }
       }
-    } catch {}
+    } catch { }
   }
 
   const activeEntry = formatStoreItem(rawUser.activeEntry || rawUser.entry || (rawUser as any).activeEntity || (rawUser as any).entity);
-  const activeFrame = formatStoreItem(rawUser.activeFrame || rawUser.frame);
+  let activeFrame: any = formatStoreItem(rawUser.activeFrame || rawUser.frame);
   const activeChatBubble = formatStoreItem(rawUser.activeChatBubble || rawUser.chatBubble || rawUser.chat_bubble);
   const activeTheme = formatStoreItem(rawUser.activeTheme || rawUser.theme);
   const activeRide = formatStoreItem(rawUser.activeRide || rawUser.ride);
+
+  // Role Tag Fallback: If user has no active store frame equipped, fall back to configured Role Image from App Settings
+  const roleSettings = await getCachedRoleSettings();
+  const bdRoleImage = roleSettings.bd_role_image || '';
+  const agencyRoleImage = roleSettings.agency_role_image || '';
+  const coinTraderRoleImage = roleSettings.coin_trader_role_image || '';
+  const hostRoleImage = roleSettings.host_role_image || '';
+
+  let userRoleTag: string | null = null;
+  let userRoleLabel: string = '';
+  let roleImageUrl: string = '';
+
+  let isBd = Boolean(rawUser.isBd);
+  let isCoinTrader = Boolean(rawUser.isCoinseller);
+  let isAgency = Boolean(rawUser.ownedAgency || rawUser.agency || rawUser.isAgency);
+  let isHost = Boolean(rawUser.isBecomeHost || rawUser.isAgencyHost || rawUser.userRole === 'host');
+
+  if (!isBd && !isAgency && !isHost && userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+    try {
+      const AgencyModel = mongoose.model('Agency');
+      const [bdAgencyExists, creatorAgencyExists] = await Promise.all([
+        bdRoleImage ? AgencyModel.exists({ bdId: new mongoose.Types.ObjectId(userIdStr) }) : false,
+        agencyRoleImage ? AgencyModel.exists({ creatorId: new mongoose.Types.ObjectId(userIdStr) }) : false,
+      ]);
+      if (bdAgencyExists) isBd = true;
+      if (creatorAgencyExists) isAgency = true;
+    } catch { }
+  }
+
+  if (isBd && bdRoleImage) {
+    userRoleTag = 'bd';
+    userRoleLabel = 'BD';
+    roleImageUrl = bdRoleImage;
+  } else if (isAgency && agencyRoleImage) {
+    userRoleTag = 'agency';
+    userRoleLabel = 'Agency';
+    roleImageUrl = agencyRoleImage;
+  } else if (isCoinTrader && coinTraderRoleImage) {
+    userRoleTag = 'coin_trader';
+    userRoleLabel = 'Coin Trader';
+    roleImageUrl = coinTraderRoleImage;
+  } else if (isHost && hostRoleImage) {
+    userRoleTag = 'host';
+    userRoleLabel = 'Host';
+    roleImageUrl = hostRoleImage;
+  }
+
+  if (!activeFrame && roleImageUrl) {
+    activeFrame = {
+      _id: `role_tag_${userRoleTag}`,
+      id: `role_tag_${userRoleTag}`,
+      name: `${userRoleLabel} Role Tag`,
+      type: 'frame',
+      media: { url: roleImageUrl, type: 'image' },
+      path: roleImageUrl,
+      url: roleImageUrl,
+      priceOptions: [],
+      isActive: true,
+      isRoleTag: true,
+      role: userRoleTag,
+    };
+  }
+
+  rawUser.roleTag = {
+    currentRole: userRoleTag || null,
+    currentRoleImage: roleImageUrl || '',
+    hostRoleImage,
+    agencyRoleImage,
+    coinTraderRoleImage,
+    bdRoleImage,
+  };
 
   rawUser.activeEntry = activeEntry;
   rawUser.entry = activeEntry;

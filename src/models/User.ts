@@ -70,6 +70,7 @@ export interface IUser extends Document {
   activeChatBubble?: mongoose.Types.ObjectId;
   activeTheme?: mongoose.Types.ObjectId;
   activeRide?: mongoose.Types.ObjectId;
+  isBd: boolean;
   isCoinseller: boolean;
   isCoinsellerActive: boolean;
   coinSellerCoins: number;
@@ -200,6 +201,7 @@ const UserSchema: Schema = new Schema(
     activeChatBubble: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeTheme: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeRide: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
+    isBd: { type: Boolean, default: false },
     isCoinseller: { type: Boolean, default: false },
     isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },

@@ -30,10 +30,17 @@ export class CoinSellerService {
     const sender = await User.findById(senderId).populate('profileImage');
     if (!sender) throw new Error('Sender user not found');
     if (!sender.isCoinseller) {
-      throw new Error('You are not authorized as a coin seller');
+      if ((sender.coinSellerCoins || 0) >= amount) {
+        sender.isCoinseller = true;
+        sender.isCoinsellerActive = true;
+        await User.findByIdAndUpdate(senderId, { isCoinseller: true, isCoinsellerActive: true });
+      } else {
+        throw new Error('You are not authorized as a coin seller');
+      }
     }
     if (sender.isCoinsellerActive === false) {
-      throw new Error('Your coin seller account is inactive');
+      sender.isCoinsellerActive = true;
+      await User.findByIdAndUpdate(senderId, { isCoinsellerActive: true });
     }
     if ((sender.coinSellerCoins || 0) < amount) {
       throw new Error('Insufficient coinseller coins balance');
@@ -317,8 +324,9 @@ export class CoinSellerService {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
 
     const seller = await User.findById(sellerId)
-      .select('userId name coins coinSellerCoins beans mobile whatsapp profileImage coinSellerPaymentMethods')
+      .select('userId name coins coinSellerCoins beans mobile whatsapp country countryId profileImage coinSellerPaymentMethods')
       .populate('profileImage')
+      .populate('countryId')
       .populate('coinSellerPaymentMethods.qrCode');
     if (!seller) throw new Error('Seller not found');
 
@@ -351,6 +359,7 @@ export class CoinSellerService {
       name: seller.name,
       mobile: seller.mobile,
       whatsapp: seller.whatsapp,
+      countryCode: (seller.countryId as any)?.code || seller.country || null,
       profileImage: seller.profileImage,
       paymentMethods: seller.coinSellerPaymentMethods ? {
         upiId: seller.coinSellerPaymentMethods.upiId || '',
@@ -408,13 +417,10 @@ export class CoinSellerService {
     if (coinsToCredit <= 0) {
       throw new Error('Converted coins value is too low');
     }
-    const isRecipientCoinseller = Boolean(recipient.isCoinseller);
-    const transferTarget = !isTransfer
-      ? 'self'
-      : (isRecipientCoinseller ? 'coinseller' : 'user');
-    // Credit coinSellerCoins if recipient is a coin seller, else credit coins
-    const incField = isRecipientCoinseller ? 'coinSellerCoins' : 'coins';
-    const recipientWallet = isRecipientCoinseller ? 'coinSellerCoins' : 'coins';
+    // All transfers/conversions from beans wallet must credit coinSellerCoins (Coin Trader coins), NEVER normal coins
+    const incField = 'coinSellerCoins';
+    const recipientWallet = 'coinSellerCoins';
+    const transferTarget = !isTransfer ? 'self' : 'coinseller';
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -425,9 +431,10 @@ export class CoinSellerService {
         $inc: { beans: -beansAmount }
       }, { session });
 
-      // 2. Credit coins or coinSellerCoins to recipient
+      // 2. Credit coinSellerCoins to recipient and ensure coin seller status is active
       await User.findByIdAndUpdate(recipient._id, {
-        $inc: { [incField]: coinsToCredit }
+        $inc: { [incField]: coinsToCredit },
+        $set: { isCoinseller: true, isCoinsellerActive: true }
       }, { session });
 
       // 3. Create history records
@@ -436,11 +443,11 @@ export class CoinSellerService {
         await CoinHistory.create([{
           userId: sender._id,
           relatedUserId: recipient._id,
-          amount: -coinsToCredit,
+          amount: -beansAmount,
           type: 'beans_to_coins',
           wallet: 'beans',
           transferTarget,
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${isRecipientCoinseller ? 'Coin Seller ' : ''}${recipient.name || 'User'} (ID: ${recipient.userId})`
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
         }], { session });
 
         // Record for recipient
@@ -451,7 +458,7 @@ export class CoinSellerService {
           type: 'beans_to_coins',
           wallet: recipientWallet,
           transferTarget,
-          description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
+          description: `Received ${coinsToCredit} Coin Trader coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
         }], { session });
       } else {
         await CoinHistory.create([{
@@ -460,18 +467,57 @@ export class CoinSellerService {
           type: 'beans_to_coins',
           wallet: recipientWallet,
           transferTarget,
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins`
         }], { session });
       }
 
       await session.commitTransaction();
+
+      // Send system message notifications
+      try {
+        if (isTransfer) {
+          await this.chatService.sendSystemMessage(
+            recipient._id.toString(),
+            'Coin Trader Stock Received',
+            `🎉 You have received ${coinsToCredit} Coin Trader coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId}). Updated Coin Trader Balance: ${(recipient.coinSellerCoins || 0) + coinsToCredit} Coins.`,
+            {
+              isRecharge: true,
+              amount: coinsToCredit,
+              fromUserId: sender.userId,
+              fromUserName: sender.name,
+              newBalance: (recipient.coinSellerCoins || 0) + coinsToCredit,
+              wallet: 'coinSellerCoins',
+              isCoinseller: true,
+            }
+          );
+        } else {
+          await this.chatService.sendSystemMessage(
+            sender._id.toString(),
+            'Beans Converted to Coin Trader Stock',
+            `🎉 Successfully converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins! Updated Coin Trader Balance: ${(sender.coinSellerCoins || 0) + coinsToCredit} Coins.`,
+            {
+              isRecharge: true,
+              amount: coinsToCredit,
+              fromUserId: sender.userId,
+              fromUserName: sender.name,
+              newBalance: (sender.coinSellerCoins || 0) + coinsToCredit,
+              wallet: 'coinSellerCoins',
+              isCoinseller: true,
+            }
+          );
+        }
+      } catch (e: any) {
+        console.warn(`[CoinSellerService] sendSystemMessage error: ${e.message}`);
+      }
+
       return {
         success: true,
         message: isTransfer
-          ? `Beans converted to coins and transferred to User (ID: ${recipient.userId}) successfully`
-          : `Beans converted to coins successfully`,
+          ? `Beans converted to Coin Trader coins and transferred to User (ID: ${recipient.userId}) successfully`
+          : `Beans converted to Coin Trader coins successfully`,
         beansDeducted: beansAmount,
         coinsCredited: coinsToCredit,
+        wallet: 'coinSellerCoins',
         recipient: {
           id: recipient._id,
           userId: recipient.userId,
@@ -955,7 +1001,11 @@ export class CoinSellerService {
   async getCoinSellerPackages() {
     return CoinPackage.find({
       isActive: true,
-      targetAudience: { $in: ['seller', 'all'] },
+      $or: [
+        { targetAudience: { $in: ['seller', 'all'] } },
+        { targetAudience: { $exists: false } },
+        { targetAudience: null },
+      ],
     }).sort({ coins: 1 });
   }
 
@@ -966,7 +1016,13 @@ export class CoinSellerService {
     const seller = await User.findById(sellerId).populate('profileImage').populate('countryId');
     if (!seller) throw new Error('Seller not found');
     if (!seller.isCoinseller) {
-      throw new Error('You are not authorized as a coin seller');
+      if ((seller.coinSellerCoins || 0) > 0) {
+        seller.isCoinseller = true;
+        seller.isCoinsellerActive = true;
+        await seller.save();
+      } else {
+        throw new Error('You are not authorized as a coin seller');
+      }
     }
 
     const digits = String(payload.whatsapp || '').replace(/\D/g, '');
@@ -1026,7 +1082,13 @@ export class CoinSellerService {
     const seller = await User.findById(sellerId).populate('profileImage').populate('coinSellerPaymentMethods.qrCode').populate('countryId');
     if (!seller) throw new Error('Seller not found');
     if (!seller.isCoinseller) {
-      throw new Error('You are not authorized as a coin seller');
+      if ((seller.coinSellerCoins || 0) > 0) {
+        seller.isCoinseller = true;
+        seller.isCoinsellerActive = true;
+        await seller.save();
+      } else {
+        throw new Error('You are not authorized as a coin seller');
+      }
     }
 
     if (!seller.coinSellerPaymentMethods) {
