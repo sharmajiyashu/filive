@@ -117,7 +117,7 @@ export class AuthenticationService {
         const user = await User.findOne({
             email,
             userRole: 'admin'
-        }).populate('profileImage');
+        }).populate('profileImage').populate('adminRoleId');
 
         if (!user || !user.password) {
             throw new Error('Invalid email or password');

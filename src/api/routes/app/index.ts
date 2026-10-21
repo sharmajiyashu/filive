@@ -30,6 +30,7 @@ import banner from './banner';
 import socialLink from './socialLink';
 import vip from './vip';
 import report from './report';
+import hashtag from './hashtag';
 
 export default (router: Router): Router => {
   profile(router);
@@ -63,6 +64,7 @@ export default (router: Router): Router => {
   socialLink(router);
   vip(router);
   report(router);
+  hashtag(router);
   return router;
 };
 

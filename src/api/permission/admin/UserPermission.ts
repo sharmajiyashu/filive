@@ -6,19 +6,19 @@ export const adminUserPermission: PermissionModule = {
     features: {
         'admin:user:create': {
             enabled: false,
-            description: { en: 'Create admin user' }
+            description: 'Create admin user'
         },
         'admin:user:update': {
             enabled: false,
-            description: { en: 'Update admin user' }
+            description: 'Update admin user'
         },
         'admin:user:delete': {
             enabled: false,
-            description: { en: 'Delete admin user' }
+            description: 'Delete admin user'
         },
         'admin:user:get': {
             enabled: false,
-            description: { en: 'Get admin user' }
+            description: 'Get admin user'
         }
     }
 }

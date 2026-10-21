@@ -37,6 +37,9 @@ import contactMessage from './contactMessage';
 import websiteSettings from './websiteSettings';
 import beans from './beans';
 import report from './report';
+import hashtag from './hashtag';
+import role from './role';
+import adminUser from './adminUser';
 
 export default (router: Router): Router => {
   auth(router);
@@ -77,6 +80,9 @@ export default (router: Router): Router => {
   websiteSettings(router);
   beans(router);
   report(router);
+  hashtag(router);
+  role(router);
+  adminUser(router);
   return router;
 };
 

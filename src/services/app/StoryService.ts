@@ -6,6 +6,7 @@ import Like from '../../models/Like';
 import Follow from '../../models/Follow';
 import User from '../../models/User';
 import Block from '../../models/Block';
+import Hashtag from '../../models/Hashtag';
 import mongoose from 'mongoose';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaService } from '../common/MediaService';
@@ -54,6 +55,25 @@ export class StoryService {
       tags: allTags,
       mentions
     });
+
+    // Update hashtag usage count in background
+    if (allTags.length > 0) {
+      Promise.all(
+        allTags.map(async (rawTag) => {
+          const cleanTag = String(rawTag || '').replace(/^#+/, '').trim();
+          if (!cleanTag) return;
+          try {
+            await Hashtag.findOneAndUpdate(
+              { name: { $regex: new RegExp(`^${cleanTag}$`, 'i') } },
+              { $inc: { usageCount: 1 } }
+            );
+          } catch {
+            // Non-critical, ignore error
+          }
+        })
+      ).catch(() => {});
+    }
+
     return story;
   }
 

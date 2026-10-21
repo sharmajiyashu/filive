@@ -31,6 +31,7 @@ import { seedPaymentMethods } from './PaymentMethodSeeder';
 import { seedRegionalRankingUsers } from './RegionalRankingSeeder';
 import { seedSocialLinks } from './SocialLinkSeeder';
 import { seedVipPlans } from './VipPlanSeeder';
+import { seedHashtags } from './HashtagSeeder';
 
 async function main() {
   try {
@@ -57,6 +58,7 @@ async function main() {
     await seedPaymentMethods();
     await seedRegionalRankingUsers();
     await seedSocialLinks();
+    await seedHashtags();
 
     AppLogger.info('✅ All seeders completed successfully!');
     process.exit(0);

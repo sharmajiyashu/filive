@@ -29,7 +29,7 @@ export interface PermissionModule {
     features: {
         [featureName: string]: {
             enabled: boolean;
-            description: { en: string };
+            description: string;
         };
     };
 }

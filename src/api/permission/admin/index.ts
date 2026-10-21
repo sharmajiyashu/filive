@@ -1,5 +1,4 @@
-import { adminUserPermission } from "./UserPermission";
+import { allAdminPermissions } from "./adminPermissions";
 
-export const adminPermissions = [
-    adminUserPermission
-]
+export const adminPermissions = allAdminPermissions;
+export { allAdminPermissions };
