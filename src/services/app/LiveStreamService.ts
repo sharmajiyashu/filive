@@ -18,6 +18,8 @@ const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -ho
 
 @Service()
 export class LiveStreamService {
+  private dailyCharmRankCache: { timestamp: number; earners: Map<string, number> } | null = null;
+
   constructor(@Inject() private levelService: LevelService) { }
 
   private hostPopulate() {
@@ -854,41 +856,46 @@ export class LiveStreamService {
    */
   public async getHostDailyCharmRank(hostId: string): Promise<number> {
     try {
-      const now = new Date();
-      const startDate = new Date(now.setHours(0, 0, 0, 0));
+      const now = Date.now();
+      if (!this.dailyCharmRankCache || (now - this.dailyCharmRankCache.timestamp > 60000)) {
+        const today = new Date();
+        const startDate = new Date(today.setHours(0, 0, 0, 0));
 
-      const dailyEarners = await CoinHistory.aggregate([
-        {
-          $match: {
-            type: 'charm_received',
-            createdAt: { $gte: startDate }
-          }
-        },
-        {
-          $group: {
-            _id: '$userId',
-            totalAmount: { $sum: { $abs: '$amount' } }
-          }
-        },
-        { $sort: { totalAmount: -1 } }
-      ]);
+        const dailyEarners = await CoinHistory.aggregate([
+          {
+            $match: {
+              type: 'charm_received',
+              createdAt: { $gte: startDate }
+            }
+          },
+          {
+            $group: {
+              _id: '$userId',
+              totalAmount: { $sum: { $abs: '$amount' } }
+            }
+          },
+          { $sort: { totalAmount: -1 } }
+        ]);
 
-      const activeIndex = dailyEarners.findIndex(earner => earner._id.toString() === hostId.toString());
-      if (activeIndex !== -1) {
-        return activeIndex + 1;
+        const earnersMap = new Map<string, number>();
+        dailyEarners.forEach((earner: any, idx: number) => {
+          if (earner._id) {
+            earnersMap.set(earner._id.toString(), idx + 1);
+          }
+        });
+
+        this.dailyCharmRankCache = {
+          timestamp: now,
+          earners: earnersMap
+        };
       }
 
-      const activeUserIds = dailyEarners.map(e => e._id);
-      const hostUser = await User.findById(hostId);
-      const hostCharmCoins = hostUser ? (hostUser.charmCoins || 0) : 0;
-
-      const fallbackRankCount = await User.countDocuments({
-        userRole: 'user',
-        _id: { $nin: activeUserIds },
-        charmCoins: { $gt: hostCharmCoins }
-      });
-
-      return dailyEarners.length + fallbackRankCount + 1;
+      const hostIdStr = hostId ? hostId.toString() : '';
+      const cachedRank = this.dailyCharmRankCache.earners.get(hostIdStr);
+      if (cachedRank !== undefined) {
+        return cachedRank;
+      }
+      return this.dailyCharmRankCache.earners.size + 1;
     } catch (error: any) {
       AppLogger.error(`[LiveStreamService: getHostDailyCharmRank] Error: ${error.message}`);
       return 999;
@@ -1395,7 +1402,7 @@ export class LiveStreamService {
         const mappedStreams = (
           await Promise.all(
             combinedStreams.map(async (stream: any) => {
-              const streamObj = await this.populateRoomWithDailyRank(stream, userId);
+              const streamObj = await this.populateRoomWithDailyRank(stream, userId, true);
               const hostObj = streamObj.hostId;
               const hostIdStr =
                 hostObj &&
@@ -1515,7 +1522,7 @@ export class LiveStreamService {
     let mappedStreams = (
       await Promise.all(
         streams.map(async (stream: any) => {
-          const streamObj = await this.populateRoomWithDailyRank(stream, userId);
+          const streamObj = await this.populateRoomWithDailyRank(stream, userId, true);
           const hostObj = streamObj.hostId;
           const hostGender = (hostObj?.gender || '').toLowerCase();
           // Filter male hosts only from default public livestream feed (female only)
@@ -1714,8 +1721,8 @@ export class LiveStreamService {
   /**
    * Helper to populate room host with their daily charm ranking, followers count, and follow status
    */
-  public async populateRoomWithDailyRank(room: any, currentUserId?: string) {
-    return this.buildLiveRoomPayload(room, currentUserId);
+  public async populateRoomWithDailyRank(room: any, currentUserId?: string, isList: boolean = false) {
+    return this.buildLiveRoomPayload(room, currentUserId, isList);
   }
 
   public async formatSeats(seats: any[]): Promise<any[]> {
@@ -1755,7 +1762,7 @@ export class LiveStreamService {
     }));
   }
 
-  public async buildLiveRoomPayload(room: any, currentUserId?: string) {
+  public async buildLiveRoomPayload(room: any, currentUserId?: string, isList: boolean = false) {
     if (!room) return room;
 
     await this.ensureRoomId(room);
