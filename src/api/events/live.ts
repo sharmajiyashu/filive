@@ -721,16 +721,18 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   });
 
   // Leave seat
-  socket.on('leave_seat', async (data: { channelName: string }, callback?: any) => {
+  socket.on('leave_seat', async (data: { channelName: string; targetUserId?: string; seatIndex?: number }, callback?: any) => {
     try {
-      AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}`);
+      AppLogger.info(`[Socket Event: leave_seat] Entered. userId=${userId}, targetUserId=${data?.targetUserId}, seatIndex=${data?.seatIndex}`);
       const { channelName } = data || {};
       if (!channelName) {
         emitSocketError(socket, 'leave_seat', 'channelName is required', 'Validation failed', 'VALIDATION_FAILED', callback);
         return;
       }
-      const result = await liveStreamService.leaveSeat(userId, channelName);
-      AppLogger.info(`[Socket Event: leave_seat] Success. userId=${userId}`);
+      const targetUser = data?.targetUserId || userId;
+      const requesterId = data?.targetUserId && data?.targetUserId !== userId ? userId : undefined;
+      const result = await liveStreamService.leaveSeat(targetUser, channelName, requesterId, data?.seatIndex);
+      AppLogger.info(`[Socket Event: leave_seat] Success. userId=${userId}, targetUser=${targetUser}`);
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'leave_seat', data: result });
       }

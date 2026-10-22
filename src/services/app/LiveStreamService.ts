@@ -2291,9 +2291,13 @@ export class LiveStreamService {
     if (!liveStream) throw new Error('Active room not found');
     if (!liveStream.seats) liveStream.seats = [];
 
-    await this.verifyAdmin(requesterId, liveStream.hostId.toString());
-
     let seat = liveStream.seats.find((s: any) => s.seatIndex === seatIndex);
+    const occupantId = seat && seat.userId ? (seat.userId._id ? seat.userId._id.toString() : seat.userId.toString()) : null;
+    const isOwnSeat = occupantId && occupantId === requesterId;
+    if (!isOwnSeat) {
+      await this.verifyAdmin(requesterId, liveStream.hostId.toString());
+    }
+
     if (!seat) {
       const maxSeats = liveStream.maxSeats || 20;
       if (seatIndex >= 0 && seatIndex < maxSeats) {
@@ -2312,6 +2316,7 @@ export class LiveStreamService {
 
     seat.isMuted = mute;
 
+    liveStream.markModified('seats');
     await liveStream.save();
 
     const io = this.getSocketIo();
@@ -2365,6 +2370,7 @@ export class LiveStreamService {
       }
     }
 
+    liveStream.markModified('seats');
     await liveStream.save();
 
     const io = this.getSocketIo();
