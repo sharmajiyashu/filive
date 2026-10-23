@@ -351,7 +351,8 @@ export default (router: Router) => {
         const userId = req.user.id;
         const file = req.file || (req.files && (req.files as any)[0]);
         if (!file) throw new Error('Please upload a video');
-        const result = await profileService.uploadVideoVerification(userId, file);
+        const duration = req.body?.duration ? parseInt(req.body.duration) : 10;
+        const result = await profileService.uploadVideoVerification(userId, req.files || file, { duration });
         return ResponseWrapper.success(res, result, 'Video uploaded successfully');
       } catch (error: any) {
         return ResponseWrapper.error(res, error);

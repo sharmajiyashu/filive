@@ -968,14 +968,14 @@ export class UserService {
         await reportService.sendOfficialSystemMessage(
           userId,
           'Identity Verification Approved! 🎉',
-          'Congratulations! Your Photo ID and video verification have been approved by the moderation team. Your profile now proudly displays the verified creator badge.',
+          'Congratulations! Your 10-second face video verification has been approved by the moderation team. Your profile is now verified and eligible for voice and video calling.',
           { type: 'verification_result', status: 'approved' }
         );
       } else {
         await reportService.sendOfficialSystemMessage(
           userId,
           'Identity Verification Update',
-          `Your verification request could not be approved. Reason: ${user.verificationRejectReason}. You may re-submit your verification with a clear Photo ID and 30-sec video.`,
+          `Your verification request could not be approved. Reason: ${user.verificationRejectReason}. You may re-submit a 10-second face video verification.`,
           { type: 'verification_result', status: 'rejected', reason: user.verificationRejectReason }
         );
       }

@@ -41,6 +41,7 @@ export class UserService {
 
     if (!hasSearch) {
       query.gender = { $regex: /^female$/i };
+      query.videoVerificationStatus = 'approved';
       query.$and = [
         {
           $or: [
@@ -65,36 +66,6 @@ export class UserService {
 
       const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
       query._id = { $nin: ninIds };
-    }
-
-    // Popular tab & user discovery visibility rule (only for default browse feed):
-    if (!hasSearch) {
-      const verificationOrMutualConditions: any[] = [
-        { isVerified: true },
-        { videoVerificationStatus: 'approved' },
-      ];
-
-      if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
-        const myFollowings = await Follow.find({
-          followerId: new mongoose.Types.ObjectId(currentUserId),
-          status: 'accepted',
-        }).distinct('followingId');
-
-        if (myFollowings.length > 0) {
-          const mutualFollowUserIds = await Follow.find({
-            followerId: { $in: myFollowings },
-            followingId: new mongoose.Types.ObjectId(currentUserId),
-            status: 'accepted',
-          }).distinct('followerId');
-
-          if (mutualFollowUserIds.length > 0) {
-            verificationOrMutualConditions.push({ _id: { $in: mutualFollowUserIds } });
-          }
-        }
-      }
-
-      query.$and = query.$and || [];
-      query.$and.push({ $or: verificationOrMutualConditions });
     }
 
     // Type filter: online or new

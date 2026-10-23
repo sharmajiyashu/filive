@@ -268,7 +268,9 @@ export default (router: Router) => {
         richLevels,
         charmLevels,
         currentRichLevelInfo,
-        currentCharmLevelInfo
+        currentCharmLevelInfo,
+        richCoins,
+        charmCoins,
       }, 'Levels lists and user progression fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

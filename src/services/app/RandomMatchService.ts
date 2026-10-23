@@ -161,9 +161,13 @@ export class RandomMatchService {
     }
 
     const host = await User.findById(hostId).select(
-      'gender enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice'
+      'gender enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice videoVerificationStatus'
     );
     if (!host) throw new Error('Host profile not found');
+
+    if (host.videoVerificationStatus !== 'approved') {
+      throw new Error('Host must have approved video verification to accept calls');
+    }
 
     if ((host.gender || '').toLowerCase() !== 'female') {
       throw new Error('Only female hosts can enable random call availability');
@@ -225,7 +229,7 @@ export class RandomMatchService {
       return { data: [], total: 0 };
     }
 
-    const hosts = await User.find({ _id: { $in: hostIds }, gender: { $regex: /^female$/i } })
+    const hosts = await User.find({ _id: { $in: hostIds }, gender: { $regex: /^female$/i }, videoVerificationStatus: 'approved' })
       .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
       .populate('profileImage')
       .populate('countryId');
@@ -472,7 +476,8 @@ export class RandomMatchService {
         _id: { $ne: new mongoose.Types.ObjectId(callerId) },
         gender: { $regex: /^female$/i },
         status: { $ne: 'banned' },
-        isBanned: { $ne: true }
+        isBanned: { $ne: true },
+        videoVerificationStatus: 'approved',
       };
       if (callType === 'voice') {
         query.enableVoiceCall = true;

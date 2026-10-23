@@ -268,6 +268,10 @@ export class CallService {
       throw new Error('Calling is available for Female hosts only.');
     }
 
+    if (receiver.videoVerificationStatus !== 'approved') {
+      throw new Error('Host has not completed video verification');
+    }
+
     const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
     const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
 
@@ -872,6 +876,7 @@ export class CallService {
     let query: any = {
       userRole: 'user',
       gender: { $regex: /^female$/i },
+      videoVerificationStatus: 'approved',
     };
 
     if (callType === 'voice') {

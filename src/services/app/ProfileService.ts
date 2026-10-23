@@ -543,19 +543,24 @@ export class ProfileService {
       }
     }
 
-    if (!videoFile && !photoIdFile) {
-      throw new Error('Please upload verification video and/or photo ID');
+    if (!videoFile && filesInput) {
+      if (Array.isArray(filesInput) && filesInput.length > 0) {
+        videoFile = filesInput[0];
+      } else if (filesInput.buffer || filesInput.path) {
+        videoFile = filesInput;
+      }
+    }
+
+    if (!videoFile) {
+      throw new Error('Please record and upload your 10-second face verification video');
     }
 
     const updateData: any = {
       videoVerificationStatus: 'pending',
       verificationSubmittedAt: new Date(),
       verificationRejectReason: undefined,
+      verificationVideoDuration: opts.duration || 10,
     };
-
-    if (opts.duration) {
-      updateData.verificationVideoDuration = opts.duration;
-    }
 
     if (videoFile) {
       const uploadResults = await this.cloudinaryService.uploadMedia(MediaType.video, [videoFile], 'verifications');
@@ -588,7 +593,7 @@ export class ProfileService {
       await reportService.sendOfficialSystemMessage(
         userId,
         'Verification Submitted',
-        'Your identity verification request (Photo ID & 30-sec video) has been received and is pending administrative review. Thank you for keeping Filive safe.',
+        'Your 10-second face verification video has been received and is pending administrative review. Thank you for keeping Filive safe.',
         { type: 'verification_submitted', status: 'pending' }
       );
     } catch {

@@ -13,6 +13,36 @@ function getLevelRangeText(levelNumber: number): string {
   return '1-9';
 }
 
+const DEFAULT_LEVEL_TIERS = [
+  { levelNumber: 1, minCoins: 0, maxCoins: 20000, color: '#FF4B8A', rangeText: '1-9', levelRange: '1-9' },
+  { levelNumber: 10, minCoins: 20000, maxCoins: 100000, color: '#6A85F1', rangeText: '10-19', levelRange: '10-19' },
+  { levelNumber: 20, minCoins: 100000, maxCoins: 300000, color: '#FFD700', rangeText: '20-29', levelRange: '20-29' },
+  { levelNumber: 30, minCoins: 300000, maxCoins: 700000, color: '#7C6FCD', rangeText: '30-39', levelRange: '30-39' },
+  { levelNumber: 40, minCoins: 700000, maxCoins: 1500000, color: '#E040FB', rangeText: '40-49', levelRange: '40-49' },
+  { levelNumber: 50, minCoins: 1500000, maxCoins: 3000000, color: '#FF5722', rangeText: '50-59', levelRange: '50-59' },
+  { levelNumber: 60, minCoins: 3000000, maxCoins: 6000000, color: '#00E676', rangeText: '60-69', levelRange: '60-69' },
+  { levelNumber: 70, minCoins: 6000000, maxCoins: 10000000, color: '#00B0FF', rangeText: '70-79', levelRange: '70-79' },
+  { levelNumber: 80, minCoins: 10000000, maxCoins: 16000000, color: '#651FFF', rangeText: '80-89', levelRange: '80-89' },
+  { levelNumber: 90, minCoins: 16000000, maxCoins: 25000000, color: '#FF1744', rangeText: '90-99', levelRange: '90-99' },
+  { levelNumber: 100, minCoins: 25000000, maxCoins: 50000000, color: '#FFD700', rangeText: '100', levelRange: '100' },
+];
+
+function getDefaultLevels(type: 'rich' | 'charm') {
+  return DEFAULT_LEVEL_TIERS.map(tier => ({
+    _id: `default_${type}_${tier.levelNumber}`,
+    type,
+    levelNumber: tier.levelNumber,
+    name: `${type === 'rich' ? 'Wealth' : 'Charm'} ${tier.rangeText}`,
+    minCoins: tier.minCoins,
+    maxCoins: tier.maxCoins,
+    color: tier.color,
+    image: null,
+    imageUrl: null,
+    levelRange: tier.levelRange,
+    rangeText: tier.rangeText,
+  }));
+}
+
 @Service()
 export class LevelService {
   private cache: { [key: string]: { data: any[]; expiresAt: number } } = {};
@@ -26,7 +56,10 @@ export class LevelService {
     if (this.cache[type] && this.cache[type].expiresAt > now) {
       return this.cache[type].data;
     }
-    const levels = await Level.find({ type }).populate('image').sort({ levelNumber: 1 });
+    let levels = await Level.find({ type }).populate('image').sort({ levelNumber: 1 });
+    if (!levels || levels.length === 0) {
+      levels = getDefaultLevels(type) as any;
+    }
     this.cache[type] = {
       data: levels,
       expiresAt: now + 60000, // 60 seconds TTL
@@ -114,7 +147,13 @@ export class LevelService {
     if (type) {
       query.type = type;
     }
-    const levels = await Level.find(query).populate('image').sort({ type: 1, levelNumber: 1 });
+    let levels = await Level.find(query).populate('image').sort({ type: 1, levelNumber: 1 });
+    if (!levels || levels.length === 0) {
+      if (type) {
+        return getDefaultLevels(type);
+      }
+      return [...getDefaultLevels('rich'), ...getDefaultLevels('charm')];
+    }
 
     return levels.map(l => {
       const obj = l.toObject ? l.toObject() : { ...l };
