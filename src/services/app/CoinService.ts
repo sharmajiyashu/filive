@@ -48,17 +48,23 @@ export class CoinService {
   ) { }
 
   async getPackages(countryIdOrCode?: string, audience: RechargeAudience = 'user') {
+    const audienceFilter = audience === 'website'
+      ? { $in: ['website', 'all', null] }
+      : { $in: [audience, 'all', null] };
+
     let packages = await CoinPackage.find({
       isActive: true,
-      targetAudience: audience === 'website' ? 'website' : { $in: [audience, 'all'] },
-    }).sort({ coins: 1 });
+      $or: [
+        { targetAudience: audienceFilter },
+        { targetAudience: { $exists: false } },
+      ],
+    }).sort({ price: 1, coins: 1 });
 
-    // Fallback to general/user packages if website-specific packages are not yet created
-    if (audience === 'website' && packages.length === 0) {
+    // Fallback if no packages matched
+    if (packages.length === 0) {
       packages = await CoinPackage.find({
         isActive: true,
-        targetAudience: { $in: ['website', 'all', 'user'] },
-      }).sort({ coins: 1 });
+      }).sort({ price: 1, coins: 1 });
     }
 
     let country: any = null;

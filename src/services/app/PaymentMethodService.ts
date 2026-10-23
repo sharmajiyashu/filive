@@ -98,12 +98,12 @@ export class PaymentMethodService {
 
     let methods = await PaymentMethod.find(query).sort({ gateway: 1 });
 
-    // Fallback for web if no methods specifically configured for this international country code:
-    // Web platforms should show available web payment gateways (Razorpay/Cashfree which accept international cards)
-    if (methods.length === 0 && platform === 'web') {
+    // Fallback if no methods specifically configured for this country code:
+    // Platforms should show available active payment gateways (Razorpay/Cashfree)
+    if (methods.length === 0) {
       methods = await PaymentMethod.find({
         isActive: true,
-        showInWeb: { $ne: false },
+        ...(platform === 'web' ? { showInWeb: { $ne: false } } : { showInApp: { $ne: false } }),
       }).sort({ gateway: 1 });
     }
 
