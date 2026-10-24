@@ -68,45 +68,51 @@ export class CoinService {
     }
 
     let country: any = null;
-    if (countryIdOrCode) {
-      if (mongoose.Types.ObjectId.isValid(countryIdOrCode)) {
-        country = await Country.findById(countryIdOrCode);
+    if (countryIdOrCode && countryIdOrCode.trim() !== '') {
+      const clean = countryIdOrCode.trim();
+      if (mongoose.Types.ObjectId.isValid(clean)) {
+        country = await Country.findById(clean);
       }
       if (!country) {
         country = await Country.findOne({
-          code: countryIdOrCode.trim().toUpperCase(),
+          code: clean.toUpperCase(),
+          isActive: true,
+        });
+      }
+      if (!country) {
+        country = await Country.findOne({
+          name: { $regex: new RegExp(`^${clean}$`, 'i') },
           isActive: true,
         });
       }
     }
 
     if (!country) {
-      return packages.map(pkg => ({
-        ...pkg.toObject(),
-        localPrice: pkg.price,
-        currencyCode: 'INR',
-        currencySymbol: '₹'
-      }));
+      country = await Country.findOne({ code: 'IN', isActive: true }) || await Country.findOne({ isActive: true });
     }
 
     return packages.map(pkg => {
       let localPrice: number;
-      if (country.currencyCode === 'INR' || country.code === 'IN') {
+      if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
         localPrice = pkg.price;
       } else if (country.currencyCode === 'USD' || country.code === 'US') {
         localPrice = Number((pkg.price / 83.5).toFixed(2));
       } else {
         const usdPrice = pkg.price / 83.5;
-        localPrice = calculateLocalPrice(usdPrice, country.exchangeRate);
+        localPrice = calculateLocalPrice(usdPrice, country.exchangeRate || 1);
       }
+
+      const discountPercent = Math.min(Math.round(((pkg.coins - (pkg.price * 1)) / (pkg.coins || 1)) * 100), 75);
 
       return {
         ...pkg.toObject(),
         localPrice,
-        currencyCode: country.currencyCode,
-        currencySymbol: country.currencySymbol,
-        countryName: country.name,
-        countryFlag: country.flag,
+        currencyCode: country ? country.currencyCode : 'INR',
+        currencySymbol: country ? country.currencySymbol : '₹',
+        countryName: country?.name || 'India',
+        countryFlag: country?.flag || 'https://flagcdn.com/w160/in.png',
+        countryCode: country?.code || 'IN',
+        discountPercent: discountPercent > 0 ? discountPercent : 0,
       };
     });
   }

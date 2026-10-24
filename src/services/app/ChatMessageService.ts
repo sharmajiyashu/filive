@@ -16,6 +16,7 @@ import { MediaType } from '../../constants/enum';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 import { ChatService } from './ChatService';
+import { TranslationService } from '../common/TranslationService';
 
 @Service()
 export class ChatMessageService {
@@ -23,6 +24,7 @@ export class ChatMessageService {
     @Inject() private cloudinaryService: CloudinaryService,
     @Inject() private mediaService: MediaService,
     @Inject() private pushService: FirebasePushService,
+    @Inject() private translationService: TranslationService,
   ) { }
 
   private resolveUserId(value: unknown): string | null {
@@ -660,11 +662,27 @@ export class ChatMessageService {
       }
     }
 
+    let translationText: string | undefined;
+    let originalLanguage: string | undefined;
+    if (data.message && typeof data.message === 'string') {
+      try {
+        const transResult = await this.translationService.translateToEnglish(data.message);
+        if (transResult) {
+          translationText = transResult.translatedText;
+          originalLanguage = transResult.sourceLang;
+        }
+      } catch (err: any) {
+        AppLogger.warn(`Translation error in createMessage: ${err?.message}`);
+      }
+    }
+
     const message = await Message.create({
       chatId: chatObjectId,
       senderId: userObjectId,
       type: messageType,
       text: data.message,
+      translation: translationText,
+      originalLanguage: originalLanguage,
       replyToId: data.replyToId ? new mongoose.Types.ObjectId(data.replyToId) : undefined,
       medias: mediaIds,
       seenBy: [{ userId: userObjectId, seenAt: new Date() }],

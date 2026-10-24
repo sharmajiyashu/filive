@@ -110,6 +110,10 @@ export class AppSettingService {
 
     phone_login_enabled: true,
     email_login_enabled: true,
+
+    // Auto Translation Settings
+    google_translate_api_key: process.env.GOOGLE_TRANSLATE_API_KEY || '',
+    auto_translate_chat_enabled: true,
   };
 
   async getSettings() {

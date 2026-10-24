@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Container from 'typedi';
 import { UserService } from '../../../services/app/UserService';
+import { AccountSecurityService } from '../../../services/app/AccountSecurityService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 import { LevelService } from '../../../services/app/LevelService';
@@ -8,6 +9,7 @@ import User from '../../../models/User';
 
 export default (router: Router) => {
   const userService = Container.get(UserService);
+  const securityService = Container.get(AccountSecurityService);
   const appRouter = Router();
 
   router.use('/users', appRouter);
@@ -80,7 +82,7 @@ export default (router: Router) => {
       const limit = parseInt(req.query.limit?.toString() || '10');
       const search = req.query.search?.toString() || req.query.userId?.toString();
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      
+
       let type = req.query.type?.toString();
       if (!type) {
         if (req.query.isOnline === 'true' || req.query.isOnline === true) {
@@ -462,8 +464,9 @@ export default (router: Router) => {
   const handleDeleteAccount = async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
-      const result = await userService.deleteAccount(userId);
-      return ResponseWrapper.success(res, result, 'Account deleted successfully');
+      const { reason, feedback } = req.body || {};
+      const result = await userService.deleteAccount(userId, reason, feedback);
+      return ResponseWrapper.success(res, result, 'Account scheduled for deletion successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -471,6 +474,125 @@ export default (router: Router) => {
 
   appRouter.delete('/account', handleDeleteAccount);
   appRouter.post('/delete-account', handleDeleteAccount);
+
+  /**
+   * @swagger
+   * /app/users/recover-account:
+   *   post:
+   *     summary: Recover a soft-deleted account within 30 days
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Account recovered successfully
+   */
+  appRouter.post('/recover-account', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await userService.recoverAccount(userId);
+      return ResponseWrapper.success(res, result, 'Account successfully recovered');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  // ── Account Security Endpoints ──
+  appRouter.get('/security/status', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await securityService.getSecurityStatus(userId);
+      return ResponseWrapper.success(res, result, 'Security status fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/send-bind-otp', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { mobile, extension } = req.body || {};
+      const result = await securityService.sendBindMobileOtp(userId, mobile, extension);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/bind-mobile', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { mobile, extension, otp } = req.body || {};
+      const result = await securityService.bindMobile(userId, mobile, extension, otp);
+      return ResponseWrapper.success(res, result, 'Phone number bound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/bind-email', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { email } = req.body || {};
+      const result = await securityService.bindEmail(userId, email);
+      return ResponseWrapper.success(res, result, 'Email bound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/bind-google', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { googleId, email } = req.body || {};
+      const result = await securityService.bindGoogle(userId, googleId, email);
+      return ResponseWrapper.success(res, result, 'Google account bound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/unbind-google', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await securityService.unbindGoogle(userId);
+      return ResponseWrapper.success(res, result, 'Google account unbound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/bind-facebook', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { facebookId } = req.body || {};
+      const result = await securityService.bindFacebook(userId, facebookId);
+      return ResponseWrapper.success(res, result, 'Facebook account bound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/unbind-facebook', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const result = await securityService.unbindFacebook(userId);
+      return ResponseWrapper.success(res, result, 'Facebook account unbound successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  appRouter.post('/security/password', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { newPassword, oldPassword } = req.body || {};
+      const result = await securityService.setPassword(userId, newPassword, oldPassword);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 
   /**
    * @swagger

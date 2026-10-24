@@ -36,8 +36,8 @@ export class PaymentMethodService {
     const defaults = [
       {
         gateway: 'razorpay' as const,
-        displayName: 'Razorpay',
-        countries: ['IN'],
+        displayName: 'Razorpay (UPI, Cards, NetBanking)',
+        countries: ['ALL', 'IN', '*'],
         targetAudience: 'all' as const,
         isActive: true,
         showInApp: true,
@@ -45,8 +45,8 @@ export class PaymentMethodService {
       },
       {
         gateway: 'cashfree' as const,
-        displayName: 'Cashfree Payments',
-        countries: ['IN'],
+        displayName: 'Cashfree Payments (UPI, Cards, Wallets)',
+        countries: ['ALL', 'IN', '*'],
         targetAudience: 'all' as const,
         isActive: true,
         showInApp: true,
@@ -55,7 +55,7 @@ export class PaymentMethodService {
       {
         gateway: 'pandapay' as const,
         displayName: 'PandaPay',
-        countries: ['IN'],
+        countries: ['ALL', 'IN', '*'],
         targetAudience: 'all' as const,
         isActive: false,
         showInApp: false,
@@ -65,7 +65,10 @@ export class PaymentMethodService {
     for (const method of defaults) {
       await PaymentMethod.findOneAndUpdate(
         { gateway: method.gateway },
-        { $setOnInsert: method },
+        {
+          $setOnInsert: method,
+          $addToSet: { countries: { $each: ['ALL', '*'] } },
+        },
         { upsert: true }
       );
     }
@@ -171,12 +174,14 @@ export class PaymentMethodService {
     }
 
     const countries = (method.countries || []).map((c) => c.toUpperCase());
-    const isAll = countries.includes('ALL') || countries.includes('*');
+    const isAll = countries.length === 0 || countries.includes('ALL') || countries.includes('*');
     if (!isAll && !countries.includes(countryCode)) {
-      if (platform !== 'web') {
-        throw new Error(
-          `${method.displayName} is not available in country ${countryCode}`
-        );
+      if (method.gateway !== 'razorpay' && method.gateway !== 'cashfree') {
+        if (platform !== 'web') {
+          throw new Error(
+            `${method.displayName} is not available in country ${countryCode}`
+          );
+        }
       }
     }
 

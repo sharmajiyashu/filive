@@ -217,6 +217,12 @@ export default (router: Router) => {
         if (payload.cashout_disabled_message !== undefined) {
           payload.cashout_disabled_message = String(payload.cashout_disabled_message);
         }
+        if (payload.auto_translate_chat_enabled !== undefined) {
+          payload.auto_translate_chat_enabled = payload.auto_translate_chat_enabled === true || payload.auto_translate_chat_enabled === 'true';
+        }
+        if (payload.google_translate_api_key !== undefined) {
+          payload.google_translate_api_key = String(payload.google_translate_api_key).trim();
+        }
 
         const parseArraySetting = (key: string) => {
           if (payload[key] !== undefined) {

@@ -674,7 +674,7 @@ export class UserService {
     };
   }
 
-  public async deleteAccount(userId: string) {
+  public async deleteAccount(userId: string, reason?: string, feedback?: string) {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error('Invalid user ID');
     }
@@ -683,18 +683,65 @@ export class UserService {
       throw new Error('User not found');
     }
 
-    const timestamp = Date.now();
+    const now = new Date();
+    const scheduledPermanentDeletionAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
     await User.findByIdAndUpdate(userId, {
       isDeleted: true,
-      deletedAt: new Date(),
+      deletedAt: now,
+      deletionReason: reason || 'Not specified',
+      deletionFeedback: feedback || '',
+      scheduledPermanentDeletionAt,
+      isPermanentlyDeleted: false,
       fcmTokens: [],
-      name: 'Deleted Account',
-      email: user.email ? `deleted_${timestamp}_${user.email}` : undefined,
-      mobile: user.mobile ? `deleted_${timestamp}_${user.mobile}` : undefined,
-      bio: '',
+      isLive: false,
     });
 
-    return { message: 'Account deleted successfully' };
+    return {
+      message: 'Account scheduled for deletion. You have 30 days to log in and recover your account.',
+      scheduledPermanentDeletionAt,
+      daysRemaining: 30,
+    };
+  }
+
+  public async recoverAccount(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user ID');
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (!user.isDeleted) {
+      return { message: 'Account is already active', user };
+    }
+
+    if (user.isPermanentlyDeleted) {
+      throw new Error('This account has been permanently deleted and cannot be recovered.');
+    }
+
+    // Check if 30 days elapsed
+    if (user.deletedAt) {
+      const elapsedDays = (Date.now() - new Date(user.deletedAt).getTime()) / (1000 * 60 * 60 * 24);
+      if (elapsedDays > 30) {
+        user.isPermanentlyDeleted = true;
+        await user.save();
+        throw new Error('This account was deleted more than 30 days ago and cannot be recovered.');
+      }
+    }
+
+    user.isDeleted = false;
+    user.deletedAt = undefined;
+    user.deletionReason = undefined;
+    user.deletionFeedback = undefined;
+    user.scheduledPermanentDeletionAt = undefined;
+    await user.save();
+
+    return {
+      message: 'Account successfully recovered and restored.',
+      user,
+    };
   }
 
   public async unblockUser(blockerId: string, blockedId: string) {

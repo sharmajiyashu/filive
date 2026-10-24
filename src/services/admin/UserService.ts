@@ -281,8 +281,11 @@ export class UserService {
     if (params.status && params.status !== 'all') {
       if (params.status === 'blocked') {
         query.isBlocked = true;
+      } else if (params.status === 'deleted') {
+        query.isDeleted = true;
       } else if (params.status === 'active') {
         query.isBlocked = false;
+        query.isDeleted = { $ne: true };
       } else if (params.status === 'online') {
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
         query.lastLoginAt = { $gte: fifteenMinsAgo };
@@ -435,6 +438,13 @@ export class UserService {
           videosCount: 0,
           instantBlock: !!userObj.instantBlock,
           deviceBan: !!userObj.deviceBan,
+          isDeleted: !!userObj.isDeleted,
+          deletedAt: userObj.deletedAt,
+          deletionReason: userObj.deletionReason,
+          deletionFeedback: userObj.deletionFeedback,
+          daysRemaining: userObj.deletedAt
+            ? Math.max(0, Math.ceil(30 - (Date.now() - new Date(userObj.deletedAt).getTime()) / (1000 * 60 * 60 * 24)))
+            : null,
         });
       })
     );

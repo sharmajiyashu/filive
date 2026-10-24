@@ -66,6 +66,8 @@ export interface IMessage extends Document {
   senderId: mongoose.Types.ObjectId;
   type: 'text' | 'image' | 'video' | 'file' | 'system' | 'agency_host_invite' | 'announcement';
   text?: string;
+  translation?: string;
+  originalLanguage?: string;
   replyToId?: mongoose.Types.ObjectId;
   medias?: mongoose.Types.ObjectId[];
   metadata?: IAgencyHostInviteMetadata | IAnnouncementMessageMetadata | Record<string, unknown>;
@@ -92,6 +94,8 @@ const MessageSchema: Schema = new Schema(
     senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: { type: String, enum: ['text', 'image', 'video', 'file', 'system', 'agency_host_invite', 'announcement'], default: 'text', required: true },
     text: { type: String },
+    translation: { type: String },
+    originalLanguage: { type: String },
     replyToId: { type: Schema.Types.ObjectId, ref: 'Message' },
     medias: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
     metadata: { type: Schema.Types.Mixed },

@@ -29,9 +29,9 @@ export default (router: Router) => {
    *       200:
    *         description: List of packages with local pricing
    */
-  coinRouter.get('/packages', async (req: any, res: Response) => {
+  coinRouter.get('/packages', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      let countryId = req.query.countryId;
+      let countryId = (req.query.countryId || req.query.countryCode || req.headers['x-country-code']) as string | undefined;
       const audience = (req.query.audience || 'user').toString().toLowerCase() === 'seller'
         ? 'seller'
         : 'user';

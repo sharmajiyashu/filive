@@ -121,6 +121,10 @@ export interface IUser extends Document {
   socialProfile?: any;
   isDeleted?: boolean;
   deletedAt?: Date;
+  deletionReason?: string;
+  deletionFeedback?: string;
+  scheduledPermanentDeletionAt?: Date;
+  isPermanentlyDeleted?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -252,8 +256,12 @@ const UserSchema: Schema = new Schema(
     facebookId: { type: String, sparse: true, index: true },
     appleId: { type: String, sparse: true, index: true },
     socialProfile: { type: Schema.Types.Mixed },
-    isDeleted: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: { type: Date },
+    deletionReason: { type: String },
+    deletionFeedback: { type: String },
+    scheduledPermanentDeletionAt: { type: Date },
+    isPermanentlyDeleted: { type: Boolean, default: false, index: true },
   },
   {
     timestamps: true,

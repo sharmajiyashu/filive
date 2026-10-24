@@ -319,6 +319,8 @@ export class AdminSupportChatService {
         isFromSupport,
         type: msg.type,
         text: msg.text || '',
+        translation: msg.translation,
+        originalLanguage: msg.originalLanguage,
         medias: msg.medias || [],
         replyToId: msg.replyToId || null,
         reactions: msg.reactions || [],

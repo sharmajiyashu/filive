@@ -95,6 +95,10 @@ export class AuthenticationService {
             return user;
         }
 
+        if (user.isPermanentlyDeleted) {
+            throw new Error('ACCOUNT_PERMANENTLY_DELETED: This account was deleted over 30 days ago and has been permanently closed.');
+        }
+
         const reason = user.blockReason || 'Your account has been restricted by Admin';
         const until = user.blockedUntil
             ? ` Until: ${new Date(user.blockedUntil).toISOString()}`
@@ -102,6 +106,42 @@ export class AuthenticationService {
         throw new Error(`ACCOUNT_BLOCKED: ${reason}.${until}`);
     }
 
+    public checkAndHandleDeletedAccount(user: IUser): {
+        isPendingDeletion: boolean;
+        daysRemaining?: number;
+        daysPassed?: number;
+        deletionReason?: string;
+        deletedAt?: Date;
+    } {
+        if (user.isPermanentlyDeleted) {
+            throw new Error('ACCOUNT_PERMANENTLY_DELETED: This account was deleted over 30 days ago and has been permanently closed.');
+        }
+
+        if (user.isDeleted) {
+            const now = Date.now();
+            const deletedTime = user.deletedAt ? new Date(user.deletedAt).getTime() : now;
+            const daysPassed = (now - deletedTime) / (1000 * 60 * 60 * 24);
+
+            if (daysPassed > 30) {
+                user.isPermanentlyDeleted = true;
+                user.save().catch(() => { });
+                throw new Error('ACCOUNT_PERMANENTLY_DELETED: This account was deleted over 30 days ago and has been permanently closed.');
+            }
+
+            const daysRemaining = Math.max(1, Math.ceil(30 - daysPassed));
+            const daysPassedCount = Math.max(0, Math.floor(daysPassed));
+
+            return {
+                isPendingDeletion: true,
+                daysRemaining,
+                daysPassed: daysPassedCount,
+                deletionReason: user.deletionReason || 'User requested account deletion',
+                deletedAt: user.deletedAt,
+            };
+        }
+
+        return { isPendingDeletion: false };
+    }
 
     private generateOTP(digits: number = 4): string {
         // Default OTP is 1234 as per user request
@@ -200,7 +240,7 @@ export class AuthenticationService {
         }; // Return empty token, must verify first
     }
 
-    async userLogin(email: string, password: string): Promise<{ token: string; user: IUser }> {
+    async userLogin(email: string, password: string): Promise<{ token: string; user: IUser; isPendingDeletion?: boolean; deletionDetails?: any }> {
         const user = await User.findOne({
             email,
             userRole: 'user'
@@ -216,6 +256,7 @@ export class AuthenticationService {
         }
 
         await this.assertUserNotBlocked(user);
+        const deletionStatus = this.checkAndHandleDeletedAccount(user);
 
         const token = this.generateToken(user._id.toString(), user.userRole);
 
@@ -228,8 +269,13 @@ export class AuthenticationService {
 
         return {
             token,
+            isPendingDeletion: deletionStatus.isPendingDeletion,
+            deletionDetails: deletionStatus,
             user: {
                 ...user.toObject(),
+                isDeleted: user.isDeleted,
+                deletionReason: user.deletionReason,
+                deletionDetails: deletionStatus,
                 followersCount,
                 followingCount
             } as any
@@ -372,7 +418,7 @@ export class AuthenticationService {
         otp: string,
         deviceId?: string,
         deviceModel?: string
-    ): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+    ): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (deviceId) {
             await this.assertDeviceNotBanned(deviceId);
         }
@@ -388,6 +434,7 @@ export class AuthenticationService {
         }
 
         await this.assertUserNotBlocked(user, deviceId);
+        const deletionStatus = this.checkAndHandleDeletedAccount(user);
 
         // Clear OTP after successful verification
         const isNewUserVerification = !!user.referredBy;
@@ -426,8 +473,13 @@ export class AuthenticationService {
         return {
             token,
             isNewUser,
+            isPendingDeletion: deletionStatus.isPendingDeletion,
+            deletionDetails: deletionStatus,
             user: {
                 ...user.toObject(),
+                isDeleted: user.isDeleted,
+                deletionReason: user.deletionReason,
+                deletionDetails: deletionStatus,
                 referralCode,
                 referCode: referralCode,
                 deepLink,
@@ -555,7 +607,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
-    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
         }
@@ -641,8 +693,10 @@ export class AuthenticationService {
 
         let isNewUser = false;
 
+        let deletionStatus: any = { isPendingDeletion: false };
         if (user) {
             await this.assertUserNotBlocked(user, payload.deviceId);
+            deletionStatus = this.checkAndHandleDeletedAccount(user);
 
             // Update user details if needed
             let hasChanges = false;
@@ -746,8 +800,13 @@ export class AuthenticationService {
         return {
             token,
             isNewUser,
+            isPendingDeletion: deletionStatus.isPendingDeletion,
+            deletionDetails: deletionStatus,
             user: {
                 ...user.toObject(),
+                isDeleted: user.isDeleted,
+                deletionReason: user.deletionReason,
+                deletionDetails: deletionStatus,
                 referralCode,
                 referCode: referralCode,
                 deepLink,
@@ -773,7 +832,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
-    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
         }
@@ -827,8 +886,10 @@ export class AuthenticationService {
 
         let isNewUser = false;
 
+        let deletionStatus: any = { isPendingDeletion: false };
         if (user) {
             await this.assertUserNotBlocked(user, payload.deviceId);
+            deletionStatus = this.checkAndHandleDeletedAccount(user);
 
             // Update user details if needed
             let hasChanges = false;
@@ -932,8 +993,13 @@ export class AuthenticationService {
         return {
             token,
             isNewUser,
+            isPendingDeletion: deletionStatus.isPendingDeletion,
+            deletionDetails: deletionStatus,
             user: {
                 ...user.toObject(),
+                isDeleted: user.isDeleted,
+                deletionReason: user.deletionReason,
+                deletionDetails: deletionStatus,
                 referralCode,
                 referCode: referralCode,
                 deepLink,
@@ -960,7 +1026,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
-    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
         }
@@ -1006,8 +1072,10 @@ export class AuthenticationService {
 
         let isNewUser = false;
 
+        let deletionStatus: any = { isPendingDeletion: false };
         if (user) {
             await this.assertUserNotBlocked(user, payload.deviceId);
+            deletionStatus = this.checkAndHandleDeletedAccount(user);
 
             if (payload.deviceId && (!user.deviceId || user.deviceId !== payload.deviceId)) {
                 user.deviceId = payload.deviceId;
@@ -1097,8 +1165,13 @@ export class AuthenticationService {
         return {
             token,
             isNewUser,
+            isPendingDeletion: deletionStatus.isPendingDeletion,
+            deletionDetails: deletionStatus,
             user: {
                 ...user.toObject(),
+                isDeleted: user.isDeleted,
+                deletionReason: user.deletionReason,
+                deletionDetails: deletionStatus,
                 referralCode,
                 referCode: referralCode,
                 deepLink,
