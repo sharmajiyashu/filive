@@ -123,6 +123,10 @@ export async function seedSettings() {
       { key: 'payment_gateway_razorpay_merchant_id', value: 'RKaMsbocngrNr4', description: 'Razorpay Merchant ID' },
       { key: 'payment_gateway_razorpay_key_id', value: 'rzp_live_TOLcZZUrGcgCad', description: 'Razorpay Live Key ID' },
       { key: 'payment_gateway_razorpay_key_secret', value: 'l2iC9Y61NpDsaec0FROTkqsr', description: 'Razorpay Live Secret Key' },
+
+      // Auto Translation Seed
+      { key: 'google_translate_api_key', value: process.env.GOOGLE_TRANSLATE_API_KEY || 'AIzaSyAeYK_YooZqvGW9Nk3zqJwfGO5QABxaWpo', description: 'Google Cloud Translation API Key' },
+      { key: 'auto_translate_chat_enabled', value: true, description: 'Auto translate non-English chat messages to English' },
     ];
 
     for (const setting of settings) {

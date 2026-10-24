@@ -63,8 +63,8 @@ export class TranslationService {
             const detectedLang = (translationData.detectedSourceLanguage || '').toLowerCase();
             const translatedText = (translationData.translatedText || '').trim();
 
-            // If source was already English or translation is identical, return null
-            if (detectedLang === 'en' || !translatedText || translatedText.toLowerCase() === text.toLowerCase()) {
+            // If translation is identical to original, no translation needed (already in English)
+            if (!translatedText || translatedText.toLowerCase() === text.toLowerCase()) {
               return null;
             }
 
@@ -105,8 +105,8 @@ export class TranslationService {
           }
           translatedText = translatedText.trim();
 
-          // If detected source was English or no meaningful difference, skip saving translation
-          if (detectedLang === 'en' || !translatedText || translatedText.toLowerCase() === text.toLowerCase()) {
+          // If translation is identical to original, no translation needed (already in English)
+          if (!translatedText || translatedText.toLowerCase() === text.toLowerCase()) {
             return null;
           }
 

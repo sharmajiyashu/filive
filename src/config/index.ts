@@ -22,7 +22,8 @@ export default {
     },
     google: {
         mapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
-        clientId: process.env.GOOGLE_CLIENT_ID || ''
+        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        translateApiKey: process.env.GOOGLE_TRANSLATE_API_KEY || ''
     },
     apple: {
         clientId: process.env.APPLE_CLIENT_ID || ''
