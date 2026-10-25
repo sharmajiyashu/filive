@@ -16,7 +16,7 @@ export interface IRoomSetting extends Document {
 const RoomSettingSchema: Schema = new Schema(
   {
     hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-    maxSeats: { type: Number, default: 4 },
+    maxSeats: { type: Number, default: 10 },
     admins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     roomTheme: { type: Schema.Types.ObjectId, ref: 'RoomTheme' },
     roomPhoto: { type: Schema.Types.ObjectId, ref: 'Media' },

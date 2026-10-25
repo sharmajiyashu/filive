@@ -92,9 +92,12 @@ export class AppSettingService {
 
     // Payment Gateway Settings (Razorpay)
     payment_gateway_razorpay_enabled: true,
+    payment_gateway_razorpay_mode: process.env.RAZORPAY_MODE || 'production',
     payment_gateway_razorpay_merchant_id: 'RKaMsbocngrNr4',
-    payment_gateway_razorpay_key_id: 'rzp_live_TOLcZZUrGcgCad',
-    payment_gateway_razorpay_key_secret: 'l2iC9Y61NpDsaec0FROTkqsr',
+    payment_gateway_razorpay_key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_TOLcZZUrGcgCad',
+    payment_gateway_razorpay_key_secret: process.env.RAZORPAY_KEY_SECRET || 'l2iC9Y61NpDsaec0FROTkqsr',
+    payment_gateway_razorpay_test_key_id: process.env.RAZORPAY_KEY_ID?.startsWith('rzp_test_') ? process.env.RAZORPAY_KEY_ID : 'rzp_test_SZYYs3lDnJ1ZqS',
+    payment_gateway_razorpay_test_key_secret: process.env.RAZORPAY_KEY_SECRET || 'rcLXRBXWdPWE3IyQe9q7FTPe',
 
     // Social Auth & Login Settings (Google & Facebook)
     google_login_enabled: true,

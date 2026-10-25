@@ -63,14 +63,21 @@ export class PaymentMethodService {
       },
     ];
     for (const method of defaults) {
-      await PaymentMethod.findOneAndUpdate(
-        { gateway: method.gateway },
-        {
-          $setOnInsert: method,
-          $addToSet: { countries: { $each: ['ALL', '*'] } },
-        },
-        { upsert: true }
-      );
+      const existing = await PaymentMethod.findOne({ gateway: method.gateway });
+      if (!existing) {
+        await PaymentMethod.create(method);
+      } else {
+        await PaymentMethod.updateOne(
+          { gateway: method.gateway },
+          {
+            $addToSet: { countries: { $each: ['ALL', 'IN', '*'] } },
+            $set: {
+              showInApp: existing.showInApp ?? method.showInApp,
+              showInWeb: existing.showInWeb ?? method.showInWeb,
+            },
+          }
+        );
+      }
     }
   }
 

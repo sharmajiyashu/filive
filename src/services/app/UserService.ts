@@ -64,8 +64,12 @@ export class UserService {
         rel.blockerId.toString() === currentUserId ? rel.blockedId : rel.blockerId
       );
 
-      const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
-      query._id = { $nin: ninIds };
+      if (!hasSearch) {
+        const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
+        query._id = { $nin: ninIds };
+      } else if (excludedUserIds.length > 0) {
+        query._id = { $nin: excludedUserIds };
+      }
     }
 
     // Type filter: online or new
@@ -180,6 +184,19 @@ export class UserService {
       }
     });
 
+    const userPartyRooms = await Room.find({
+      hostId: { $in: userObjectIds },
+      roomType: 'party_room'
+    }).sort({ status: -1, createdAt: -1 });
+
+    const partyRoomByHostId = new Map<string, any>();
+    userPartyRooms.forEach((r: any) => {
+      const hId = r.hostId?.toString();
+      if (hId && !partyRoomByHostId.has(hId)) {
+        partyRoomByHostId.set(hId, r);
+      }
+    });
+
     const formattedUsers = await Promise.all(userDocs.map(async (u: any) => {
       const uObj = u.toObject ? u.toObject() : u;
       const uid = uObj._id?.toString();
@@ -195,6 +212,7 @@ export class UserService {
       const charmCoins = Number(uObj.charmCoins || 0);
       const richLevelInfo = await this.levelService.getLevelInfoForCoins(wealthCoins, 'rich');
       const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
+      const pRoom = partyRoomByHostId.get(uid);
 
       return attachUserCountryAndAge({
         ...uObj,
@@ -217,6 +235,16 @@ export class UserService {
         richLevelInfo,
         charmLevelInfo,
         levelInfo: richLevelInfo,
+        partyRoom: pRoom ? {
+          _id: pRoom._id,
+          id: pRoom._id,
+          roomId: pRoom.roomId,
+          title: pRoom.title,
+          channelName: pRoom.channelName,
+          roomType: pRoom.roomType,
+          status: pRoom.status,
+          viewerCount: pRoom.viewerCount || 0
+        } : null,
       });
     }));
 

@@ -141,6 +141,9 @@ export class ProfileService {
     const { LiveStreamService } = await import('./LiveStreamService');
     const liveStreamService = Container.get(LiveStreamService);
     const activeParty = await liveStreamService.getActiveRoomForHost(userId, 'party_room');
+    if (activeParty) {
+      activeParty.isMine = true;
+    }
 
     return {
       ...profileData,

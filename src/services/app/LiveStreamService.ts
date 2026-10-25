@@ -268,7 +268,7 @@ export class LiveStreamService {
       }
 
       if (normalizedRoomType === 'party_room') {
-        const maxSeats = roomSetting.maxSeats || 4;
+        const maxSeats = roomSetting.maxSeats || 10;
         let existingSeats = activeStream.seats || [];
         let newSeats: any[] = [];
         for (let i = 0; i < maxSeats; i++) {
@@ -343,7 +343,7 @@ export class LiveStreamService {
 
     let initialSeats: any[] = [];
     if (normalizedRoomType === 'party_room') {
-      const maxSeats = roomSetting.maxSeats || 4;
+      const maxSeats = roomSetting.maxSeats || 10;
       for (let i = 0; i < maxSeats; i++) {
         initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
       }
@@ -1863,7 +1863,7 @@ export class LiveStreamService {
     roomObj.isFollowingRoom = isFollowingRoom;
     roomObj.roomFollowerCount = roomObj.roomFollowerCount || 0;
     roomObj.totalMember = roomObj.roomFollowerCount || 0;
-    roomObj.maxSeats = roomObj.seats ? roomObj.seats.length : 0;
+    roomObj.maxSeats = (roomObj.seats && roomObj.seats.length > 0) ? roomObj.seats.length : 10;
     roomObj.viewerCount = roomObj.viewerCount || 0;
     roomObj.totalGiftRevenue = roomObj.totalGiftRevenue || 0;
 
@@ -1887,6 +1887,9 @@ export class LiveStreamService {
         roomObj.roomTheme = roomSetting.roomTheme ?? null;
         roomObj.gameId = roomSetting.gameId ?? null;
         roomObj.muteAllSeats = roomSetting.muteAllSeats;
+        if (roomSetting.maxSeats && roomSetting.maxSeats > 0) {
+          roomObj.maxSeats = roomSetting.maxSeats;
+        }
         roomObj.announcement = roomSetting.announcement ?? null;
         if (!populatedRoomPhoto && roomSetting.roomPhoto) {
           populatedRoomPhoto = roomSetting.roomPhoto;
@@ -2118,10 +2121,15 @@ export class LiveStreamService {
       return this.leaveSeat(userId, channelName);
     }
 
-    const maxSeats = Math.max(newSeatIndex + 1, liveStream.maxSeats || 10, 10);
-    if (!liveStream.maxSeats || liveStream.maxSeats < maxSeats) {
-      liveStream.maxSeats = maxSeats;
+    const roomSetting = await RoomSetting.findOne({ hostId: liveStream.hostId });
+    const maxSeats = liveStream.maxSeats || roomSetting?.maxSeats || (liveStream.seats && liveStream.seats.length > 0 ? liveStream.seats.length : 10);
+    if (newSeatIndex >= maxSeats) {
+      throw new Error(`Seat index ${newSeatIndex} is beyond room capacity (${maxSeats} seats)`);
     }
+    liveStream.maxSeats = maxSeats;
+    if (liveStream.seats.length > maxSeats) liveStream.seats = liveStream.seats.filter((s: any) => s.seatIndex < maxSeats);
+
+
 
     // Ensure all seats up to maxSeats exist
     for (let i = 0; i < maxSeats; i++) {
