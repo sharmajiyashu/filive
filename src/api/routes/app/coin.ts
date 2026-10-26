@@ -519,6 +519,163 @@ export default (router: Router) => {
   });
 
   /**
+   * Cashfree Hosted JS Checkout Page
+   * Works on all devices, emulators, and local APKs without native installer package restrictions.
+   */
+  coinRouter.get('/cashfree/checkout', async (req: Request, res: Response) => {
+    try {
+      const paymentSessionId = (req.query.session_id || req.query.payment_session_id)?.toString();
+      const orderId = (req.query.order_id || req.query.orderId)?.toString() || '';
+      const envRaw = (req.query.env || req.query.environment)?.toString() || 'production';
+      const mode = envRaw.toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
+
+      if (!paymentSessionId) {
+        return res.status(400).send(`
+          <html>
+            <body style="font-family:sans-serif;text-align:center;padding:50px;">
+              <h2 style="color:#EF0083;">Missing Payment Session</h2>
+              <p>Payment session ID is required to launch Cashfree checkout.</p>
+            </body>
+          </html>
+        `);
+      }
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FiLive Secure Checkout</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #FAFAFB;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #1a1a1a;
+    }
+    .card {
+      background: #FFFFFF;
+      padding: 32px 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+      text-align: center;
+      max-width: 380px;
+      width: 90%;
+    }
+    .brand {
+      font-size: 24px;
+      font-weight: 800;
+      color: #EF0083;
+      margin-bottom: 20px;
+      letter-spacing: 0.5px;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #F3F3F3;
+      border-top: 4px solid #EF0083;
+      border-radius: 50%;
+      animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+      margin: 0 auto 16px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .title {
+      font-size: 17px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #6B7280;
+      line-height: 1.4;
+    }
+    .btn-manual {
+      margin-top: 18px;
+      display: none;
+      background: #EF0083;
+      color: #ffffff;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+  </style>
+  <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+</head>
+<body>
+  <div class="card" id="mainCard">
+    <div class="brand">FiLive</div>
+    <div class="spinner"></div>
+    <div class="title">Loading Secure Checkout...</div>
+    <div class="subtitle">Opening Cashfree Payment Gateway (UPI, Cards, NetBanking)</div>
+    <button class="btn-manual" id="manualBtn">Click to Pay</button>
+  </div>
+
+  <script>
+    (function() {
+      let triggered = false;
+      function launchCashfree() {
+        if (triggered) return;
+        triggered = true;
+        try {
+          const cashfree = Cashfree({
+            mode: "${mode}"
+          });
+          cashfree.checkout({
+            paymentSessionId: "${paymentSessionId}",
+            redirectTarget: "_self"
+          }).then(function(result) {
+            if (result && result.error) {
+              document.querySelector('.title').innerText = 'Payment Initialization Failed';
+              document.querySelector('.subtitle').innerText = result.error.message || 'Please try again.';
+              document.querySelector('.spinner').style.display = 'none';
+              document.getElementById('manualBtn').style.display = 'inline-block';
+              triggered = false;
+            }
+          });
+        } catch (e) {
+          document.querySelector('.title').innerText = 'Error Loading Gateway';
+          document.querySelector('.subtitle').innerText = e.message || 'Please reload the page.';
+          document.querySelector('.spinner').style.display = 'none';
+          document.getElementById('manualBtn').style.display = 'inline-block';
+          triggered = false;
+        }
+      }
+
+      window.addEventListener('load', function() {
+        setTimeout(launchCashfree, 200);
+      });
+
+      document.getElementById('manualBtn').addEventListener('click', function() {
+        triggered = false;
+        launchCashfree();
+      });
+    })();
+  </script>
+</body>
+</html>`;
+
+      res.setHeader('Content-Type', 'text/html');
+      return res.send(html);
+    } catch (err: any) {
+      return res.status(500).send(`Error: ${err.message}`);
+    }
+  });
+
+  /**
    * @swagger
    * /app/coins/cashfree/verify-payment:
    *   post:

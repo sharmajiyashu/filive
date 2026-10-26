@@ -1162,6 +1162,7 @@ export class CoinService {
         orderId: data.order_id || orderId,
         cfOrderId: data.cf_order_id,
         paymentSessionId: data.payment_session_id,
+        checkoutUrl: `https://filiva-node.creatamax.in/v1/api/app/coins/cashfree/checkout?session_id=${data.payment_session_id}&order_id=${data.order_id || orderId}&env=${String(mode).toLowerCase()}`,
         orderAmount: data.order_amount || orderAmount,
         orderCurrency: data.order_currency || 'INR',
         environment: String(mode).toUpperCase() === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION',
