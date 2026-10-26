@@ -843,7 +843,13 @@ export class LiveStreamService {
     if (room && room.status !== 'live') {
       AppLogger.info(`[findRoomByChannelOrAny] Reviving room _id=${room._id}, channelName=${room.channelName} from status='${room.status}' to 'live'`);
       room.status = 'live';
+      room.startedAt = new Date();
       room.endedAt = undefined;
+      room.commentCount = 0;
+      room.totalGiftRevenue = 0;
+      room.viewers = [];
+      room.viewerCount = 0;
+      room.joinedUsers = [];
       await room.save().catch((e: any) => AppLogger.warn(`[findRoomByChannelOrAny] Failed to revive status: ${e.message}`));
     }
 
@@ -944,8 +950,12 @@ export class LiveStreamService {
     // 4. Calculate public comments count
     const commentCount = liveStream.commentCount || 0;
 
-    // 5. Calculate received gifts and coin collection
-    const giftHistories = await CoinHistory.find({ channelName: liveStream.channelName, type: 'charm_received' });
+    // 5. Calculate received gifts and coin collection for THIS session only
+    const giftHistories = await CoinHistory.find({
+      channelName: liveStream.channelName,
+      type: 'charm_received',
+      createdAt: { $gte: streamStart, $lte: endedAt }
+    });
     let receivedGifts = 0;
     let coinCollection = 0;
     for (const history of giftHistories) {
@@ -990,11 +1000,22 @@ export class LiveStreamService {
         seconds = Math.max(0, Math.round((endedAt.getTime() - new Date(seat.occupiedAt).getTime()) / 1000));
       }
       micSessions.push({ userId: seat.userId.toString(), seconds });
+      if (seat.userId.toString() === hostId) {
+        seat.status = 'open';
+        seat.userId = undefined;
+      }
       seat.occupiedAt = undefined;
     });
 
     if (liveStream.roomType === 'party_room') {
       liveStream.status = 'live'; // Party rooms are 24/7 persistent
+      liveStream.endedAt = endedAt;
+      liveStream.startedAt = new Date(); // Next session starts clean
+      liveStream.commentCount = 0;
+      liveStream.joinedUsers = [];
+      liveStream.totalGiftRevenue = 0;
+      liveStream.viewers = [];
+      liveStream.viewerCount = 0;
     } else {
       liveStream.status = 'ended';
       liveStream.endedAt = endedAt;
@@ -1108,6 +1129,19 @@ export class LiveStreamService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     let shouldSave = false;
+    const isHost = liveStream.hostId.toString() === userId;
+    if (isHost && (liveStream.endedAt || !liveStream.startedAt)) {
+      AppLogger.info(`[LiveStreamService: joinLiveStream] Host re-entering room; starting fresh session.`);
+      liveStream.startedAt = new Date();
+      liveStream.endedAt = undefined;
+      liveStream.commentCount = 0;
+      liveStream.totalGiftRevenue = 0;
+      liveStream.joinedUsers = [userObjectId];
+      liveStream.viewers = [userObjectId];
+      liveStream.viewerCount = 1;
+      shouldSave = true;
+    }
+
     if (!liveStream.joinedUsers) {
       liveStream.joinedUsers = [];
     }

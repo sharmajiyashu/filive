@@ -402,9 +402,10 @@ export default (router: Router) => {
    */
   liveRouter.post('/end', async (req: any, res: Response) => {
     const userId = req.user?.id;
-    AppLogger.info(`[HTTP POST /app/room/end] Request received. userId=${userId}`);
+    const channelName = req.body?.channelName;
+    AppLogger.info(`[HTTP POST /app/room/end] Request received. userId=${userId}, channelName=${channelName}`);
     try {
-      const result = await liveStreamService.endLiveStream(userId);
+      const result = await liveStreamService.endLiveStream(userId, channelName);
       AppLogger.info(`[HTTP POST /app/room/end] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream ended successfully');
     } catch (error: any) {
