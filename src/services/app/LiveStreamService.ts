@@ -392,21 +392,24 @@ export class LiveStreamService {
     },
     file?: Express.Multer.File
   ) {
-    AppLogger.info(`[LiveStreamService: updateLiveStream] hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
-    const query: any = { hostId: new mongoose.Types.ObjectId(hostId) };
+    AppLogger.info(`[LiveStreamService: updateLiveStream] userId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
+    let liveStream: any = null;
     if (channelName) {
-      query.channelName = channelName;
-    } else {
-      const latestRoom = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) }).sort({ createdAt: -1 });
-      if (!latestRoom) {
-        throw new Error('Room/livestream not found or you are not the host');
+      liveStream = await Room.findOne({ channelName });
+      if (liveStream) {
+        const isAuthorized = await this.verifyAdmin(hostId, liveStream.hostId.toString());
+        if (!isAuthorized) {
+          throw new Error('Unauthorized. Only the host or room admin can update room settings');
+        }
       }
-      query.channelName = latestRoom.channelName;
     }
 
-    const liveStream = await Room.findOne(query);
     if (!liveStream) {
-      throw new Error('Room/livestream not found or you are not the host');
+      liveStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId) }).sort({ createdAt: -1 });
+    }
+
+    if (!liveStream) {
+      throw new Error('Room/livestream not found or you are not authorized');
     }
 
     if (liveStream.status !== 'live') {
@@ -2035,11 +2038,22 @@ export class LiveStreamService {
     return settingsPayload;
   }
 
-  public async updateRoomSettings(hostId: string, data: { maxSeats?: number; admins?: string[]; roomTheme?: string; themeid?: string; announcement?: string; muteAllSeats?: boolean; gameId?: string; gameid?: string; title?: string; partyRoomOption?: string }) {
-    AppLogger.info(`[LiveStreamService: updateRoomSettings] hostId=${hostId}, data=${JSON.stringify(data)}`);
-    let roomSetting = await RoomSetting.findOne({ hostId });
+  public async updateRoomSettings(userId: string, data: { channelName?: string; hostId?: string; maxSeats?: number; admins?: string[]; roomTheme?: string; themeid?: string; announcement?: string; muteAllSeats?: boolean; gameId?: string; gameid?: string; title?: string; partyRoomOption?: string }) {
+    AppLogger.info(`[LiveStreamService: updateRoomSettings] userId=${userId}, data=${JSON.stringify(data)}`);
+    let targetHostId = userId;
+    if (data.channelName) {
+      const activeStream = await Room.findOne({ channelName: data.channelName });
+      if (activeStream) {
+        const isAuthorized = await this.verifyAdmin(userId, activeStream.hostId.toString());
+        if (isAuthorized) {
+          targetHostId = activeStream.hostId.toString();
+        }
+      }
+    }
+
+    let roomSetting = await RoomSetting.findOne({ hostId: targetHostId });
     if (!roomSetting) {
-      roomSetting = await RoomSetting.create({ hostId });
+      roomSetting = await RoomSetting.create({ hostId: targetHostId });
     }
 
     if (data.maxSeats !== undefined) roomSetting.maxSeats = data.maxSeats;
@@ -2054,7 +2068,7 @@ export class LiveStreamService {
     await roomSetting.save();
 
     // If there is an active room, update room properties and notify all users via socket
-    const activeStream = await this.findRoomByChannelOrAny(undefined, hostId);
+    const activeStream = await this.findRoomByChannelOrAny(data.channelName, targetHostId);
     if (activeStream) {
       if (data.maxSeats !== undefined && data.maxSeats > 0) {
         activeStream.maxSeats = data.maxSeats;
@@ -2547,15 +2561,6 @@ export class LiveStreamService {
 
     const resolvedUserIdStr = targetUser._id.toString();
 
-    // Verify target user is currently in the room joined list / viewers
-    const isJoined =
-      activeStream.joinedUsers?.some((id: any) => id.toString() === resolvedUserIdStr) ||
-      activeStream.viewers?.some((id: any) => id.toString() === resolvedUserIdStr);
-
-    if (!isJoined) {
-      throw new Error('User is not joined in this room. User must join the room first to become an admin.');
-    }
-
     // 3. Find or create RoomSetting for this host
     let roomSetting = await RoomSetting.findOne({ hostId });
     if (!roomSetting) roomSetting = await RoomSetting.create({ hostId });
@@ -2591,6 +2596,17 @@ export class LiveStreamService {
         channelName: activeStream.channelName,
         user: sanitizedUser
       });
+
+      const roomAdmins = await this.getRoomAdmins(hostId);
+      this.broadcastToRoom(activeStream.channelName, 'seat_updated', {
+        channelName: activeStream.channelName,
+        maxSeats: activeStream.maxSeats || (activeStream.seats ? activeStream.seats.length : 0),
+        seats: activeStream.toObject().seats,
+        roomAdmins,
+        roomAdmin: roomAdmins
+      });
+
+      this.broadcastToRoom(activeStream.channelName, 'room_settings_updated', updatedSettings || roomSetting);
     }
 
     return updatedSettings || roomSetting;
