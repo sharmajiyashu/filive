@@ -76,27 +76,30 @@ export class ProfileService {
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
-    const ownedAgency = await Agency.findOne({ creatorId: userId })
+    const ownedAgency = await Agency.findOne({
+      creatorId: userId,
+      isVerified: true,
+      status: { $in: ['approved', 'pending'] }
+    })
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
-    let agency: any = ownedAgency || null;
-    let isAgencyHost = !!ownedAgency;
+    const agency: any = ownedAgency || null;
+    let isAgencyHost = false;
     let isBecomeHost = false;
     let becomeHostMessage: string | null = null;
+    let joinedAgency: any = null;
 
-    if (!ownedAgency) {
-      const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
-      if (agencyHost) {
-        const joinedAgency = await Agency.findById(agencyHost.agencyId)
-          .populate('countryId')
-          .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
-        if (joinedAgency) {
-          agency = joinedAgency;
-          isAgencyHost = true;
-          isBecomeHost = true;
-          becomeHostMessage = `You are a host under ${joinedAgency.name}.`;
-        }
+    const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
+    if (agencyHost) {
+      isAgencyHost = true;
+      isBecomeHost = true;
+      const hostAgency = await Agency.findById(agencyHost.agencyId)
+        .populate('countryId')
+        .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+      if (hostAgency) {
+        joinedAgency = hostAgency;
+        becomeHostMessage = `You are a host under ${hostAgency.name}.`;
       }
     }
 
@@ -164,6 +167,7 @@ export class ProfileService {
       richLevelInfo,
       charmLevelInfo,
       agency,
+      joinedAgency,
       isAgencyHost,
       isBecomeHost,
       becomeHostMessage,
@@ -233,6 +237,17 @@ export class ProfileService {
 
     const existingUser = await User.findById(userId);
     if (!existingUser) throw new Error('USER_NOT_FOUND');
+
+    const isChangingCallSettings = data.voiceCallPrice !== undefined ||
+      data.videoCallPrice !== undefined ||
+      data.audioCallChargePerMinute !== undefined ||
+      data.videoCallChargePerMinute !== undefined ||
+      data.enableVoiceCall !== undefined ||
+      data.enableVideoCall !== undefined;
+
+    if (isChangingCallSettings && existingUser.videoVerificationStatus !== 'approved') {
+      throw new Error('Face verification is required before you can change voice/video call price or call settings. Please complete face verification first.');
+    }
 
     if (data.enableVoiceCall !== undefined) {
       data.enableVoiceCall = data.enableVoiceCall === true || data.enableVoiceCall === 'true';
@@ -347,27 +362,30 @@ export class ProfileService {
     const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
     const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
 
-    const ownedAgency = await Agency.findOne({ creatorId: userId })
+    const ownedAgency = await Agency.findOne({
+      creatorId: userId,
+      isVerified: true,
+      status: { $in: ['approved', 'pending'] }
+    })
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
-    let agency: any = ownedAgency || null;
-    let isAgencyHost = !!ownedAgency;
+    const agency: any = ownedAgency || null;
+    let isAgencyHost = false;
     let isBecomeHost = false;
     let becomeHostMessage: string | null = null;
+    let joinedAgency: any = null;
 
-    if (!ownedAgency) {
-      const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
-      if (agencyHost) {
-        const joinedAgency = await Agency.findById(agencyHost.agencyId)
-          .populate('countryId')
-          .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
-        if (joinedAgency) {
-          agency = joinedAgency;
-          isAgencyHost = true;
-          isBecomeHost = true;
-          becomeHostMessage = `You are a host under ${joinedAgency.name}.`;
-        }
+    const agencyHost = await AgencyHost.findOne({ userId, status: { $in: ['ACCEPTED', 'approved'] } });
+    if (agencyHost) {
+      isAgencyHost = true;
+      isBecomeHost = true;
+      const hostAgency = await Agency.findById(agencyHost.agencyId)
+        .populate('countryId')
+        .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
+      if (hostAgency) {
+        joinedAgency = hostAgency;
+        becomeHostMessage = `You are a host under ${hostAgency.name}.`;
       }
     }
 
@@ -406,6 +424,7 @@ export class ProfileService {
         richLevelInfo,
         charmLevelInfo,
         agency,
+        joinedAgency,
         isAgencyHost,
         isBecomeHost,
         becomeHostMessage,

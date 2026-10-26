@@ -258,7 +258,7 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
       const AgencyModel = mongoose.model('Agency');
       const [bdAgencyExists, creatorAgencyExists] = await Promise.all([
         bdRoleImage ? AgencyModel.exists({ bdId: new mongoose.Types.ObjectId(userIdStr) }) : false,
-        agencyRoleImage ? AgencyModel.exists({ creatorId: new mongoose.Types.ObjectId(userIdStr) }) : false,
+        agencyRoleImage ? AgencyModel.exists({ creatorId: new mongoose.Types.ObjectId(userIdStr), isVerified: true, status: 'approved' }) : false,
       ]);
       if (bdAgencyExists) isBd = true;
       if (creatorAgencyExists) isAgency = true;

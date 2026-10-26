@@ -271,24 +271,9 @@ export class GiftService {
         return liveStream.seats && liveStream.seats.some(seat => seat.userId && seat.userId.toString() === uid);
       };
 
-      const isHost = senderId === hostId;
-      const isSeated = isUserSeated(senderId);
-
-      if (isHost) {
-        // Host can send gifts to any user sitting on a seat
-        if (!isUserSeated(actualReceiverId)) {
-          throw new Error('Host can only send gifts to users sitting on a seat');
-        }
-      } else if (isSeated) {
-        // Seated user can send gifts to Host and other seated users
-        if (actualReceiverId !== hostId && !isUserSeated(actualReceiverId)) {
-          throw new Error('Seated users can only send gifts to the Host or other seated users');
-        }
-      } else {
-        // Audience can send gifts to Host and seated users
-        if (actualReceiverId !== hostId && !isUserSeated(actualReceiverId)) {
-          throw new Error('Audience can only send gifts to the Host or users sitting on a seat');
-        }
+      // In party room, gifts can ONLY be sent to users currently sitting on a seat
+      if (!isUserSeated(actualReceiverId)) {
+        throw new Error('Gifts can only be sent to users currently sitting on a seat');
       }
 
       // Check block status
@@ -565,39 +550,13 @@ export class GiftService {
         }
       }
     } else if (roomType === 'party_room') {
-      const isUserSeated = (uid: string) => {
-        return liveStream.seats && liveStream.seats.some(seat => seat.userId && seat.userId.toString() === uid);
-      };
-
-      const isHost = userId === hostId;
-      const isSeated = isUserSeated(userId);
-
-      if (isHost) {
-        // Host can send to any user sitting on a seat
-        if (liveStream.seats) {
-          for (const seat of liveStream.seats) {
-            if (seat.userId) {
-              await addUserToList(seat.userId.toString(), 'seat');
-            }
-          }
-        }
-      } else if (isSeated) {
-        // Seated user can send to host and other seated users
-        await addUserToList(hostId, 'host');
-        if (liveStream.seats) {
-          for (const seat of liveStream.seats) {
-            if (seat.userId) {
-              await addUserToList(seat.userId.toString(), 'seat');
-            }
-          }
-        }
-      } else {
-        // Audience can send to host and seated users
-        await addUserToList(hostId, 'host');
-        if (liveStream.seats) {
-          for (const seat of liveStream.seats) {
-            if (seat.userId) {
-              await addUserToList(seat.userId.toString(), 'seat');
+      // In party room, ONLY users who are currently sitting on a seat can receive gifts
+      if (liveStream.seats && liveStream.seats.length > 0) {
+        for (const seat of liveStream.seats) {
+          if (seat.userId) {
+            const seatedUid = seat.userId._id ? seat.userId._id.toString() : seat.userId.toString();
+            if (seatedUid !== userId) {
+              await addUserToList(seatedUid, seatedUid === hostId ? 'host' : 'seat');
             }
           }
         }

@@ -886,7 +886,10 @@ export default (router: Router) => {
 
       AppLogger.info(`[HTTP GET /app/room/contribution] channelName=${channelName}, userId=${userId}, page=${page}, limit=${limit}, period=${period}`);
 
-      const liveStream = await Room.findOne({ channelName, status: 'live' });
+      let liveStream = await Room.findOne({ channelName, status: 'live' });
+      if (!liveStream) {
+        liveStream = await Room.findOne({ channelName });
+      }
       if (!liveStream) {
         throw new Error('Active room not found');
       }
@@ -895,7 +898,7 @@ export default (router: Router) => {
 
       // Determine date range based on period
       const now = new Date();
-      let dateLimit = new Date(liveStream.startedAt); // default: since room started
+      let dateLimit = new Date(liveStream.startedAt || liveStream.createdAt || now);
 
       if (period === 'daily') {
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -904,17 +907,22 @@ export default (router: Router) => {
         const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         if (oneWeekAgo > dateLimit) dateLimit = oneWeekAgo;
       }
-      // 'all' → use room start time (already set)
+      // 'all' → use room start time
+
+      const matchQuery: any = {
+        $or: [
+          { channelName: liveStream.channelName },
+          { relatedUserId: hostId }
+        ],
+        type: { $in: ['gift_sent', 'transfer'] },
+        amount: { $lt: 0 },
+        createdAt: { $gte: dateLimit }
+      };
 
       // Aggregate contributions from CoinHistory
       const allContributions = await CoinHistory.aggregate([
         {
-          $match: {
-            relatedUserId: hostId,
-            type: 'transfer',
-            amount: { $lt: 0 },
-            createdAt: { $gte: dateLimit }
-          }
+          $match: matchQuery
         },
         {
           $group: {
@@ -930,12 +938,7 @@ export default (router: Router) => {
       // Total contributors count (for pagination)
       const totalContributorsAgg = await CoinHistory.aggregate([
         {
-          $match: {
-            relatedUserId: hostId,
-            type: 'transfer',
-            amount: { $lt: 0 },
-            createdAt: { $gte: dateLimit }
-          }
+          $match: matchQuery
         },
         { $group: { _id: '$userId' } },
         { $count: 'total' }

@@ -990,12 +990,32 @@ export class LiveStreamService {
       seat.occupiedAt = undefined;
     });
 
-    liveStream.status = 'ended';
-    liveStream.endedAt = endedAt;
-    liveStream.viewers = [];
-    liveStream.viewerCount = 0;
+    if (liveStream.roomType === 'party_room') {
+      liveStream.status = 'live'; // Party rooms are 24/7 persistent
+    } else {
+      liveStream.status = 'ended';
+      liveStream.endedAt = endedAt;
+      liveStream.viewers = [];
+      liveStream.viewerCount = 0;
+    }
     liveStream.totalGiftRevenue = coinCollection;
-    await liveStream.save();
+    try {
+      await liveStream.save();
+    } catch (saveErr: any) {
+      await Room.updateOne(
+        { _id: liveStream._id },
+        {
+          $set: {
+            status: liveStream.status,
+            endedAt: liveStream.endedAt,
+            viewers: liveStream.viewers,
+            viewerCount: liveStream.viewerCount,
+            totalGiftRevenue: liveStream.totalGiftRevenue,
+            seats: liveStream.seats
+          }
+        }
+      );
+    }
     AppLogger.info(`[LiveStreamService: endLiveStream] Saved end status in database.`);
 
     try {
@@ -1199,9 +1219,20 @@ export class LiveStreamService {
       }
     }
 
-    AppLogger.info(`[LiveStreamService: leaveLiveStream] Before filter count=${originalCount}, after filter count=${liveStream.viewerCount}`);
-    await liveStream.save();
-    AppLogger.info(`[LiveStreamService: leaveLiveStream] Saved updated viewer list in DB.`);
+    try {
+      await liveStream.save();
+    } catch (saveErr: any) {
+      await Room.updateOne(
+        { _id: liveStream._id },
+        {
+          $set: {
+            viewers: liveStream.viewers,
+            viewerCount: liveStream.viewerCount,
+            seats: liveStream.seats
+          }
+        }
+      );
+    }
 
     AppLogger.info(`[LiveStreamService: leaveLiveStream] Populating hostId, profileImage, and theme for return payload`);
     const populatedStream = await Room.findById(liveStream._id)
@@ -2165,7 +2196,14 @@ export class LiveStreamService {
     targetSeat.status = 'occupied';
 
     liveStream.markModified('seats');
-    await liveStream.save();
+    try {
+      await liveStream.save();
+    } catch (saveErr: any) {
+      await Room.updateOne(
+        { _id: liveStream._id },
+        { $set: { seats: liveStream.seats, maxSeats: liveStream.maxSeats } }
+      );
+    }
     await liveStream.populate(this.seatPopulate());
     const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
     const roomAdmins = await this.getRoomAdmins(liveStream.hostId);
@@ -2225,7 +2263,14 @@ export class LiveStreamService {
 
     if (seatVacated) {
       liveStream.markModified('seats');
-      await liveStream.save();
+      try {
+        await liveStream.save();
+      } catch (saveErr: any) {
+        await Room.updateOne(
+          { _id: liveStream._id },
+          { $set: { seats: liveStream.seats, maxSeats: liveStream.maxSeats } }
+        );
+      }
       await liveStream.populate(this.seatPopulate());
       const formattedSeats = await this.formatSeats(liveStream.toObject().seats);
       const roomAdmins = await this.getRoomAdmins(liveStream.hostId);

@@ -552,13 +552,13 @@ export class LiveDataService {
     const isCompleted = completedMinutes >= targetMinutes;
     const progressPercentage = Math.min(100, Math.floor((completedMinutes / targetMinutes) * 100));
 
-    const isAgencyHost = await AgencyHost.exists({ userId: userObjectId, status: { $in: ['ACCEPTED', 'approved'] } });
-    const isVerifiedUser = !!(
-      user.isVerified ||
-      user.videoVerificationStatus === 'approved' ||
-      user.userRole === 'admin' ||
-      isAgencyHost
-    );
+    const isFaceVerified = user.videoVerificationStatus === 'approved';
+    const isVerifiedUser = isFaceVerified;
+    const verificationStatus = isFaceVerified
+      ? 'Verified'
+      : (user.videoVerificationStatus === 'pending'
+          ? 'Under Review'
+          : (user.videoVerificationStatus === 'rejected' ? 'Rejected' : 'Unverified'));
 
     return {
       user: {
@@ -566,7 +566,7 @@ export class LiveDataService {
         name: user.name || 'User',
         profileImage: user.profileImage,
         isVerified: isVerifiedUser,
-        verificationStatus: isVerifiedUser ? 'Verified' : 'Unverified'
+        verificationStatus: verificationStatus
       },
       accountRole,
       type,

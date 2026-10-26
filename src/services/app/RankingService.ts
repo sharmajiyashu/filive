@@ -254,6 +254,18 @@ export class RankingService {
     return rankMap;
   }
 
+  public async getUserWeeklyRank(userId: string): Promise<number | null> {
+    try {
+      const charmWeekly = await this.getPeriodRanks('charm', 'weekly');
+      if (charmWeekly.has(userId)) return charmWeekly.get(userId)!;
+      const richWeekly = await this.getPeriodRanks('rich', 'weekly');
+      if (richWeekly.has(userId)) return richWeekly.get(userId)!;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   private buildGiftHistoryMatch(type: 'rich' | 'charm') {
     if (type === 'rich') {
       return {

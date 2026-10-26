@@ -1109,7 +1109,7 @@ export class CoinService {
     if (!user) throw new Error('User not found');
 
     const cleanUserPhone = (user.mobile || '').replace(/\D/g, '').slice(-10);
-    const customerPhone = cleanUserPhone.length === 10 ? cleanUserPhone : '9999999999';
+    const customerPhone = /^[6-9]\d{9}$/.test(cleanUserPhone) ? cleanUserPhone : '9876543210';
     const customerName = (user.name || 'Filive User').trim().replace(/[^a-zA-Z0-9\s]/g, '') || 'Filive User';
     const customerEmail =
       user.email && user.email.includes('@')
@@ -1119,6 +1119,13 @@ export class CoinService {
     // Order ID format: CF_{audience}_{packageId}_{timestamp}_{numericUserId}
     const orderId = `CF_${audience.slice(0, 1).toUpperCase()}_${packageId.toString().slice(-6)}_${Date.now()}_${user.userId || userId.slice(-4)}`;
     const orderAmount = Number(pkg.price.toFixed(2));
+
+    const orderMeta: Record<string, string> = {
+      return_url: `https://filive.app/payment-return?order_id={order_id}`,
+    };
+    if (notifyUrl && typeof notifyUrl === 'string' && notifyUrl.trim().startsWith('http')) {
+      orderMeta.notify_url = notifyUrl.trim();
+    }
 
     const payload = {
       order_id: orderId,
@@ -1130,10 +1137,7 @@ export class CoinService {
         customer_email: customerEmail,
         customer_phone: customerPhone,
       },
-      order_meta: {
-        notify_url: notifyUrl,
-        return_url: `https://filive.app/payment-return?order_id={order_id}`,
-      },
+      order_meta: orderMeta,
       order_note: `Recharge ${pkg.coins} coins (${audience})`,
       order_tags: {
         userId: userId.toString(),

@@ -224,22 +224,66 @@ export class RandomMatchService {
   }
 
   public async getAvailableHostProfiles(callType?: RandomCallType, currentUserId?: string) {
-    const hostIds = this.getAvailableHostIds(callType).filter((id) => id !== currentUserId);
-    if (hostIds.length === 0) {
-      return { data: [], total: 0 };
+    const activeHostIds = this.getAvailableHostIds(callType).filter((id) => id !== currentUserId);
+
+    const query: any = {
+      gender: { $regex: /^female$/i },
+      videoVerificationStatus: 'approved',
+      status: { $ne: 'banned' },
+      isBanned: { $ne: true },
+    };
+    if (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)) {
+      query._id = { $ne: new mongoose.Types.ObjectId(currentUserId) };
+    }
+    if (callType === 'video') {
+      query.enableVideoCall = true;
+    } else if (callType === 'voice') {
+      query.enableVoiceCall = true;
+    } else {
+      query.$or = [{ enableVideoCall: true }, { enableVoiceCall: true }];
     }
 
-    const hosts = await User.find({ _id: { $in: hostIds }, gender: { $regex: /^female$/i }, videoVerificationStatus: 'approved' })
-      .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
-      .populate('profileImage')
-      .populate('countryId');
+    // 1. Fetch active socket hosts first if any
+    let activeHosts: any[] = [];
+    if (activeHostIds.length > 0) {
+      activeHosts = await User.find({ _id: { $in: activeHostIds }, ...query })
+        .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
+        .populate('profileImage')
+        .populate('countryId');
+    }
+
+    // 2. Fallback / supplement with real verified female hosts from DB
+    const fetchedIds = activeHosts.map((h: any) => h._id.toString());
+    const excludeIds = [...fetchedIds];
+    if (currentUserId) excludeIds.push(currentUserId);
+
+    const neededCount = Math.max(0, 20 - activeHosts.length);
+    let fallbackHosts: any[] = [];
+    if (neededCount > 0) {
+      const validExcludeObjectIds = excludeIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+
+      fallbackHosts = await User.find({
+        ...query,
+        _id: { $nin: validExcludeObjectIds },
+      })
+        .select('userId name profileImage gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
+        .populate('profileImage')
+        .populate('countryId')
+        .sort({ lastLoginAt: -1, createdAt: -1 })
+        .limit(neededCount);
+    }
+
+    const allRawHosts = [...activeHosts, ...fallbackHosts];
 
     const formattedHosts = await Promise.all(
-      hosts.map(async (h: any) => {
+      allRawHosts.map(async (h: any) => {
         const obj = h.toObject ? h.toObject() : h;
         const voiceCallPrice = Number(obj.voiceCallPrice || obj.audioCallChargePerMinute || 0);
         const videoCallPrice = Number(obj.videoCallPrice || obj.videoCallChargePerMinute || 0);
         const currentRate = callType === 'voice' ? voiceCallPrice : (callType === 'video' ? videoCallPrice : (videoCallPrice || voiceCallPrice));
+        const isOnline = activeHostIds.includes(obj._id.toString());
         return attachUserCountryAndAge({
           ...obj,
           voiceCallPrice,
@@ -250,15 +294,13 @@ export class RandomMatchService {
           voiceRatePerMinute: voiceCallPrice,
           videoRatePerMinute: videoCallPrice,
           ratePerMinute: currentRate,
-          isOnline: true,
-          status: 'online',
+          isOnline,
+          status: isOnline ? 'online' : 'available',
         });
       })
     );
 
-    const shuffled = formattedHosts.sort(() => Math.random() - 0.5);
-
-    return { data: shuffled, total: shuffled.length };
+    return { data: formattedHosts, total: formattedHosts.length };
   }
 
   public getAvailableHostIds(callType?: RandomCallType): string[] {

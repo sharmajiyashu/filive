@@ -71,6 +71,7 @@ const RoomSchema: Schema = new Schema(
   },
   {
     timestamps: true,
+    versionKey: false,
   }
 );
 

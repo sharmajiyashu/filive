@@ -482,6 +482,36 @@ export class UserService {
       activeParty.isFollowingRoom = !isMine;
     }
 
+    // Fetch user's weekly ranking
+    let weeklyRank: number | null = null;
+    try {
+      const { RankingService } = await import('./RankingService');
+      const rankingService = Container.get(RankingService);
+      weeklyRank = await rankingService.getUserWeeklyRank(user._id.toString());
+    } catch {
+      weeklyRank = null;
+    }
+
+    // Party room is always accessible and live
+    const resolvedPartyRoom = activeParty || {
+      _id: user._id.toString(),
+      id: user._id.toString(),
+      roomId: user.userId || 1000,
+      channelName: `party_room_${user.userId || user._id}`,
+      title: user.name ? `${user.name}'s Party Room` : 'Party Room',
+      status: 'live',
+      roomType: 'party_room',
+      partyRoomOption: 'chat',
+      token: '',
+      announcement: '',
+      image: (user.profileImage as any)?.url || '',
+      viewerCount: 0,
+      seatCount: 8,
+      hostId: user._id.toString(),
+      isMine: currentUserId ? currentUserId.toString() === user._id.toString() : false,
+      isFollowingRoom: currentUserId ? currentUserId.toString() !== user._id.toString() : false,
+    };
+
     // Fetch user's family membership details
     let familyMemberDoc = await FamilyMember.findOne({ userId: user._id })
       .populate({
@@ -513,6 +543,7 @@ export class UserService {
       .select('name mediaId type participants createdAt')
     const { referralCode } = await ensureUserReferralCode(user);
     const isOnline = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+    const userStatus = activeLive ? 'live' : (isOnline ? 'online' : 'offline');
 
     const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
@@ -528,6 +559,8 @@ export class UserService {
         referralCode,
         referCode: referralCode,
         isOnline,
+        status: userStatus,
+        weeklyRank,
         voiceCallPrice,
         videoCallPrice,
         audioCallPrice: voiceCallPrice,
@@ -556,12 +589,15 @@ export class UserService {
         isPinned,
         isLive: !!activeLive,
         liveStream: activeLive ? activeLive.toObject() : null,
-        partyRoom: activeParty,
-        activePartyRoom: activeParty,
+        partyRoom: resolvedPartyRoom,
+        activePartyRoom: resolvedPartyRoom,
         followedLiveStreams,
         followedLiveRooms: followedLiveStreams,
         isBlock
       },
+      isOnline,
+      status: userStatus,
+      weeklyRank,
       career: user.careerId,
       hobbies: userObj.hobbies || user.hobbies || [],
       album: userObj.album || [],
@@ -579,8 +615,8 @@ export class UserService {
       familyRole,
       isLive: !!activeLive,
       liveStream: activeLive ? activeLive.toObject() : null,
-      partyRoom: activeParty,
-      activePartyRoom: activeParty,
+      partyRoom: resolvedPartyRoom,
+      activePartyRoom: resolvedPartyRoom,
       groups: groupChats,
       level: richLevelNum,
       levelNumber: richLevelNum,
