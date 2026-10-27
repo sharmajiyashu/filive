@@ -403,9 +403,10 @@ export default (router: Router) => {
   liveRouter.post('/end', async (req: any, res: Response) => {
     const userId = req.user?.id;
     const channelName = req.body?.channelName;
-    AppLogger.info(`[HTTP POST /app/room/end] Request received. userId=${userId}, channelName=${channelName}`);
+    const joinedAt = req.body?.joinedAt || req.body?.startedAt;
+    AppLogger.info(`[HTTP POST /app/room/end] Request received. userId=${userId}, channelName=${channelName}, joinedAt=${joinedAt}`);
     try {
-      const result = await liveStreamService.endLiveStream(userId, channelName);
+      const result = await liveStreamService.endLiveStream(userId, channelName, { joinedAt });
       AppLogger.info(`[HTTP POST /app/room/end] Success. userId=${userId}`);
       return ResponseWrapper.success(res, result, 'Livestream ended successfully');
     } catch (error: any) {
@@ -1041,8 +1042,9 @@ export default (router: Router) => {
    */
   liveRouter.get('/settings', async (req: any, res: Response) => {
     const userId = req.user?.id;
+    const channelName = (req.query?.channelName || req.query?.channel_name) as string | undefined;
     try {
-      const result = await liveStreamService.getRoomSettings(userId);
+      const result = await liveStreamService.getRoomSettings(userId, channelName);
       return ResponseWrapper.success(res, result, 'Room settings fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -1087,6 +1089,12 @@ export default (router: Router) => {
   liveRouter.post('/settings', async (req: any, res: Response) => {
     const userId = req.user?.id;
     try {
+      const hasUpdatePayload = req.body && Object.keys(req.body).some(k => k !== 'channelName' && req.body[k] !== undefined);
+      if (!hasUpdatePayload) {
+        const channelName = req.body?.channelName;
+        const result = await liveStreamService.getRoomSettings(userId, channelName);
+        return ResponseWrapper.success(res, result, 'Room settings fetched successfully');
+      }
       const result = await liveStreamService.updateRoomSettings(userId, req.body);
       return ResponseWrapper.success(res, result, 'Room settings updated');
     } catch (error: any) {

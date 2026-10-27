@@ -431,10 +431,11 @@ export class LiveStreamService {
 
     if (data.roomType !== undefined) liveStream.roomType = data.roomType;
 
-    // Find or create RoomSetting to keep it in sync
-    let roomSetting = await RoomSetting.findOne({ hostId: new mongoose.Types.ObjectId(hostId) });
+    // Find or create RoomSetting to keep it in sync (using room host's ID)
+    const effectiveHostId = liveStream.hostId;
+    let roomSetting = await RoomSetting.findOne({ hostId: effectiveHostId });
     if (!roomSetting) {
-      roomSetting = await RoomSetting.create({ hostId: new mongoose.Types.ObjectId(hostId) });
+      roomSetting = await RoomSetting.create({ hostId: effectiveHostId });
     }
 
     let settingsUpdated = false;
@@ -914,20 +915,25 @@ export class LiveStreamService {
   /**
    * Ends an active live stream
    */
-  public async endLiveStream(hostId: string, channelName?: string) {
-    AppLogger.info(`[LiveStreamService: endLiveStream] Entered. hostId=${hostId}, channelName=${channelName}`);
+  public async endLiveStream(hostId: string, channelName?: string, data?: { joinedAt?: string }) {
+    AppLogger.info(`[LiveStreamService: endLiveStream] Entered. hostId=${hostId}, channelName=${channelName}, data=${JSON.stringify(data)}`);
     if (!mongoose.Types.ObjectId.isValid(hostId)) {
       AppLogger.warn(`[LiveStreamService: endLiveStream] Invalid host ID format: ${hostId}`);
       throw new Error('Invalid host ID');
     }
 
-    const query: any = { hostId: new mongoose.Types.ObjectId(hostId), status: 'live' };
+    let query: any = { status: 'live' };
     if (channelName) {
       query.channelName = channelName;
+    } else {
+      query.hostId = new mongoose.Types.ObjectId(hostId);
     }
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Querying active stream with query: ${JSON.stringify(query)}`);
-    const liveStream = await Room.findOne(query);
+    let liveStream = await Room.findOne(query);
+    if (!liveStream && channelName) {
+      liveStream = await Room.findOne({ channelName });
+    }
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: endLiveStream] No active live stream found for query: ${JSON.stringify(query)}`);
       throw new Error('No active live stream found to end');
@@ -935,9 +941,18 @@ export class LiveStreamService {
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Found active stream: channelName=${liveStream.channelName}, streamId=${liveStream._id}. Calculating statistics.`);
 
-    // 1. Calculate live duration
     const endedAt = new Date();
-    const streamStart = liveStream.startedAt || liveStream.createdAt || endedAt;
+    const userObjectId = new mongoose.Types.ObjectId(hostId);
+
+    // 1. Determine session start time: exact time from when user joined to left
+    let streamStart: Date;
+    if (data?.joinedAt) {
+      const parsed = new Date(data.joinedAt);
+      streamStart = !isNaN(parsed.getTime()) ? parsed : (liveStream.startedAt || liveStream.createdAt || endedAt);
+    } else {
+      streamStart = liveStream.startedAt || liveStream.createdAt || endedAt;
+    }
+
     const duration = Math.max(0, Math.round((endedAt.getTime() - new Date(streamStart).getTime()) / 1000));
 
     // 2. Sum wealthCoins (total spendings) of all current online viewers
@@ -950,10 +965,11 @@ export class LiveStreamService {
     // 4. Calculate public comments count
     const commentCount = liveStream.commentCount || 0;
 
-    // 5. Calculate received gifts and coin collection for THIS session only
+    // 5. Calculate received gifts and coin collection for THIS USER during THIS session only
     const giftHistories = await CoinHistory.find({
+      userId: userObjectId, // ONLY gifts received by THIS user!
       channelName: liveStream.channelName,
-      type: 'charm_received',
+      type: { $in: ['charm_received', 'gift_received'] },
       createdAt: { $gte: streamStart, $lte: endedAt }
     });
     let receivedGifts = 0;
@@ -963,20 +979,22 @@ export class LiveStreamService {
       const match = history.description ? history.description.match(/x(\d+)/) : null;
       if (match) {
         receivedGifts += parseInt(match[1], 10);
+      } else if (history.quantity) {
+        receivedGifts += history.quantity;
       } else {
         receivedGifts += 1;
       }
     }
 
-    // 6. Calculate increased fans (new followers during livestream)
+    // 6. Calculate increased fans (new followers for THIS user during this session only)
     const increasedFans = await Follow.countDocuments({
-      followingId: liveStream.hostId,
+      followingId: userObjectId,
       status: 'accepted',
       createdAt: { $gte: streamStart, $lte: endedAt }
     });
 
     // 7. Calculate daily charm ranking
-    const charmRankingDaily = await this.getHostDailyCharmRank(liveStream.hostId.toString());
+    const charmRankingDaily = await this.getHostDailyCharmRank(hostId);
 
     const summary = {
       joinedUsers: joinedUsersCount,
@@ -1130,7 +1148,7 @@ export class LiveStreamService {
 
     let shouldSave = false;
     const isHost = liveStream.hostId.toString() === userId;
-    if (isHost && (liveStream.endedAt || !liveStream.startedAt)) {
+    if (isHost && (liveStream.endedAt || !liveStream.startedAt || liveStream.roomType === 'party_room')) {
       AppLogger.info(`[LiveStreamService: joinLiveStream] Host re-entering room; starting fresh session.`);
       liveStream.startedAt = new Date();
       liveStream.endedAt = undefined;
@@ -2031,9 +2049,21 @@ export class LiveStreamService {
   // New Seat Management Methods (Taka App Flow)
   // ==========================================
 
-  public async getRoomSettings(hostId: string) {
-    AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}`);
-    let roomSetting = await RoomSetting.findOne({ hostId })
+  public async getRoomSettings(hostId: string, channelName?: string) {
+    AppLogger.info(`[LiveStreamService: getRoomSettings] hostId=${hostId}, channelName=${channelName}`);
+    let targetHostId = hostId;
+    let activeStream: any = null;
+    if (channelName) {
+      activeStream = await Room.findOne({ channelName });
+      if (activeStream) {
+        targetHostId = activeStream.hostId.toString();
+      }
+    }
+    if (!activeStream) {
+      activeStream = await Room.findOne({ hostId: targetHostId, status: 'live' });
+    }
+
+    let roomSetting = await RoomSetting.findOne({ hostId: targetHostId })
       .populate({
         path: 'roomTheme',
         populate: { path: 'media' }
@@ -2049,7 +2079,7 @@ export class LiveStreamService {
       });
 
     if (!roomSetting) {
-      roomSetting = await RoomSetting.create({ hostId });
+      roomSetting = await RoomSetting.create({ hostId: targetHostId });
     }
 
     const settingsPayload = (roomSetting.toObject ? roomSetting.toObject() : roomSetting) as any;
@@ -2058,14 +2088,19 @@ export class LiveStreamService {
     settingsPayload.themeid = settingsPayload.roomTheme;
     settingsPayload.gameid = settingsPayload.gameId;
 
-    const activeStream = await Room.findOne({ hostId, status: 'live' });
     if (activeStream) {
       settingsPayload.roomType = activeStream.roomType;
       settingsPayload.partyRoomOption = activeStream.partyRoomOption;
+      if (activeStream.maxSeats) {
+        settingsPayload.maxSeats = activeStream.maxSeats;
+      }
     } else {
-      const latestStream = await Room.findOne({ hostId }).sort({ createdAt: -1 });
+      const latestStream = await Room.findOne({ hostId: targetHostId }).sort({ createdAt: -1 });
       settingsPayload.roomType = latestStream ? latestStream.roomType : 'livestream';
       settingsPayload.partyRoomOption = latestStream ? latestStream.partyRoomOption : 'live';
+      if (latestStream && latestStream.maxSeats) {
+        settingsPayload.maxSeats = latestStream.maxSeats;
+      }
     }
 
     AppLogger.info(`[LiveStreamService: getRoomSettings] Returning settings with populated gameId and themeid`);
@@ -2091,7 +2126,7 @@ export class LiveStreamService {
     }
 
     if (data.maxSeats !== undefined) roomSetting.maxSeats = data.maxSeats;
-    if (data.admins !== undefined) roomSetting.admins = data.admins.map(id => new mongoose.Types.ObjectId(id));
+    if (data.admins !== undefined) roomSetting.admins = data.admins.slice(0, 5).map(id => new mongoose.Types.ObjectId(id));
     if (data.roomTheme !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.roomTheme);
     if (data.themeid !== undefined) roomSetting.roomTheme = new mongoose.Types.ObjectId(data.themeid);
     if (data.announcement !== undefined) roomSetting.announcement = data.announcement;
@@ -2603,6 +2638,9 @@ export class LiveStreamService {
     const isAdminNow = roomSetting.admins.some(id => id.toString() === resolvedUserIdStr);
 
     if (isAdmin && !isAdminNow) {
+      if (roomSetting.admins.length >= 5) {
+        throw new Error('Maximum 5 room admins allowed');
+      }
       roomSetting.admins.push(targetObjId);
     } else if (!isAdmin && isAdminNow) {
       roomSetting.admins = roomSetting.admins.filter(id => id.toString() !== resolvedUserIdStr);
