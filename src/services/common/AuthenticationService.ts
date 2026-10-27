@@ -305,10 +305,18 @@ export class AuthenticationService {
         const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
         const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
 
+        const userObj: any = user.toObject();
+        if (typeof userObj.beans === 'number') {
+            userObj.beans = Math.round(userObj.beans);
+        }
+        if (typeof userObj.coins === 'number') {
+            userObj.coins = Math.round(userObj.coins);
+        }
+
         return {
             token,
             user: {
-                ...user.toObject(),
+                ...userObj,
                 followersCount,
                 followingCount
             } as any
@@ -470,13 +478,21 @@ export class AuthenticationService {
         const { referralCode } = await ensureUserReferralCode(user);
         const deepLink = await getReferralDeepLink(referralCode);
 
+        const userObj: any = user.toObject();
+        if (typeof userObj.beans === 'number') {
+            userObj.beans = Math.round(userObj.beans);
+        }
+        if (typeof userObj.coins === 'number') {
+            userObj.coins = Math.round(userObj.coins);
+        }
+
         return {
             token,
             isNewUser,
             isPendingDeletion: deletionStatus.isPendingDeletion,
             deletionDetails: deletionStatus,
             user: {
-                ...user.toObject(),
+                ...userObj,
                 isDeleted: user.isDeleted,
                 deletionReason: user.deletionReason,
                 deletionDetails: deletionStatus,

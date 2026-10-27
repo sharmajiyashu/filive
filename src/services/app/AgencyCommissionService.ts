@@ -56,7 +56,7 @@ export interface AgencyDashboardStats {
 
 @Service()
 export class AgencyCommissionService {
-  constructor(@Inject() private appSettingService: AppSettingService) {}
+  constructor(@Inject() private appSettingService: AppSettingService) { }
 
   public async getSettlementWeekday(): Promise<number> {
     const day = Number(await this.appSettingService.getSettingValue('agency_settlement_day'));
@@ -311,7 +311,7 @@ export class AgencyCommissionService {
     if (agency.isFrozen) throw new Error('Agency account is frozen');
     if (agency.isCommissionHeld) throw new Error('Agency commission is on hold');
 
-    const amount = agency.pendingCommission;
+    const amount = Math.round(agency.pendingCommission);
     if (amount <= 0) {
       return { settled: false, amount: 0, message: 'No pending commission to settle' };
     }
