@@ -2,6 +2,7 @@ import { Service, Inject } from 'typedi';
 import mongoose from 'mongoose';
 import Agency from '../../models/Agency';
 import AgencyHost from '../../models/AgencyHost';
+import HostVerifiedEarning from '../../models/HostVerifiedEarning';
 import Country from '../../models/Country';
 import User from '../../models/User';
 import { UserService } from './UserService';
@@ -14,7 +15,7 @@ export class AgencyService {
     @Inject() private userService: UserService,
     @Inject() private commissionService: AdminAgencyCommissionService,
     @Inject() private firebasePushService: FirebasePushService,
-  ) {}
+  ) { }
 
   private async generateAgencyCode(): Promise<string> {
     for (let i = 0; i < 10; i++) {
@@ -343,8 +344,24 @@ export class AgencyService {
       .skip((page - 1) * limit)
       .limit(limit);
 
+    const userIds = hosts.map((h: any) => h.userId?._id).filter(Boolean);
+    const earningsAgg = await HostVerifiedEarning.aggregate([
+      { $match: { agencyId: new mongoose.Types.ObjectId(agencyId), hostUserId: { $in: userIds }, isValid: true } },
+      { $group: { _id: '$hostUserId', totalBeans: { $sum: '$beansAmount' } } },
+    ]);
+    const earningsMap = new Map(earningsAgg.map((e) => [e._id.toString(), e.totalBeans]));
+
+    const enrichedHosts = hosts.map((h: any) => {
+      const plain = h.toObject ? h.toObject() : h;
+      const hostIdStr = plain.userId?._id?.toString() || '';
+      return {
+        ...plain,
+        totalEarnings: earningsMap.get(hostIdStr) || 0,
+      };
+    });
+
     return {
-      hosts,
+      hosts: enrichedHosts,
       pagination: {
         total,
         page,

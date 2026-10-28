@@ -6,9 +6,11 @@ import { ResponseWrapper } from '../../responseWrapper';
 import AppLogger from '../../loaders/logger';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 import upload from '../../middleware/upload';
+import mongoose from 'mongoose';
 import Room from '../../../models/Room';
 import User from '../../../models/User';
 import CoinHistory from '../../../models/CoinHistory';
+import { LevelService } from '../../../services/app/LevelService';
 
 export default (router: Router) => {
   const liveStreamService = Container.get(LiveStreamService);
@@ -883,7 +885,7 @@ export default (router: Router) => {
       }
 
       const page = parseInt(req.query.page?.toString() || '1');
-      const limit = parseInt(req.query.limit?.toString() || '10');
+      const limit = parseInt(req.query.limit?.toString() || '20');
       const period = req.query.period?.toString() || 'daily'; // 'daily' | 'weekly' | 'all'
 
       AppLogger.info(`[HTTP GET /app/room/contribution] channelName=${channelName}, userId=${userId}, page=${page}, limit=${limit}, period=${period}`);
@@ -897,19 +899,19 @@ export default (router: Router) => {
       }
 
       const hostId = liveStream.hostId;
+      const levelService = Container.get(LevelService);
 
       // Determine date range based on period
       const now = new Date();
-      let dateLimit = new Date(liveStream.startedAt || liveStream.createdAt || now);
+      let dateLimit: Date;
 
       if (period === 'daily') {
-        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        if (oneDayAgo > dateLimit) dateLimit = oneDayAgo;
+        dateLimit = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       } else if (period === 'weekly') {
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        if (oneWeekAgo > dateLimit) dateLimit = oneWeekAgo;
+        dateLimit = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else {
+        dateLimit = new Date(liveStream.startedAt || liveStream.createdAt || (now.getTime() - 30 * 24 * 60 * 60 * 1000));
       }
-      // 'all' → use room start time
 
       const matchQuery: any = {
         $or: [
@@ -947,29 +949,88 @@ export default (router: Router) => {
       ]);
       const total = totalContributorsAgg[0]?.total || 0;
 
-      // Populate user info
+      // Populate user info with levels & active frames
       const populatedContributions = await Promise.all(
         allContributions.map(async (c: any) => {
           const user = await User.findById(c._id)
             .populate('profileImage')
-            .select('name profileImage isPremium wealthCoins country');
+            .populate('activeFrame')
+            .select('name profileImage isPremium isVip gender wealthCoins charmCoins activeFrame');
+          if (!user) return null;
+
+          const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : 0;
+          const richLevelInfo = await levelService.getLevelInfoForCoins(richCoins, 'rich').catch(() => null);
+          const userObj = user.toObject ? user.toObject() : user;
+
           return {
-            user,
+            user: {
+              ...userObj,
+              richLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+              level: richLevelInfo?.currentLevel?.levelNumber || 1,
+              levelBadgeUrl: richLevelInfo?.currentLevel?.imageUrl || null,
+            },
             totalContribution: c.totalContribution
           };
         })
       );
 
-      const result = populatedContributions.filter((c: any) => c.user !== null);
+      const result = populatedContributions.filter((c: any) => c !== null);
 
-      // Calculate total gift revenue for this stream
-      const giftHistories = await CoinHistory.find({ channelName: liveStream.channelName, type: 'charm_received' });
-      const totalGiftRevenue = giftHistories.reduce((sum, history) => sum + Math.abs(history.amount), 0);
+      // Calculate current user's contribution & rank
+      let myContribution: any = null;
+      if (userId) {
+        const myCoinHistory = await CoinHistory.aggregate([
+          { $match: { ...matchQuery, userId: new mongoose.Types.ObjectId(userId) } },
+          { $group: { _id: '$userId', totalContribution: { $sum: { $abs: '$amount' } } } }
+        ]);
+        const myTotal = myCoinHistory[0]?.totalContribution || 0;
+
+        let myRank: number | null = null;
+        if (myTotal > 0) {
+          const higherCount = await CoinHistory.aggregate([
+            { $match: matchQuery },
+            { $group: { _id: '$userId', total: { $sum: { $abs: '$amount' } } } },
+            { $match: { total: { $gt: myTotal } } },
+            { $count: 'count' }
+          ]);
+          myRank = (higherCount[0]?.count || 0) + 1;
+        }
+
+        const currentUser = await User.findById(userId)
+          .populate('profileImage')
+          .populate('activeFrame')
+          .select('name profileImage isPremium isVip gender wealthCoins charmCoins activeFrame');
+
+        if (currentUser) {
+          const myRichCoins = currentUser.wealthCoins !== undefined ? currentUser.wealthCoins : 0;
+          const myLevelInfo = await levelService.getLevelInfoForCoins(myRichCoins, 'rich').catch(() => null);
+          const currentObj = currentUser.toObject ? currentUser.toObject() : currentUser;
+
+          myContribution = {
+            rank: myRank,
+            totalContribution: myTotal,
+            user: {
+              ...currentObj,
+              richLevel: myLevelInfo?.currentLevel?.levelNumber || 1,
+              level: myLevelInfo?.currentLevel?.levelNumber || 1,
+              levelBadgeUrl: myLevelInfo?.currentLevel?.imageUrl || null,
+            }
+          };
+        }
+      }
+
+      // Calculate total gift revenue for this stream / period
+      const totalRevAgg = await CoinHistory.aggregate([
+        { $match: matchQuery },
+        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+      ]);
+      const totalGiftRevenue = totalRevAgg[0]?.total || 0;
 
       AppLogger.info(`[HTTP GET /app/room/contribution] Success. channelName=${channelName}, contributors=${result.length}`);
       return ResponseWrapper.success(res, {
         totalGiftRevenue,
         contributions: result,
+        myContribution,
         pagination: {
           total,
           page,

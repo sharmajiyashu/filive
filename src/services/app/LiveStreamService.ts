@@ -734,10 +734,11 @@ export class LiveStreamService {
     const liveStream = await Room.findOne({ channelName, status: 'live' })
       .populate({
         path: 'viewers',
-        select: 'name profileImage email mobile isPremium wealthCoins charmCoins gender country location',
-        populate: {
-          path: 'profileImage'
-        }
+        select: 'name profileImage email mobile isPremium isVip wealthCoins charmCoins gender country location activeFrame',
+        populate: [
+          { path: 'profileImage' },
+          { path: 'activeFrame' }
+        ]
       });
 
     if (!liveStream) {
@@ -745,13 +746,22 @@ export class LiveStreamService {
     }
 
     const hostIdStr = liveStream.hostId.toString();
-    return liveStream.viewers.map((viewer: any) => {
-      const viewerObj = viewer.toObject ? viewer.toObject() : viewer;
-      return {
-        ...viewerObj,
-        isHost: viewerObj._id ? viewerObj._id.toString() === hostIdStr : false
-      };
-    });
+    const viewersWithLevels = await Promise.all(
+      (liveStream.viewers || []).map(async (viewer: any) => {
+        if (!viewer) return null;
+        const viewerObj = viewer.toObject ? viewer.toObject() : viewer;
+        const wealthCoins = viewerObj.wealthCoins || viewerObj.coins || 0;
+        const richLevelInfo = await this.levelService.getLevelInfoForCoins(wealthCoins, 'rich').catch(() => null);
+        return {
+          ...viewerObj,
+          isHost: viewerObj._id ? viewerObj._id.toString() === hostIdStr : false,
+          richLevel: richLevelInfo?.currentLevel?.levelNumber || 1,
+          level: richLevelInfo?.currentLevel?.levelNumber || 1,
+          levelBadgeUrl: richLevelInfo?.currentLevel?.imageUrl || null
+        };
+      })
+    );
+    return viewersWithLevels.filter((v: any) => v !== null);
   }
 
   private async flushSeatMicTime(hostId: string, seat: { userId?: mongoose.Types.ObjectId; occupiedAt?: Date }) {

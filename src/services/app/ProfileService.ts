@@ -78,13 +78,13 @@ export class ProfileService {
 
     const ownedAgency = await Agency.findOne({
       creatorId: userId,
-      isVerified: true,
-      status: { $in: ['approved', 'pending'] }
+      status: { $ne: 'rejected' },
     })
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
     const agency: any = ownedAgency || null;
+    const isAgencyOwner = Boolean(ownedAgency);
     let isAgencyHost = false;
     let isBecomeHost = false;
     let becomeHostMessage: string | null = null;
@@ -167,6 +167,7 @@ export class ProfileService {
       richLevelInfo,
       charmLevelInfo,
       agency,
+      isAgencyOwner,
       joinedAgency,
       isAgencyHost,
       isBecomeHost,
@@ -364,13 +365,13 @@ export class ProfileService {
 
     const ownedAgency = await Agency.findOne({
       creatorId: userId,
-      isVerified: true,
-      status: { $in: ['approved', 'pending'] }
+      status: { $ne: 'rejected' },
     })
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
     const agency: any = ownedAgency || null;
+    const isAgencyOwner = Boolean(ownedAgency);
     let isAgencyHost = false;
     let isBecomeHost = false;
     let becomeHostMessage: string | null = null;
@@ -424,6 +425,7 @@ export class ProfileService {
         richLevelInfo,
         charmLevelInfo,
         agency,
+        isAgencyOwner,
         joinedAgency,
         isAgencyHost,
         isBecomeHost,
