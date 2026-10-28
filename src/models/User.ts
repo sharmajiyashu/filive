@@ -275,6 +275,33 @@ UserSchema.index({ beans: -1 });
 
 UserSchema.pre('save', async function (next) {
   const user = this as any;
+
+  // Sanitize empty strings on unique/sparse fields to prevent duplicate key errors
+  if (typeof user.email === 'string') {
+    const trimmedEmail = user.email.trim();
+    if (!trimmedEmail) {
+      user.email = undefined;
+    } else {
+      user.email = trimmedEmail.toLowerCase();
+    }
+  }
+  if (typeof user.mobile === 'string') {
+    const trimmedMobile = user.mobile.trim();
+    if (!trimmedMobile) {
+      user.mobile = undefined;
+    } else {
+      user.mobile = trimmedMobile;
+    }
+  }
+  if (typeof user.whatsapp === 'string') {
+    const trimmedWhatsapp = user.whatsapp.trim();
+    if (!trimmedWhatsapp) {
+      user.whatsapp = undefined;
+    } else {
+      user.whatsapp = trimmedWhatsapp;
+    }
+  }
+
   if (!user.userId) {
     // 8-digit fixed public User ID starting at 10000001
     const highestUser: any = await mongoose.models.User.findOne({ userId: { $gte: 10000001, $lte: 99999999 } })

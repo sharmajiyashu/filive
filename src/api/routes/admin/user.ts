@@ -33,6 +33,7 @@ export default (router: Router) => {
       const limit = parseInt(req.query.limit?.toString() || '10');
       const search = req.query.search?.toString();
       const category = req.query.category?.toString();
+      const gender = req.query.gender?.toString();
       const country = req.query.country?.toString();
       const status = req.query.status?.toString();
       const role = req.query.role?.toString();
@@ -45,6 +46,7 @@ export default (router: Router) => {
         limit,
         search,
         category,
+        gender,
         country,
         status,
         role,

@@ -153,18 +153,50 @@ export default (router: Router) => {
     }
   });
 
+  liveRouter.put('/:id', async (req: any, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { title, announcement, roomType, partyRoomOption, maxSeats, roomTheme, status } = req.body;
+      const result = await adminLiveService.updateRoom(id, {
+        title,
+        announcement,
+        roomType,
+        partyRoomOption,
+        maxSeats: maxSeats !== undefined ? Number(maxSeats) : undefined,
+        roomTheme,
+        status,
+      });
+      return ResponseWrapper.success(res, result, 'Room updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  liveRouter.put('/update/:channelName', async (req: any, res: Response) => {
+    try {
+      const { channelName } = req.params;
+      const { title, announcement, roomType, partyRoomOption, maxSeats, roomTheme, status } = req.body;
+      const result = await adminLiveService.updateRoom(channelName, {
+        title,
+        announcement,
+        roomType,
+        partyRoomOption,
+        maxSeats: maxSeats !== undefined ? Number(maxSeats) : undefined,
+        roomTheme,
+        status,
+      });
+      return ResponseWrapper.success(res, result, 'Room updated successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   liveRouter.delete('/:id', async (req: any, res: Response) => {
     try {
       const streamId = req.params.id;
-      const liveStream = await Room.findById(streamId);
-      if (!liveStream) {
-        throw new Error('Room not found');
-      }
-      const result = await liveStreamService.endLiveStream(
-        liveStream.hostId.toString(),
-        liveStream.channelName
-      );
-      return ResponseWrapper.success(res, result, 'Room ended successfully');
+      const permanent = req.query.permanent === 'true';
+      const result = await adminLiveService.endOrDeleteRoom(streamId, permanent);
+      return ResponseWrapper.success(res, result, result.message || 'Room ended successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
@@ -173,14 +205,7 @@ export default (router: Router) => {
   liveRouter.post('/:id/end', async (req: any, res: Response) => {
     try {
       const streamId = req.params.id;
-      const liveStream = await Room.findById(streamId);
-      if (!liveStream) {
-        throw new Error('Room not found');
-      }
-      const result = await liveStreamService.endLiveStream(
-        liveStream.hostId.toString(),
-        liveStream.channelName
-      );
+      const result = await adminLiveService.endOrDeleteRoom(streamId, false);
       return ResponseWrapper.success(res, result, 'Room ended successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

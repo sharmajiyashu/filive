@@ -211,6 +211,7 @@ export class UserService {
     limit?: number;
     search?: string;
     category?: string;
+    gender?: string;
     country?: string;
     status?: string;
     role?: string;
@@ -228,13 +229,28 @@ export class UserService {
     if (params.category && params.category !== 'all') {
       if (params.category === 'vip') {
         query.isPremium = true;
-      } else if (params.category === 'normal' || params.category === 'real') {
+      } else if (params.category === 'verified') {
+        query.isVerified = true;
+      } else if (params.category === 'coinseller') {
+        query.isCoinseller = true;
+      } else if (params.category === 'normal') {
         query.isPremium = false;
+      } else if (params.category === 'real') {
+        query.isDeleted = { $ne: true };
       } else if (params.category === 'pending_video_verification') {
         query.$or = [
           { videoVerificationStatus: 'pending' },
           { videoVerificationVideo: { $exists: true, $ne: null }, videoVerificationStatus: { $nin: ['approved', 'rejected'] } }
         ];
+      }
+    }
+
+    // Gender filter
+    if (params.gender && params.gender !== 'all') {
+      if (params.gender === 'Other') {
+        query.gender = { $nin: ['Male', 'Female'] };
+      } else {
+        query.gender = params.gender;
       }
     }
 
@@ -326,13 +342,50 @@ export class UserService {
       if (params.endDate) query.createdAt.$lte = new Date(params.endDate);
     }
 
-    // Aggregated Header Stats
-    const [totalUsers, totalActiveUsers, males, females] = await Promise.all([
-      User.countDocuments({}),
-      User.countDocuments({ isBlocked: false }),
-      User.countDocuments({ gender: 'Male' }),
-      User.countDocuments({ gender: 'Female' }),
+    // Date filter base for stats
+    const statsDateQuery: any = {};
+    if (params.startDate || params.endDate) {
+      statsDateQuery.createdAt = {};
+      if (params.startDate) statsDateQuery.createdAt.$gte = new Date(params.startDate);
+      if (params.endDate) statsDateQuery.createdAt.$lte = new Date(params.endDate);
+    }
+
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const [
+      totalUsers,
+      totalActiveUsers,
+      verifiedUsers,
+      vipUsers,
+      coinSellers,
+      males,
+      females,
+      otherGender,
+      onlineUsers,
+      blockedUsers,
+      deletedUsers,
+    ] = await Promise.all([
+      User.countDocuments({ ...statsDateQuery }),
+      User.countDocuments({ ...statsDateQuery, isBlocked: false, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, isVerified: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, isPremium: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, isCoinseller: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: 'Male', isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: 'Female', isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: { $nin: ['Male', 'Female'] }, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, lastLoginAt: { $gte: fifteenMinsAgo }, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, isBlocked: true }),
+      User.countDocuments({ ...statsDateQuery, isDeleted: true }),
     ]);
+
+    const activePercentage = totalUsers > 0 ? Number(((totalActiveUsers / totalUsers) * 100).toFixed(1)) : 0;
+    const verifiedPercentage = totalUsers > 0 ? Number(((verifiedUsers / totalUsers) * 100).toFixed(1)) : 0;
+    const vipPercentage = totalUsers > 0 ? Number(((vipUsers / totalUsers) * 100).toFixed(1)) : 0;
+    const coinSellersPercentage = totalUsers > 0 ? Number(((coinSellers / totalUsers) * 100).toFixed(1)) : 0;
+    const malesPercentage = totalUsers > 0 ? Number(((males / totalUsers) * 100).toFixed(1)) : 0;
+    const femalesPercentage = totalUsers > 0 ? Number(((females / totalUsers) * 100).toFixed(1)) : 0;
+    const otherGenderPercentage = totalUsers > 0 ? Number(((otherGender / totalUsers) * 100).toFixed(1)) : 0;
+    const onlinePercentage = totalUsers > 0 ? Number(((onlineUsers / totalUsers) * 100).toFixed(1)) : 0;
+    const blockedPercentage = totalUsers > 0 ? Number(((blockedUsers / totalUsers) * 100).toFixed(1)) : 0;
 
     const filteredTotal = await User.countDocuments(query);
     const users = await User.find(query)
@@ -454,8 +507,24 @@ export class UserService {
       summary: {
         totalUsers,
         totalActiveUsers,
+        verifiedUsers,
+        vipUsers,
+        coinSellers,
         males,
         females,
+        otherGender,
+        onlineUsers,
+        blockedUsers,
+        deletedUsers,
+        activePercentage,
+        verifiedPercentage,
+        vipPercentage,
+        coinSellersPercentage,
+        malesPercentage,
+        femalesPercentage,
+        otherGenderPercentage,
+        onlinePercentage,
+        blockedPercentage,
       },
       pagination: {
         total: filteredTotal,
@@ -470,10 +539,58 @@ export class UserService {
     const user = await User.findById(userId);
     if (!user) throw new Error('USER_NOT_FOUND');
 
-    if (updateData.name !== undefined) user.name = updateData.name;
-    if (updateData.email !== undefined) user.email = updateData.email;
-    if (updateData.mobile !== undefined) user.mobile = updateData.mobile;
-    if (updateData.whatsapp !== undefined) user.whatsapp = updateData.whatsapp;
+    if (updateData.name !== undefined) {
+      const cleanName = typeof updateData.name === 'string' ? updateData.name.trim() : updateData.name;
+      if (cleanName) user.name = cleanName;
+    }
+
+    if (updateData.email !== undefined) {
+      const cleanEmail = typeof updateData.email === 'string' ? updateData.email.trim().toLowerCase() : '';
+      if (!cleanEmail) {
+        // Unset email so unique sparse index ignores it
+        user.set('email', undefined);
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(cleanEmail)) {
+          throw new Error('Please enter a valid email address');
+        }
+        const existingEmail = await User.findOne({
+          email: cleanEmail,
+          _id: { $ne: user._id },
+        });
+        if (existingEmail) {
+          throw new Error(`Email "${cleanEmail}" is already registered with another user.`);
+        }
+        user.email = cleanEmail;
+      }
+    }
+
+    if (updateData.mobile !== undefined) {
+      const cleanMobile = typeof updateData.mobile === 'string' ? updateData.mobile.trim() : '';
+      if (!cleanMobile) {
+        // Unset mobile so unique sparse index ignores it
+        user.set('mobile', undefined);
+      } else {
+        const existingMobile = await User.findOne({
+          mobile: cleanMobile,
+          _id: { $ne: user._id },
+        });
+        if (existingMobile) {
+          throw new Error(`Mobile number "${cleanMobile}" is already registered with another user.`);
+        }
+        user.mobile = cleanMobile;
+      }
+    }
+
+    if (updateData.whatsapp !== undefined) {
+      const cleanWhatsapp = typeof updateData.whatsapp === 'string' ? updateData.whatsapp.trim() : '';
+      if (!cleanWhatsapp) {
+        user.set('whatsapp', undefined);
+      } else {
+        user.whatsapp = cleanWhatsapp;
+      }
+    }
+
     if (updateData.gender !== undefined) {
       const raw = String(updateData.gender).trim();
       const genderMap: Record<string, 'Male' | 'Female' | 'Other'> = {
@@ -486,6 +603,7 @@ export class UserService {
       };
       if (genderMap[raw]) user.gender = genderMap[raw];
     }
+
     if (updateData.country !== undefined || updateData.countryId !== undefined || updateData.countryCode !== undefined) {
       const hasValue = Boolean(
         (updateData.countryId && String(updateData.countryId).trim()) ||
@@ -502,34 +620,103 @@ export class UserService {
         }
         user.countryId = resolved.countryId;
         user.country = resolved.country;
+        if (resolved.country) {
+          user.countryCode = resolved.country;
+        }
+      } else if (updateData.countryId === '' || updateData.country === '') {
+        user.set('countryId', undefined);
+        user.set('country', undefined);
+        user.set('countryCode', undefined);
       }
     }
-    if (updateData.dob !== undefined) user.dob = new Date(updateData.dob);
-    if (updateData.bio !== undefined) user.bio = updateData.bio;
-    if (updateData.coins !== undefined && !Number.isNaN(Number(updateData.coins))) user.coins = Number(updateData.coins);
+
+    if (updateData.dob !== undefined) {
+      if (!updateData.dob) {
+        user.set('dob', undefined);
+      } else {
+        const parsedDob = new Date(updateData.dob);
+        if (!isNaN(parsedDob.getTime())) user.dob = parsedDob;
+      }
+    }
+
+    if (updateData.bio !== undefined) {
+      user.bio = typeof updateData.bio === 'string' ? updateData.bio.trim() : updateData.bio;
+    }
+
+    if (updateData.coins !== undefined && !Number.isNaN(Number(updateData.coins))) {
+      user.coins = Math.max(0, Number(updateData.coins));
+    }
+
     if (updateData.coinSellerCoins !== undefined && !Number.isNaN(Number(updateData.coinSellerCoins))) {
-      user.coinSellerCoins = Number(updateData.coinSellerCoins);
+      user.coinSellerCoins = Math.max(0, Number(updateData.coinSellerCoins));
     }
+
     if (updateData.isCoinseller !== undefined) {
-      user.isCoinseller = updateData.isCoinseller === true || updateData.isCoinseller === 'true';
+      const isCs = updateData.isCoinseller === true || updateData.isCoinseller === 'true';
+      user.isCoinseller = isCs;
+      if (isCs && user.isCoinsellerActive === undefined) {
+        user.isCoinsellerActive = true;
+      }
     }
+
+    if (updateData.isCoinsellerActive !== undefined) {
+      user.isCoinsellerActive = updateData.isCoinsellerActive === true || updateData.isCoinsellerActive === 'true';
+    }
+
     if (updateData.isPremium !== undefined) {
       user.isPremium = updateData.isPremium === true || updateData.isPremium === 'true';
     }
+
     if (updateData.isVerified !== undefined) {
       user.isVerified = updateData.isVerified === true || updateData.isVerified === 'true';
     }
-    if (updateData.voiceCallPrice !== undefined && !Number.isNaN(Number(updateData.voiceCallPrice))) {
-      user.voiceCallPrice = Number(updateData.voiceCallPrice);
-    }
-    if (updateData.videoCallPrice !== undefined && !Number.isNaN(Number(updateData.videoCallPrice))) {
-      user.videoCallPrice = Number(updateData.videoCallPrice);
-    }
-    if (updateData.userRole !== undefined) user.userRole = updateData.userRole;
-    if (updateData.profileImage !== undefined) user.profileImage = updateData.profileImage;
 
-    await user.save();
-    return user;
+    if (updateData.voiceCallPrice !== undefined && !Number.isNaN(Number(updateData.voiceCallPrice))) {
+      user.voiceCallPrice = Math.max(0, Number(updateData.voiceCallPrice));
+    }
+
+    if (updateData.videoCallPrice !== undefined && !Number.isNaN(Number(updateData.videoCallPrice))) {
+      user.videoCallPrice = Math.max(0, Number(updateData.videoCallPrice));
+    }
+
+    if (updateData.userRole !== undefined) {
+      if (['user', 'admin'].includes(updateData.userRole)) {
+        user.userRole = updateData.userRole;
+      }
+    }
+
+    if (updateData.profileImage !== undefined) {
+      if (!updateData.profileImage || updateData.profileImage === 'null' || updateData.profileImage === 'undefined') {
+        user.set('profileImage', undefined);
+      } else if (mongoose.Types.ObjectId.isValid(updateData.profileImage)) {
+        user.profileImage = updateData.profileImage;
+      }
+    }
+
+    try {
+      await user.save();
+    } catch (saveError: any) {
+      if (saveError?.code === 11000 || saveError?.name === 'MongoServerError') {
+        const keyPattern = saveError.keyPattern || saveError.keyValue || {};
+        if (keyPattern.email || saveError.message?.includes('email')) {
+          throw new Error('This email address is already in use by another user.');
+        }
+        if (keyPattern.mobile || saveError.message?.includes('mobile')) {
+          throw new Error('This mobile number is already in use by another user.');
+        }
+        if (keyPattern.userId || saveError.message?.includes('userId')) {
+          throw new Error('This user ID already exists.');
+        }
+        throw new Error('Duplicate value detected for unique field: ' + Object.keys(keyPattern).join(', '));
+      }
+      throw saveError;
+    }
+
+    const updatedUser = await User.findById(userId)
+      .populate('profileImage', 'url')
+      .populate('countryId', 'name code flag image');
+
+    return updatedUser || user;
   }
 
   public async blockUserWithDuration(

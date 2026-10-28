@@ -614,4 +614,156 @@ export class AdminLiveService {
     await AdminNotification.updateMany({ isRead: false }, { $set: { isRead: true } });
     return { success: true };
   }
+
+  public async updateRoom(roomIdOrChannel: string, data: {
+    title?: string;
+    announcement?: string;
+    roomType?: 'livestream' | 'party_room';
+    partyRoomOption?: 'live' | 'chat';
+    maxSeats?: number;
+    roomTheme?: string;
+    status?: 'live' | 'ended';
+  }) {
+    let room = mongoose.Types.ObjectId.isValid(roomIdOrChannel)
+      ? await Room.findById(roomIdOrChannel)
+      : null;
+
+    if (!room) {
+      room = await Room.findOne({ channelName: roomIdOrChannel });
+    }
+
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    if (data.title !== undefined && data.title.trim() !== '') {
+      room.title = data.title.trim();
+    }
+    if (data.announcement !== undefined) {
+      room.announcement = data.announcement.trim();
+    }
+    if (data.roomType !== undefined) {
+      room.roomType = data.roomType;
+    }
+    if (data.partyRoomOption !== undefined) {
+      room.partyRoomOption = data.partyRoomOption;
+    }
+    if (data.roomTheme !== undefined) {
+      room.roomTheme = data.roomTheme && mongoose.Types.ObjectId.isValid(data.roomTheme)
+        ? new mongoose.Types.ObjectId(data.roomTheme)
+        : undefined;
+    }
+    if (data.maxSeats !== undefined && data.maxSeats > 0) {
+      room.maxSeats = data.maxSeats;
+      room.seats = room.seats || [];
+      if (room.seats.length < data.maxSeats) {
+        for (let i = room.seats.length; i < data.maxSeats; i++) {
+          room.seats.push({
+            seatIndex: i,
+            status: 'open',
+            isMuted: false,
+          } as any);
+        }
+      } else if (room.seats.length > data.maxSeats) {
+        room.seats = room.seats.slice(0, data.maxSeats);
+      }
+    }
+
+    // Sync with RoomSetting for host
+    if (room.hostId) {
+      try {
+        const RoomSetting = (await import('../../models/RoomSetting')).default;
+        await RoomSetting.findOneAndUpdate(
+          { hostId: room.hostId },
+          {
+            $set: {
+              ...(data.title ? { title: room.title } : {}),
+              ...(data.announcement !== undefined ? { announcement: room.announcement } : {}),
+              ...(data.roomTheme ? { roomTheme: room.roomTheme } : {}),
+              ...(data.maxSeats ? { maxSeats: room.maxSeats } : {}),
+            }
+          },
+          { upsert: true }
+        );
+      } catch (err) {
+        // non-blocking
+      }
+    }
+
+    await room.save();
+    await room.populate([
+      { path: 'hostId', select: 'userId name email profileImage country', populate: { path: 'profileImage' } },
+      { path: 'roomTheme' },
+    ]);
+
+    // Live socket broadcast
+    if (room.status === 'live') {
+      try {
+        const io = (this.liveStreamService as any).getSocketIo?.();
+        if (io) {
+          (this.liveStreamService as any).broadcastToRoom?.(room.channelName, 'room_settings_updated', {
+            title: room.title,
+            announcement: room.announcement,
+            maxSeats: room.maxSeats,
+            roomType: room.roomType,
+            partyRoomOption: room.partyRoomOption,
+            roomTheme: room.roomTheme,
+          });
+          (this.liveStreamService as any).broadcastToRoom?.(room.channelName, 'room_info', {
+            channelName: room.channelName,
+            title: room.title,
+            announcement: room.announcement,
+          });
+        }
+      } catch (socketErr) {
+        // non-blocking
+      }
+    }
+
+    return this.enrichRoom(room);
+  }
+
+  public async endOrDeleteRoom(roomIdOrChannel: string, permanent: boolean = false) {
+    let room = mongoose.Types.ObjectId.isValid(roomIdOrChannel)
+      ? await Room.findById(roomIdOrChannel)
+      : null;
+
+    if (!room) {
+      room = await Room.findOne({ channelName: roomIdOrChannel });
+    }
+
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    const channelName = room.channelName;
+    const hostId = room.hostId ? room.hostId.toString() : '';
+
+    if (permanent) {
+      if (room.status === 'live') {
+        try {
+          await this.liveStreamService.endLiveStream(hostId, channelName);
+        } catch {
+          // ignore
+        }
+      }
+      await Room.findByIdAndDelete(room._id);
+      return { success: true, message: 'Room permanently deleted', id: room._id };
+    }
+
+    if (room.status === 'live') {
+      try {
+        await this.liveStreamService.endLiveStream(hostId, channelName);
+      } catch (endErr: any) {
+        room.status = 'ended';
+        room.endedAt = new Date();
+        await room.save();
+      }
+      return { success: true, message: 'Room ended successfully', id: room._id };
+    } else {
+      // If already ended, delete it
+      await Room.findByIdAndDelete(room._id);
+      return { success: true, message: 'Ended room deleted successfully', id: room._id };
+    }
+  }
 }

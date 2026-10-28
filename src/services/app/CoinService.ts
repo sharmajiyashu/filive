@@ -91,24 +91,34 @@ export class CoinService {
       country = await Country.findOne({ code: 'IN', isActive: true }) || await Country.findOne({ isActive: true });
     }
 
+    const usdToInrRate = Number(
+      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
+    );
+
     return packages.map(pkg => {
-      let localPrice: number;
+      const usdPrice = Number(pkg.price);
+      let exchangeRate = 1;
+
       if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
-        localPrice = pkg.price;
+        exchangeRate = usdToInrRate;
       } else if (country.currencyCode === 'USD' || country.code === 'US') {
-        localPrice = Number((pkg.price / 83.5).toFixed(2));
+        exchangeRate = 1;
       } else {
-        const usdPrice = pkg.price / 83.5;
-        localPrice = calculateLocalPrice(usdPrice, country.exchangeRate || 1);
+        exchangeRate = Number(country.exchangeRate || 1);
       }
 
-      const discountPercent = Math.min(Math.round(((pkg.coins - (pkg.price * 1)) / (pkg.coins || 1)) * 100), 75);
+      const localPrice = calculateLocalPrice(usdPrice, exchangeRate);
+      const discountPercent = Math.min(Math.round(((pkg.coins - (usdPrice * 100)) / (pkg.coins || 1)) * 100), 75);
 
       return {
         ...pkg.toObject(),
+        price: usdPrice,
+        currencyCode: 'USD',
+        currencySymbol: '$',
         localPrice,
-        currencyCode: country ? country.currencyCode : 'INR',
-        currencySymbol: country ? country.currencySymbol : '₹',
+        localCurrencyCode: country ? country.currencyCode : 'INR',
+        localCurrencySymbol: country ? country.currencySymbol : '₹',
+        exchangeRate,
         countryName: country?.name || 'India',
         countryFlag: country?.flag || 'https://flagcdn.com/w160/in.png',
         countryCode: country?.code || 'IN',
@@ -683,23 +693,28 @@ export class CoinService {
     });
 
     const user = await User.findById(userId);
-    const amountInPaise = Math.round(Number(pkg.price) * 100);
+    const usdToInrRate = Number(
+      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
+    );
+    const inrAmount = Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    const amountInPaise = Math.round(inrAmount * 100);
 
     if (amountInPaise <= 0) {
       throw new Error('Coin package price must be greater than zero');
     }
 
-    const currency = (pkg as any).currency || 'INR';
-
     const options = {
       amount: amountInPaise,
-      currency: currency.toUpperCase(),
+      currency: 'INR',
       receipt: `rcg_${userId.toString().slice(-6)}_${Date.now()}`,
       notes: {
         userId: userId.toString(),
         packageId: packageId.toString(),
         packageName: pkg.name,
-        coins: pkg.coins,
+        coins: String(pkg.coins),
+        usdPrice: String(pkg.price),
+        exchangeRate: String(usdToInrRate),
+        inrAmount: String(inrAmount),
         rechargeAudience: audience,
         environment: razorpayMode,
       },
@@ -721,6 +736,9 @@ export class CoinService {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
+      usdAmount: pkg.price,
+      exchangeRate: usdToInrRate,
+      inrAmount,
       audience,
       mode: razorpayMode,
       package: {
@@ -728,6 +746,7 @@ export class CoinService {
         name: pkg.name,
         coins: pkg.coins,
         price: pkg.price,
+        currency: 'USD',
         targetAudience: pkg.targetAudience,
       },
       keyId,
@@ -804,7 +823,7 @@ export class CoinService {
             amount: pkg.coins,
             type: 'recharge',
             paymentGateway: 'Razorpay',
-            description: `Recharged with ${pkg.name} via Razorpay (${audience})`,
+            description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`,
             transactionId: razorpayPaymentId,
           },
         ],
@@ -953,7 +972,11 @@ export class CoinService {
     const user = await User.findById(userId);
     if (!user) throw new Error('User not found');
 
-    const moneyAmount = Math.round(pkg.price * 100);
+    const usdToInrRate = Number(
+      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
+    );
+    const inrAmount = Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    const moneyAmount = Math.round(inrAmount * 100);
     // Encode audience + packageId + numeric userId for callback credit context
     // Format: PANDA_{audience}_{packageId}_{timestamp}_{numericUserId}
     const orderSn = `PANDA_${audience}_${packageId}_${Date.now()}_${user.userId || userId.slice(-6)}`;
@@ -1038,7 +1061,7 @@ export class CoinService {
           amount: pkg.coins,
           type: 'recharge',
           paymentGateway: 'PandaPay',
-          description: `Recharged with ${pkg.name} via PandaPay (${audience})`,
+          description: `Recharged with ${pkg.name} ($${pkg.price} USD) via PandaPay (${audience})`,
           transactionId: orderSn,
         }], { session });
         await session.commitTransaction();
@@ -1118,7 +1141,11 @@ export class CoinService {
 
     // Order ID format: CF_{audience}_{packageId}_{timestamp}_{numericUserId}
     const orderId = `CF_${audience.slice(0, 1).toUpperCase()}_${packageId.toString().slice(-6)}_${Date.now()}_${user.userId || userId.slice(-4)}`;
-    const orderAmount = Number(pkg.price.toFixed(2));
+    const usdToInrRate = Number(
+      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
+    );
+    const inrAmount = Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    const orderAmount = inrAmount;
 
     const orderMeta: Record<string, string> = {
       return_url: `https://filive.app/payment-return?order_id={order_id}`,
@@ -1138,11 +1165,13 @@ export class CoinService {
         customer_phone: customerPhone,
       },
       order_meta: orderMeta,
-      order_note: `Recharge ${pkg.coins} coins (${audience})`,
+      order_note: `Recharge ${pkg.coins} coins ($${pkg.price} USD) (${audience})`,
       order_tags: {
         userId: userId.toString(),
         packageId: packageId.toString(),
         audience,
+        usdPrice: String(pkg.price),
+        exchangeRate: String(usdToInrRate),
       },
     };
 
@@ -1285,7 +1314,7 @@ export class CoinService {
             amount: pkg.coins,
             type: 'recharge',
             paymentGateway: 'Cashfree',
-            description: `Recharged with ${pkg.name} via Cashfree (${audience})`,
+            description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Cashfree (${audience})`,
             transactionId: orderId,
           },
         ],
