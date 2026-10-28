@@ -1,5 +1,6 @@
 import { Service } from 'typedi';
 import Level from '../../models/Level';
+import { DEFAULT_LEVEL_DEFINITIONS } from '../../seeders/LevelSeeder';
 
 function getLevelRangeText(levelNumber: number): string {
   if (levelNumber === 0) return '0';
@@ -13,33 +14,33 @@ function getLevelRangeText(levelNumber: number): string {
   return '1-9';
 }
 
-const DEFAULT_LEVEL_TIERS = [
-  { levelNumber: 1, minCoins: 0, maxCoins: 20000, color: '#FF4B8A', rangeText: '1-9', levelRange: '1-9' },
-  { levelNumber: 10, minCoins: 20000, maxCoins: 100000, color: '#6A85F1', rangeText: '10-19', levelRange: '10-19' },
-  { levelNumber: 20, minCoins: 100000, maxCoins: 300000, color: '#FFD700', rangeText: '20-29', levelRange: '20-29' },
-  { levelNumber: 30, minCoins: 300000, maxCoins: 700000, color: '#7C6FCD', rangeText: '30-39', levelRange: '30-39' },
-  { levelNumber: 40, minCoins: 700000, maxCoins: 1500000, color: '#E040FB', rangeText: '40-49', levelRange: '40-49' },
-  { levelNumber: 50, minCoins: 1500000, maxCoins: 3000000, color: '#FF5722', rangeText: '50-59', levelRange: '50-59' },
-  { levelNumber: 60, minCoins: 3000000, maxCoins: 6000000, color: '#00E676', rangeText: '60-69', levelRange: '60-69' },
-  { levelNumber: 70, minCoins: 6000000, maxCoins: 10000000, color: '#00B0FF', rangeText: '70-79', levelRange: '70-79' },
-  { levelNumber: 80, minCoins: 10000000, maxCoins: 16000000, color: '#651FFF', rangeText: '80-89', levelRange: '80-89' },
-  { levelNumber: 90, minCoins: 16000000, maxCoins: 25000000, color: '#FF1744', rangeText: '90-99', levelRange: '90-99' },
-  { levelNumber: 100, minCoins: 25000000, maxCoins: 50000000, color: '#FFD700', rangeText: '100', levelRange: '100' },
-];
+export function formatLevelImageUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  const appUrl = (process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return `${appUrl}${cleanPath}`;
+}
 
 function getDefaultLevels(type: 'rich' | 'charm') {
-  return DEFAULT_LEVEL_TIERS.map(tier => ({
-    _id: `default_${type}_${tier.levelNumber}`,
+  const matchingDefs = DEFAULT_LEVEL_DEFINITIONS.filter(d => d.type === type);
+  return matchingDefs.map(def => ({
+    _id: `default_${type}_${def.levelNumber}`,
     type,
-    levelNumber: tier.levelNumber,
-    name: `${type === 'rich' ? 'Wealth' : 'Charm'} ${tier.rangeText}`,
-    minCoins: tier.minCoins,
-    maxCoins: tier.maxCoins,
-    color: tier.color,
+    levelNumber: def.levelNumber,
+    name: def.name,
+    minCoins: def.minCoins,
+    maxCoins: def.maxCoins,
+    color: def.color,
+    secondaryColor: def.secondaryColor,
     image: null,
-    imageUrl: null,
-    levelRange: tier.levelRange,
-    rangeText: tier.rangeText,
+    imageUrl: formatLevelImageUrl(`/public/uploads/levels/${def.iconFilename}`),
+    levelRange: def.rangeText,
+    rangeText: def.rangeText,
+    badgeType: def.badgeType || (def.iconFilename.endsWith('.svga') ? 'svga' : 'image'),
   }));
 }
 
@@ -77,14 +78,16 @@ export class LevelService {
         currentLevel: {
           levelNumber: 0,
           type,
-          name: `${type === 'rich' ? 'Rich' : 'Charm'} Level 0`,
+          name: `${type === 'rich' ? 'Wealth' : 'Charm'} 0`,
           minCoins: 0,
-          maxCoins: 5000,
+          maxCoins: 0,
           color: defaultColor,
+          secondaryColor: defaultColor,
           image: null,
           imageUrl: null,
           levelRange: '0',
           rangeText: '0',
+          badgeType: 'image',
         },
         nextLevel: null,
         progressPercentage: 0,
@@ -123,16 +126,20 @@ export class LevelService {
     progressPercentage = Math.min(100, Math.max(0, Number(progressPercentage.toFixed(2))));
 
     const currentObj = currentLevel.toObject ? currentLevel.toObject() : { ...currentLevel };
-    currentObj.levelRange = getLevelRangeText(currentObj.levelNumber);
-    currentObj.rangeText = getLevelRangeText(currentObj.levelNumber);
-    currentObj.imageUrl = currentObj.image?.url || (typeof currentObj.image === 'string' ? currentObj.image : null);
+    currentObj.levelRange = currentObj.rangeText || currentObj.levelRange || getLevelRangeText(currentObj.levelNumber);
+    currentObj.rangeText = currentObj.rangeText || getLevelRangeText(currentObj.levelNumber);
+    const rawCurrentUrl = currentObj.image?.url || (typeof currentObj.image === 'string' ? currentObj.image : currentObj.imageUrl);
+    currentObj.imageUrl = formatLevelImageUrl(rawCurrentUrl);
+    currentObj.badgeType = currentObj.badgeType || (currentObj.imageUrl?.endsWith('.svga') ? 'svga' : 'image');
 
     let nextObj = null;
     if (nextLevel) {
       nextObj = nextLevel.toObject ? nextLevel.toObject() : { ...nextLevel };
-      nextObj.levelRange = getLevelRangeText(nextObj.levelNumber);
-      nextObj.rangeText = getLevelRangeText(nextObj.levelNumber);
-      nextObj.imageUrl = nextObj.image?.url || (typeof nextObj.image === 'string' ? nextObj.image : null);
+      nextObj.levelRange = nextObj.rangeText || nextObj.levelRange || getLevelRangeText(nextObj.levelNumber);
+      nextObj.rangeText = nextObj.rangeText || getLevelRangeText(nextObj.levelNumber);
+      const rawNextUrl = nextObj.image?.url || (typeof nextObj.image === 'string' ? nextObj.image : nextObj.imageUrl);
+      nextObj.imageUrl = formatLevelImageUrl(rawNextUrl);
+      nextObj.badgeType = nextObj.badgeType || (nextObj.imageUrl?.endsWith('.svga') ? 'svga' : 'image');
     }
 
     return {
@@ -157,9 +164,11 @@ export class LevelService {
 
     return levels.map(l => {
       const obj = l.toObject ? l.toObject() : { ...l };
-      obj.levelRange = getLevelRangeText(obj.levelNumber);
-      obj.rangeText = getLevelRangeText(obj.levelNumber);
-      obj.imageUrl = obj.image?.url || (typeof obj.image === 'string' ? obj.image : null);
+      obj.levelRange = obj.rangeText || obj.levelRange || getLevelRangeText(obj.levelNumber);
+      obj.rangeText = obj.rangeText || getLevelRangeText(obj.levelNumber);
+      const rawUrl = obj.image?.url || (typeof obj.image === 'string' ? obj.image : obj.imageUrl);
+      obj.imageUrl = formatLevelImageUrl(rawUrl);
+      obj.badgeType = obj.badgeType || (obj.imageUrl?.endsWith('.svga') ? 'svga' : 'image');
       return obj;
     });
   }

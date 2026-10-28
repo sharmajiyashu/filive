@@ -98,10 +98,10 @@ export class PayoutRequestService {
       }
     }
 
-    // 5. Currency & Fee Calculations
+    // 5. Currency & Fee Calculations (All base limits evaluated in pure USD)
     const beansPerUsd = Number((await appSettingService.getSettingValue('beans_per_usd')) || 10000);
     const usdToInrRate = Number((await appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0);
-    const currency = (data.currency || 'INR').toUpperCase();
+    const currency = (data.currency || 'USD').toUpperCase();
 
     let rate = 1.0;
     if (currency === 'INR') {
@@ -110,34 +110,46 @@ export class PayoutRequestService {
       rate = 1.0;
     } else {
       const countryDoc = await Country.findOne({ currencyCode: currency, isActive: true });
-      rate = countryDoc && countryDoc.exchangeRate ? Number(countryDoc.exchangeRate) : usdToInrRate;
+      rate = countryDoc && countryDoc.exchangeRate ? Number(countryDoc.exchangeRate) : 1.0;
     }
 
-    const usdGross = beansToDebit / beansPerUsd;
+    // Exact USD gross value from debited beans
+    const usdGross = Number((beansToDebit / beansPerUsd).toFixed(4));
     const grossAmount = Number((usdGross * rate).toFixed(2));
+
+    // Min and Max Amount validation based on admin USD definitions
+    const minUsd = Number(method.minAmount || 0);
+    const maxUsd = Number(method.maxAmount || 0);
+
+    if (minUsd > 0 && usdGross < minUsd) {
+      const minInCurrency = (minUsd * rate).toFixed(2);
+      const minBeans = Math.ceil(minUsd * beansPerUsd);
+      throw new Error(`Minimum payout amount for ${method.name} is $${minUsd} USD (approx ${minInCurrency} ${currency} or ${minBeans.toLocaleString()} Beans)`);
+    }
+
+    if (maxUsd > 0 && usdGross > maxUsd) {
+      const maxInCurrency = (maxUsd * rate).toFixed(2);
+      const maxBeans = Math.floor(maxUsd * beansPerUsd);
+      throw new Error(`Maximum payout amount for ${method.name} is $${maxUsd} USD (approx ${maxInCurrency} ${currency} or ${maxBeans.toLocaleString()} Beans)`);
+    }
 
     let feeAmount = 0;
     let feePercent = 0;
+    let feeInUsd = 0;
 
     if (method.feeType === 'fixed') {
-      const fixedFeeInUsd = Number(method.feeValue || 0);
-      const fixedFeeInCurrency = currency === 'USD' ? fixedFeeInUsd : Number((fixedFeeInUsd * rate).toFixed(2));
-      feeAmount = Math.min(grossAmount, fixedFeeInCurrency);
+      feeInUsd = Number(method.feeValue || 0);
+      feeAmount = currency === 'USD' ? feeInUsd : Number((feeInUsd * rate).toFixed(2));
+      feeAmount = Math.min(grossAmount, feeAmount);
       feePercent = grossAmount > 0 ? Number(((feeAmount / grossAmount) * 100).toFixed(2)) : 0;
     } else {
       feePercent = Number(method.feeValue !== undefined ? method.feeValue : (method.feePercent || 0));
       feeAmount = Number(((grossAmount * feePercent) / 100).toFixed(2));
+      feeInUsd = Number(((usdGross * feePercent) / 100).toFixed(2));
     }
 
     const netAmount = Number(Math.max(0, grossAmount - feeAmount).toFixed(2));
-
-    // Amount validation against min/max limits (evaluated on gross or net)
-    if (method.minAmount && grossAmount < method.minAmount) {
-      throw new Error(`Minimum payout amount for ${method.name} is ${method.minAmount} ${currency}`);
-    }
-    if (method.maxAmount && grossAmount > method.maxAmount) {
-      throw new Error(`Maximum payout amount for ${method.name} is ${method.maxAmount} ${currency}`);
-    }
+    const usdNetAmount = Number(Math.max(0, usdGross - feeInUsd).toFixed(2));
 
     // 6. Atomic Debit from User Balance
     const updatedUser = await User.findOneAndUpdate(
@@ -168,6 +180,9 @@ export class PayoutRequestService {
       feeAmount: feeAmount,
       feePercent: feePercent,
       currency: currency,
+      usdAmount: usdNetAmount,
+      usdGrossAmount: usdGross,
+      exchangeRate: rate,
       coins: beansToDebit,
       status: 'pending',
     });

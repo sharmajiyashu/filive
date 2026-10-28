@@ -20,6 +20,9 @@ export interface IPayoutRequest extends Document {
   feeAmount?: number; // Service fee amount deducted
   feePercent?: number; // Fee percentage applied
   currency: string;
+  usdAmount?: number; // Net amount in USD
+  usdGrossAmount?: number; // Gross amount in USD
+  exchangeRate?: number;
   coins?: number;
   status: 'pending' | 'approved' | 'rejected' | 'processing';
   adminNote?: string;
@@ -54,6 +57,9 @@ const PayoutRequestSchema: Schema = new Schema(
     feeAmount: { type: Number, default: 0 },
     feePercent: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },
+    usdAmount: { type: Number, default: 0 },
+    usdGrossAmount: { type: Number, default: 0 },
+    exchangeRate: { type: Number, default: 1 },
     coins: { type: Number, default: 0 },
     status: {
       type: String,

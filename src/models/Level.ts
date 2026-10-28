@@ -7,11 +7,13 @@ export interface ILevel extends Document {
   minCoins: number;
   maxCoins: number;
   color: string;
+  secondaryColor?: string;
   image?: mongoose.Types.ObjectId | any;
   media?: any;
   imageUrl?: string | null;
   rangeText?: string;
   levelRange?: string;
+  badgeType?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,9 +26,11 @@ const LevelSchema: Schema = new Schema(
     minCoins: { type: Number, required: true },
     maxCoins: { type: Number, required: true },
     color: { type: String, required: true },
+    secondaryColor: { type: String },
     image: { type: Schema.Types.ObjectId, ref: 'Media' },
     rangeText: { type: String },
     levelRange: { type: String },
+    badgeType: { type: String },
   },
   {
     timestamps: true,
