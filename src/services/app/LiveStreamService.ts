@@ -1450,7 +1450,9 @@ export class LiveStreamService {
                 { path: 'countryId' },
                 ...ACTIVE_STORE_POPULATE
               ]
-            });
+            })
+            .populate(this.seatPopulate())
+            .populate('roomPhoto');
         }
 
         // 2. Fetch followed rooms (excluding user's own room)
@@ -1492,6 +1494,8 @@ export class LiveStreamService {
                 ...ACTIVE_STORE_POPULATE
               ]
             })
+            .populate(this.seatPopulate())
+            .populate('roomPhoto')
             .sort({ status: -1, viewerCount: -1, createdAt: -1 })
             .skip(Math.max(0, followedSkip))
             .limit(followedLimit);
@@ -1631,6 +1635,8 @@ export class LiveStreamService {
           ...ACTIVE_STORE_POPULATE
         ]
       })
+      .populate(this.seatPopulate())
+      .populate('roomPhoto')
       .sort({ status: -1, viewerCount: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -1919,6 +1925,20 @@ export class LiveStreamService {
 
       roomObj.viewerCount = roomObj.viewerCount || 0;
       roomObj.totalMember = roomObj.roomFollowerCount || roomObj.viewerCount || 0;
+      roomObj.maxSeats = roomObj.maxSeats || (Array.isArray(roomObj.seats) && roomObj.seats.length > 0 ? roomObj.seats.length : 20);
+      if (Array.isArray(roomObj.seats)) {
+        roomObj.seats = roomObj.seats.map((seat: any) => {
+          const s = seat?.toObject ? seat.toObject() : { ...seat };
+          if (s.userId && typeof s.userId === 'object') {
+            const u = s.userId.toObject ? s.userId.toObject() : { ...s.userId };
+            if (u.profileImage && typeof u.profileImage === 'object' && u.profileImage.url) {
+              u.profileImageUrl = { url: u.profileImage.url };
+            }
+            s.userId = u;
+          }
+          return s;
+        });
+      }
       roomObj.isMine = currentUserId && roomObj.hostId?._id ? roomObj.hostId._id.toString() === currentUserId.toString() : false;
       roomObj.isFollowingRoom = false;
       return roomObj;
