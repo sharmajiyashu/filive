@@ -6,6 +6,7 @@ import Message, { IAgencyHostInviteMetadata, toInviteFlag } from '../../models/M
 import User from '../../models/User';
 import Follow from '../../models/Follow';
 import Block from '../../models/Block';
+import Call from '../../models/Call';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import AppLogger from '../../api/loaders/logger';
 
@@ -303,6 +304,33 @@ export class ChatService {
       }
     }
 
+    const allParticipantIds: mongoose.Types.ObjectId[] = [];
+    chats.forEach((c: any) => {
+      c.participants?.forEach((p: any) => {
+        const pId = p.userId?._id || p.userId;
+        if (pId && mongoose.Types.ObjectId.isValid(pId)) {
+          allParticipantIds.push(new mongoose.Types.ObjectId(pId));
+        }
+      });
+    });
+
+    const ringTimeout = new Date(Date.now() - 45 * 1000);
+    const staleAcceptedTimeout = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const activeCalls = await Call.find({
+      $or: [
+        { callerId: { $in: allParticipantIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { receiverId: { $in: allParticipantIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { callerId: { $in: allParticipantIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
+        { receiverId: { $in: allParticipantIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
+      ],
+    }).select('callerId receiverId status');
+
+    const busyUserSet = new Set<string>();
+    activeCalls.forEach((call: any) => {
+      if (call.callerId) busyUserSet.add(call.callerId.toString());
+      if (call.receiverId) busyUserSet.add(call.receiverId.toString());
+    });
+
     let data = await Promise.all(
       chats.map(async (chat) => {
         const lastMessage = await Message.findOne({ chatId: chat._id, deletedAt: { $exists: false } })
@@ -345,7 +373,8 @@ export class ChatService {
         }
 
         let isOnline = false;
-        let userStatus: 'online' | 'offline' = 'offline';
+        let isBusy = false;
+        let userStatus: 'online' | 'busy' | 'offline' = 'offline';
         let otherParticipantDetails = null;
         let otherParticipantIdStr = '';
 
@@ -363,12 +392,14 @@ export class ChatService {
             : false;
 
           isOnline = socketOnline || recentLogin;
-          userStatus = isOnline ? 'online' : 'offline';
+          isBusy = busyUserSet.has(otherParticipantIdStr);
+          userStatus = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
 
           otherParticipantDetails = {
             id: otherParticipantIdStr,
             ...otherUser,
             isOnline,
+            isBusy,
             status: userStatus,
             userStatus
           };
@@ -442,12 +473,16 @@ export class ChatService {
               }
             }
 
+            const pBusy = busyUserSet.has(pId);
+            const pStatus = pBusy ? 'busy' : (pOnline ? 'online' : 'offline');
+
             pObj.userId = {
               ...pObj.userId,
               profileImage: userProfileImg,
               isOnline: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? true : pOnline,
-              status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline'),
-              userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline')
+              isBusy: pBusy,
+              status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : pStatus,
+              userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : pStatus
             };
           }
           return pObj;
@@ -779,6 +814,28 @@ export class ChatService {
       (p) => p.userId && (p.userId._id ? p.userId._id.toString() : p.userId.toString()) === userId
     );
 
+    const singleParticipantIds = chat.participants
+      .map((p: any) => p.userId?._id || p.userId)
+      .filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))
+      .map((id: any) => new mongoose.Types.ObjectId(id));
+
+    const ringTimeout = new Date(Date.now() - 45 * 1000);
+    const staleAcceptedTimeout = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const activeSingleCalls = await Call.find({
+      $or: [
+        { callerId: { $in: singleParticipantIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { receiverId: { $in: singleParticipantIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { callerId: { $in: singleParticipantIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
+        { receiverId: { $in: singleParticipantIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
+      ],
+    }).select('callerId receiverId status');
+
+    const singleBusySet = new Set<string>();
+    activeSingleCalls.forEach((call: any) => {
+      if (call.callerId) singleBusySet.add(call.callerId.toString());
+      if (call.receiverId) singleBusySet.add(call.receiverId.toString());
+    });
+
     const formattedParticipants = chat.participants.map((p: any) => {
       const pObj = p.toObject ? p.toObject() : p;
       if (pObj.userId && typeof pObj.userId === 'object') {
@@ -786,6 +843,8 @@ export class ChatService {
         const pSocketOnline = (io && pId) ? (io.sockets?.adapter?.rooms?.get(`user_${pId}`)?.size || 0) > 0 : false;
         const pRecentLogin = pObj.userId.lastLoginAt ? new Date(pObj.userId.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
         const pOnline = pSocketOnline || pRecentLogin;
+        const pBusy = singleBusySet.has(pId);
+        const pStatus = pBusy ? 'busy' : (pOnline ? 'online' : 'offline');
 
         let userProfileImg = pObj.userId.profileImage;
         if (!userProfileImg) {
@@ -800,8 +859,9 @@ export class ChatService {
           ...pObj.userId,
           profileImage: userProfileImg,
           isOnline: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? true : pOnline,
-          status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline'),
-          userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : (pOnline ? 'online' : 'offline')
+          isBusy: pBusy,
+          status: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : pStatus,
+          userStatus: (systemUserIdStr && pId === systemUserIdStr) || (supportUserIdStr && pId === supportUserIdStr) ? 'online' : pStatus
         };
       }
       return pObj;

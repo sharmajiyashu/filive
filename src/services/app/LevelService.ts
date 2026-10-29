@@ -20,7 +20,7 @@ export function formatLevelImageUrl(rawUrl?: string | null): string | null {
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
-  const appUrl = (process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const appUrl = (process.env.APP_URL || process.env.BACKEND_URL || 'https://filiva-node.creatamax.in').replace(/\/$/, '');
   const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   return `${appUrl}${cleanPath}`;
 }

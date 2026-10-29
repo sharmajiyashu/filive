@@ -117,10 +117,15 @@ export class LiveStreamService {
       throw new Error('You are banned from live streaming');
     }
 
-    // Live stream: Female only. Party room: both Male and Female can host.
+    // Live stream: Female only and video verification approved. Party room: both Male and Female can host.
     const hostGender = (hostUser.gender || '').toLowerCase();
-    if (normalizedRoomType === 'livestream' && hostGender !== 'female') {
-      throw new Error('Go Live streaming feature is restricted to Female hosts only.');
+    if (normalizedRoomType === 'livestream') {
+      if (hostGender !== 'female') {
+        throw new Error('Go Live streaming feature is restricted to Female hosts only.');
+      }
+      if (hostUser.videoVerificationStatus !== 'approved') {
+        throw new Error('You must complete video verification and be approved before starting a live stream.');
+      }
     }
 
     // Fetch or create RoomSetting
@@ -1597,6 +1602,24 @@ export class LiveStreamService {
       query.status = 'live';
     }
 
+    // For livestream feed (home page): strictly approved video-verified hosts only
+    if (query.roomType === 'livestream') {
+      const verifiedHosts = await User.find({
+        gender: { $regex: /^female$/i },
+        videoVerificationStatus: 'approved',
+        status: { $ne: 'banned' },
+        isBanned: { $ne: true }
+      }).select('_id').lean();
+      const verifiedHostIds = verifiedHosts.map(h => h._id);
+
+      if (query.hostId && query.hostId.$in) {
+        const existingHostIds = query.hostId.$in.map((id: any) => id.toString());
+        query.hostId = { $in: verifiedHostIds.filter(v => existingHostIds.includes(v.toString())) };
+      } else {
+        query.hostId = { $in: verifiedHostIds };
+      }
+    }
+
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams with query=${JSON.stringify(query)}...`);
     const streams = await Room.find(query)
       .populate({
@@ -1860,6 +1883,46 @@ export class LiveStreamService {
 
   public async buildLiveRoomPayload(room: any, currentUserId?: string, isList: boolean = false) {
     if (!room) return room;
+
+    if (isList) {
+      const roomObj = room.toObject ? room.toObject() : { ...room };
+      roomObj.roomId = room.roomId ?? roomObj.roomId ?? null;
+      roomObj.room_id = roomObj.roomId ?? null;
+
+      if (roomObj.hostId) {
+        let host = roomObj.hostId.toObject ? roomObj.hostId.toObject() : { ...roomObj.hostId };
+        const hostIdStr = host._id ? host._id.toString() : (typeof host === 'string' ? host : '');
+        const wealthCoins = Number(host.wealthCoins ?? host.coins ?? 0);
+        const charmCoins = Number(host.charmCoins ?? 0);
+        const richLevelNum = Math.max(1, Math.floor(Math.sqrt(wealthCoins / 1000)) || 1);
+        const isOnline = host.lastLoginAt
+          ? new Date(host.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
+          : false;
+
+        host.id = host._id || null;
+        host.userId = host.userId ?? null;
+        host.name = host.name ?? null;
+        host.profileImage = host.profileImage ?? null;
+        host.level = richLevelNum;
+        host.levelNumber = richLevelNum;
+        host.wealthLevel = richLevelNum;
+        host.charmLevel = Math.max(1, Math.floor(Math.sqrt(charmCoins / 1000)) || 1);
+        host.isOnline = isOnline;
+        host.status = roomObj.status === 'live' ? 'live' : (isOnline ? 'online' : 'offline');
+
+        if (host.countryId && typeof host.countryId === 'object') {
+          host.country = host.countryId.name || host.country || '';
+          host.countryFlag = host.countryId.flag || '';
+        }
+        roomObj.hostId = host;
+      }
+
+      roomObj.viewerCount = roomObj.viewerCount || 0;
+      roomObj.totalMember = roomObj.roomFollowerCount || roomObj.viewerCount || 0;
+      roomObj.isMine = currentUserId && roomObj.hostId?._id ? roomObj.hostId._id.toString() === currentUserId.toString() : false;
+      roomObj.isFollowingRoom = false;
+      return roomObj;
+    }
 
     await this.ensureRoomId(room);
 

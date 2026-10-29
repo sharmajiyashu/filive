@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export const BANNER_TYPES = ['splash', 'home', 'gift', 'game'] as const;
+export const BANNER_TYPES = ['splash', 'home', 'party', 'gift', 'game'] as const;
 export type BannerType = (typeof BANNER_TYPES)[number];
 
 export interface IBanner extends Document {

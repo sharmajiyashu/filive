@@ -180,7 +180,6 @@ export class UserService {
     activeRooms.forEach((room: any) => {
       if (room.hostId) {
         liveUserSet.add(room.hostId.toString());
-        busyUserSet.add(room.hostId.toString());
       }
     });
 
@@ -542,8 +541,29 @@ export class UserService {
     })
       .select('name mediaId type participants createdAt')
     const { referralCode } = await ensureUserReferralCode(user);
-    const isOnline = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-    const userStatus = activeLive ? 'live' : (isOnline ? 'online' : 'offline');
+
+    let ioInstance: any;
+    try {
+      ioInstance = Container.get('socket');
+    } catch (_) { }
+
+    const uidStr = user._id.toString();
+    const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
+    const isOnline = hasSocket || (user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false);
+
+    // User is busy ONLY if currently on an active call
+    const ringTimeout = new Date(Date.now() - 45 * 1000);
+    const staleAcceptedTimeout = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const activeCall = await Call.findOne({
+      $or: [
+        { callerId: user._id, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { receiverId: user._id, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+        { callerId: user._id, status: 'initiated', createdAt: { $gte: ringTimeout } },
+        { receiverId: user._id, status: 'initiated', createdAt: { $gte: ringTimeout } },
+      ]
+    }).select('_id');
+    const isBusy = !!activeCall;
+    const userStatus = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
 
     const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
@@ -559,6 +579,7 @@ export class UserService {
         referralCode,
         referCode: referralCode,
         isOnline,
+        isBusy,
         status: userStatus,
         weeklyRank,
         voiceCallPrice,
@@ -596,6 +617,7 @@ export class UserService {
         isBlock
       },
       isOnline,
+      isBusy,
       status: userStatus,
       weeklyRank,
       career: user.careerId,

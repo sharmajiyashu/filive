@@ -8,12 +8,13 @@ function isBannerType(value: string | undefined): value is BannerType {
 @Service()
 export class BannerService {
   public async getSummary() {
-    const [total, active, inactive, splash, home, gift, game] = await Promise.all([
+    const [total, active, inactive, splash, home, party, gift, game] = await Promise.all([
       Banner.countDocuments({}),
       Banner.countDocuments({ isActive: true }),
       Banner.countDocuments({ isActive: false }),
       Banner.countDocuments({ type: 'splash' }),
       Banner.countDocuments({ type: 'home' }),
+      Banner.countDocuments({ type: 'party' }),
       Banner.countDocuments({ type: 'gift' }),
       Banner.countDocuments({ type: 'game' }),
     ]);
@@ -24,6 +25,7 @@ export class BannerService {
       inactiveBanners: inactive,
       splashBanners: splash,
       homeBanners: home,
+      partyBanners: party,
       giftBanners: gift,
       gameBanners: game,
     };
@@ -137,9 +139,51 @@ export class BannerService {
     const query: Record<string, unknown> = { isActive: true };
     if (isBannerType(type)) query.type = type;
 
-    return Banner.find(query)
+    const banners = await Banner.find(query)
       .populate('image')
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean();
+
+    if (banners && banners.length > 0) {
+      return banners;
+    }
+
+    // Fallback to AppSetting if specific type requested and none configured in Banner collection
+    try {
+      const AppSetting = (await import('../../models/AppSetting')).default;
+      if (type === 'home') {
+        const doc = await AppSetting.findOne({ key: 'home_banners' }).lean();
+        const single = await AppSetting.findOne({ key: 'home_banner_image_url' }).lean();
+        const list = Array.isArray(doc?.value) ? doc!.value : (single?.value ? [single.value] : []);
+        if (list.length > 0) {
+          return list.map((url: string, idx: number) => ({
+            _id: `home_setting_${idx}`,
+            type: 'home',
+            image: { url },
+            redirectUrl: '',
+            route: '',
+            isActive: true,
+            sortOrder: idx + 1,
+          }));
+        }
+      } else if (type === 'party') {
+        const doc = await AppSetting.findOne({ key: 'party_room_banners' }).lean();
+        const single = await AppSetting.findOne({ key: 'party_room_banner_image_url' }).lean();
+        const list = Array.isArray(doc?.value) ? doc!.value : (single?.value ? [single.value] : []);
+        if (list.length > 0) {
+          return list.map((url: string, idx: number) => ({
+            _id: `party_setting_${idx}`,
+            type: 'party',
+            image: { url },
+            redirectUrl: '',
+            route: '',
+            isActive: true,
+            sortOrder: idx + 1,
+          }));
+        }
+      }
+    } catch (_) {}
+
+    return banners;
   }
 }

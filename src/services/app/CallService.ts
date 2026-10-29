@@ -911,19 +911,29 @@ export class CallService {
     const ninIds = [...excludedUserIds, new mongoose.Types.ObjectId(currentUserId)];
     query._id = { $nin: ninIds };
 
+    const total = await User.countDocuments(query);
+    const skip = (page - 1) * limit;
+
     const hosts = await User.find(query)
       .select('userId name profileImage email bio isPremium gender country countryId nationality enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute dob lastLoginAt createdAt')
       .populate('profileImage')
-      .populate('countryId');
+      .populate('countryId')
+      .sort({ lastLoginAt: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     const hostObjectIds = hosts.map((h: any) => h._id);
 
+    const ringTimeout = new Date(Date.now() - 45 * 1000);
+    const staleAcceptedTimeout = new Date(Date.now() - 4 * 60 * 60 * 1000);
+
     const [activeCalls, activeRooms] = await Promise.all([
       Call.find({
-        status: { $in: ['initiated', 'accepted'] },
         $or: [
-          { callerId: { $in: hostObjectIds } },
-          { receiverId: { $in: hostObjectIds } },
+          { callerId: { $in: hostObjectIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+          { receiverId: { $in: hostObjectIds }, status: 'accepted', createdAt: { $gte: staleAcceptedTimeout } },
+          { callerId: { $in: hostObjectIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
+          { receiverId: { $in: hostObjectIds }, status: 'initiated', createdAt: { $gte: ringTimeout } },
         ],
       }).select('callerId receiverId status'),
       Room.find({
@@ -943,7 +953,6 @@ export class CallService {
     activeRooms.forEach((room: any) => {
       if (room.hostId) {
         liveHostSet.add(room.hostId.toString());
-        busyHostSet.add(room.hostId.toString());
       }
     });
 
@@ -989,15 +998,11 @@ export class CallService {
       if (a.status === 'busy' && b.status !== 'busy') return 1;
       if (b.status === 'busy' && a.status !== 'busy') return -1;
       if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
-      return Math.random() - 0.5;
+      return 0;
     });
 
-    const total = formattedHosts.length;
-    const skip = (page - 1) * limit;
-    const paged = formattedHosts.slice(skip, skip + limit);
-
     return {
-      data: paged,
+      data: formattedHosts,
       total,
       page,
       limit,

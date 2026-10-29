@@ -319,6 +319,17 @@ export async function seedLevels() {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
+    // 1. Clean up invalid / legacy levels (e.g. leftover 2, 3, 4 that cause corrupt ranges in admin & app)
+    const validRichNumbers = DEFAULT_LEVEL_DEFINITIONS.filter(d => d.type === 'rich').map(d => d.levelNumber);
+    const validCharmNumbers = DEFAULT_LEVEL_DEFINITIONS.filter(d => d.type === 'charm').map(d => d.levelNumber);
+    await Level.deleteMany({
+      $or: [
+        { type: 'rich', levelNumber: { $nin: validRichNumbers } },
+        { type: 'charm', levelNumber: { $nin: validCharmNumbers } },
+        { type: { $nin: ['rich', 'charm'] } },
+      ],
+    });
+
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
       cloudinary.config({
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -327,11 +338,13 @@ export async function seedLevels() {
       });
     }
 
+    const baseUrl = (process.env.APP_URL || process.env.BACKEND_URL || 'https://filiva-node.creatamax.in').replace(/\/$/, '');
+
     for (const lvl of DEFAULT_LEVEL_DEFINITIONS) {
       const filename = lvl.iconFilename;
       const filePath = path.join(uploadDir, filename);
 
-      let secureUrl = `/public/uploads/levels/${filename}`;
+      let secureUrl = `${baseUrl}/public/uploads/levels/${filename}`;
       const isSvga = filename.endsWith('.svga');
       const mimeType = isSvga ? 'application/svga' : (filename.endsWith('.png') ? 'image/png' : 'image/jpeg');
 
@@ -349,7 +362,7 @@ export async function seedLevels() {
             secureUrl = uploadResult.secure_url;
           }
         } catch (uploadErr) {
-          // Cloudinary fallback to local URL
+          // Cloudinary fallback to baseUrl
         }
       }
 
@@ -361,6 +374,10 @@ export async function seedLevels() {
           mimetype: mimeType,
           type: isSvga ? 'svga' : 'image',
         });
+      } else if (media.mimetype !== mimeType || media.type !== (isSvga ? 'svga' : 'image')) {
+        media.mimetype = mimeType;
+        media.type = isSvga ? 'svga' : 'image';
+        await media.save();
       }
 
       const levelData = {
