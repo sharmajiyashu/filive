@@ -138,10 +138,17 @@ export class ReportService {
     postId?: string;
     postMediaUrl?: string;
     postCaption?: string;
+    storyId?: string;
+    storyMediaUrl?: string;
+    storyCaption?: string;
     roomId?: string;
     roomTitle?: string;
+    roomType?: string;
+    roomChannelName?: string;
     liveHostId?: string;
     messageId?: string;
+    messageText?: string;
+    messageSenderId?: string;
     chatTranscript?: any[];
     mediaUrls?: string[];
     priority?: ReportPriority;
@@ -151,34 +158,111 @@ export class ReportService {
 
     const reportId = await this.generateReportId();
 
+    let resolvedReportedUserId = data.reportedUserId;
+    let storyMediaUrl = data.storyMediaUrl;
+    let storyCaption = data.storyCaption;
+    let roomTitle = data.roomTitle;
+    let roomType = data.roomType;
+    let roomChannelName = data.roomChannelName;
+    let liveHostId = data.liveHostId;
+    let messageText = data.messageText;
+    let messageSenderId = data.messageSenderId;
+    let postMediaUrl = data.postMediaUrl;
+    let postCaption = data.postCaption;
+
+    // Auto-enrich Story details if storyId or postId is provided
+    const targetStoryId = data.storyId || (data.reportType === 'story' ? (data.postId || data.targetId) : undefined);
+    if (targetStoryId && mongoose.Types.ObjectId.isValid(targetStoryId)) {
+      try {
+        const Story = (await import('../../models/Story')).default;
+        const storyDoc = await Story.findById(targetStoryId).populate('image video userId').lean();
+        if (storyDoc) {
+          if (!resolvedReportedUserId && (storyDoc as any).userId?._id) {
+            resolvedReportedUserId = (storyDoc as any).userId._id.toString();
+          }
+          if (!storyMediaUrl) {
+            storyMediaUrl = (storyDoc as any).video?.url || (storyDoc as any).image?.url || (storyDoc as any).mediaUrl || '';
+          }
+          if (!storyCaption) {
+            storyCaption = (storyDoc as any).description || (storyDoc as any).caption || (storyDoc as any).title || '';
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Auto-enrich Room details if roomId is provided
+    if (data.roomId && mongoose.Types.ObjectId.isValid(data.roomId)) {
+      try {
+        const Room = (await import('../../models/Room')).default;
+        const roomDoc = await Room.findById(data.roomId).lean();
+        if (roomDoc) {
+          if (!resolvedReportedUserId && (roomDoc as any).hostId) {
+            resolvedReportedUserId = (roomDoc as any).hostId.toString();
+          }
+          if (!roomTitle) roomTitle = (roomDoc as any).title || '';
+          if (!roomType) roomType = (roomDoc as any).roomType || '';
+          if (!roomChannelName) roomChannelName = (roomDoc as any).channelName || '';
+          if (!liveHostId && (roomDoc as any).hostId) liveHostId = (roomDoc as any).hostId.toString();
+        }
+      } catch (_) {}
+    }
+
+    // Auto-enrich Message details if messageId is provided
+    if (data.messageId && mongoose.Types.ObjectId.isValid(data.messageId)) {
+      try {
+        const Message = (await import('../../models/Message')).default;
+        const msgDoc = await Message.findById(data.messageId).lean();
+        if (msgDoc) {
+          if (!resolvedReportedUserId && (msgDoc as any).senderId) {
+            resolvedReportedUserId = (msgDoc as any).senderId.toString();
+          }
+          if (!messageText) messageText = (msgDoc as any).text || '';
+          if (!messageSenderId && (msgDoc as any).senderId) {
+            messageSenderId = (msgDoc as any).senderId.toString();
+          }
+        }
+      } catch (_) {}
+    }
+
     // Determine complaint group key to identify duplicates / multiple complaints on same target
     let complaintGroupKey = '';
-    if (data.reportType === 'post' && (data.postId || data.targetId)) {
+    if (data.reportType === 'story' && targetStoryId) {
+      complaintGroupKey = `story:${targetStoryId}`;
+    } else if (data.reportType === 'post' && (data.postId || data.targetId)) {
       complaintGroupKey = `post:${data.postId || data.targetId}`;
-    } else if (data.reportType === 'live_room' && (data.roomId || data.liveHostId || data.targetId)) {
-      complaintGroupKey = `room:${data.roomId || data.liveHostId || data.targetId}`;
-    } else if (data.reportType === 'chat' && data.reportedUserId) {
-      complaintGroupKey = `chat:${data.reportedUserId}`;
-    } else if (data.reportedUserId) {
-      complaintGroupKey = `user:${data.reportedUserId}`;
+    } else if ((data.reportType === 'party_room' || data.reportType === 'live_room') && (data.roomId || liveHostId || data.targetId)) {
+      complaintGroupKey = `room:${data.roomId || liveHostId || data.targetId}`;
+    } else if ((data.reportType === 'message' || data.reportType === 'chat') && data.messageId) {
+      complaintGroupKey = `message:${data.messageId}`;
+    } else if (data.reportType === 'chat' && resolvedReportedUserId) {
+      complaintGroupKey = `chat:${resolvedReportedUserId}`;
+    } else if (resolvedReportedUserId) {
+      complaintGroupKey = `user:${resolvedReportedUserId}`;
     }
 
     const report = await Report.create({
       reportId,
       reportType: data.reportType,
       reporterId: new mongoose.Types.ObjectId(reporterId),
-      reportedUserId: data.reportedUserId ? new mongoose.Types.ObjectId(data.reportedUserId) : undefined,
+      reportedUserId: resolvedReportedUserId ? new mongoose.Types.ObjectId(resolvedReportedUserId) : undefined,
       reason: data.reason.trim(),
       description: data.description?.trim(),
       evidence: {
         targetId: data.targetId,
-        postId: data.postId ? new mongoose.Types.ObjectId(data.postId) : undefined,
-        postMediaUrl: data.postMediaUrl,
-        postCaption: data.postCaption,
-        roomId: data.roomId ? new mongoose.Types.ObjectId(data.roomId) : undefined,
-        roomTitle: data.roomTitle,
-        liveHostId: data.liveHostId ? new mongoose.Types.ObjectId(data.liveHostId) : undefined,
-        messageId: data.messageId ? new mongoose.Types.ObjectId(data.messageId) : undefined,
+        postId: data.postId && mongoose.Types.ObjectId.isValid(data.postId) ? new mongoose.Types.ObjectId(data.postId) : undefined,
+        postMediaUrl,
+        postCaption,
+        storyId: targetStoryId && mongoose.Types.ObjectId.isValid(targetStoryId) ? new mongoose.Types.ObjectId(targetStoryId) : undefined,
+        storyMediaUrl,
+        storyCaption,
+        roomId: data.roomId && mongoose.Types.ObjectId.isValid(data.roomId) ? new mongoose.Types.ObjectId(data.roomId) : undefined,
+        roomTitle,
+        roomType,
+        roomChannelName,
+        liveHostId: liveHostId && mongoose.Types.ObjectId.isValid(liveHostId) ? new mongoose.Types.ObjectId(liveHostId) : undefined,
+        messageId: data.messageId && mongoose.Types.ObjectId.isValid(data.messageId) ? new mongoose.Types.ObjectId(data.messageId) : undefined,
+        messageText,
+        messageSenderId,
         chatTranscript: data.chatTranscript || [],
         mediaUrls: data.mediaUrls || [],
       },

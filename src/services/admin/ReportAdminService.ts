@@ -23,8 +23,10 @@ export class ReportAdminService {
       resolved,
       rejected,
       postCount,
+      storyCount,
       profileCount,
       liveRoomCount,
+      partyRoomCount,
       chatCount,
       totalAppeals,
       pendingAppeals,
@@ -35,9 +37,11 @@ export class ReportAdminService {
       Report.countDocuments({ status: 'resolved' }),
       Report.countDocuments({ status: 'rejected' }),
       Report.countDocuments({ reportType: 'post' }),
+      Report.countDocuments({ reportType: 'story' }),
       Report.countDocuments({ reportType: 'profile' }),
       Report.countDocuments({ reportType: 'live_room' }),
-      Report.countDocuments({ reportType: 'chat' }),
+      Report.countDocuments({ reportType: 'party_room' }),
+      Report.countDocuments({ reportType: { $in: ['chat', 'message'] } }),
       Appeal.countDocuments({}),
       Appeal.countDocuments({ status: 'pending' }),
     ]);
@@ -50,8 +54,10 @@ export class ReportAdminService {
       rejected,
       byCategory: {
         post: postCount,
+        story: storyCount,
         profile: profileCount,
         live_room: liveRoomCount,
+        party_room: partyRoomCount,
         chat: chatCount,
       },
       appeals: {
@@ -81,7 +87,11 @@ export class ReportAdminService {
     const query: any = {};
 
     if (opts.reportType && opts.reportType !== 'all') {
-      query.reportType = opts.reportType;
+      if (opts.reportType === 'chat' || opts.reportType === 'message') {
+        query.reportType = { $in: ['chat', 'message'] };
+      } else {
+        query.reportType = opts.reportType;
+      }
     }
 
     if (opts.status && opts.status !== 'all') {
@@ -350,27 +360,46 @@ export class ReportAdminService {
       }
     }
 
-    // If action is content removal
-    if (action === 'content_removed' && report.evidence?.postId) {
-      try {
-        await Story.findByIdAndUpdate(report.evidence.postId, {
-          isDeleted: true,
-          deletedAt: new Date(),
-        });
-      } catch (err) {
-        AppLogger.warn(`[ReportAdminService] could not remove post: ${err}`);
+    // If action is story or post removal / ban
+    if (['content_removed', 'delete_story', 'ban_story'].includes(action)) {
+      const storyTargetId = report.evidence?.storyId || report.evidence?.postId;
+      if (storyTargetId) {
+        try {
+          await Story.findByIdAndUpdate(storyTargetId, {
+            isDeleted: true,
+            status: 'banned',
+            deletedAt: new Date(),
+          });
+        } catch (err) {
+          AppLogger.warn(`[ReportAdminService] could not remove story/post: ${err}`);
+        }
       }
     }
 
-    // If action is room closed
-    if (action === 'room_closed' && report.evidence?.roomId) {
+    // If action is room closed or banned
+    if (['room_closed', 'ban_room'].includes(action) && report.evidence?.roomId) {
       try {
         await Room.findByIdAndUpdate(report.evidence.roomId, {
           isLive: false,
+          status: 'ended',
+          isBanned: true,
           endedAt: new Date(),
         });
       } catch (err) {
-        AppLogger.warn(`[ReportAdminService] could not close room: ${err}`);
+        AppLogger.warn(`[ReportAdminService] could not close/ban room: ${err}`);
+      }
+    }
+
+    // If action is delete message
+    if (action === 'delete_message' && report.evidence?.messageId) {
+      try {
+        const Message = (await import('../../models/Message')).default;
+        await Message.findByIdAndUpdate(report.evidence.messageId, {
+          isDeleted: true,
+          text: 'This message was removed by moderation for violating community guidelines.',
+        });
+      } catch (err) {
+        AppLogger.warn(`[ReportAdminService] could not delete message: ${err}`);
       }
     }
 

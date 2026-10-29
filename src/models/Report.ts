@@ -1,16 +1,20 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type ReportType = 'post' | 'profile' | 'live_room' | 'chat';
+export type ReportType = 'post' | 'story' | 'profile' | 'live_room' | 'party_room' | 'chat' | 'message';
 export type ReportStatus = 'pending' | 'under_review' | 'resolved' | 'rejected';
 export type ReportPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type ReportAction =
   | 'none'
   | 'warning'
   | 'content_removed'
+  | 'delete_story'
+  | 'ban_story'
   | 'mute'
   | 'ban_temporary'
   | 'ban_permanent'
   | 'room_closed'
+  | 'ban_room'
+  | 'delete_message'
   | 'rejected'
   | 'resolved';
 
@@ -38,10 +42,17 @@ export interface IReportEvidence {
   postId?: mongoose.Types.ObjectId;
   postMediaUrl?: string;
   postCaption?: string;
+  storyId?: mongoose.Types.ObjectId;
+  storyMediaUrl?: string;
+  storyCaption?: string;
   roomId?: mongoose.Types.ObjectId;
   roomTitle?: string;
+  roomType?: string;
+  roomChannelName?: string;
   liveHostId?: mongoose.Types.ObjectId;
   messageId?: mongoose.Types.ObjectId;
+  messageText?: string;
+  messageSenderId?: string;
   chatTranscript?: IChatEvidenceMessage[];
   mediaUrls?: string[];
   mediaIds?: mongoose.Types.ObjectId[];
@@ -100,10 +111,17 @@ const EvidenceSchema = new Schema(
     postId: { type: Schema.Types.ObjectId, ref: 'Story' },
     postMediaUrl: { type: String },
     postCaption: { type: String },
+    storyId: { type: Schema.Types.ObjectId, ref: 'Story' },
+    storyMediaUrl: { type: String },
+    storyCaption: { type: String },
     roomId: { type: Schema.Types.ObjectId, ref: 'Room' },
     roomTitle: { type: String },
+    roomType: { type: String },
+    roomChannelName: { type: String },
     liveHostId: { type: Schema.Types.ObjectId, ref: 'User' },
     messageId: { type: Schema.Types.ObjectId, ref: 'Message' },
+    messageText: { type: String },
+    messageSenderId: { type: String },
     chatTranscript: [ChatEvidenceSchema],
     mediaUrls: [{ type: String }],
     mediaIds: [{ type: Schema.Types.ObjectId, ref: 'Media' }],
@@ -117,7 +135,7 @@ const ReportSchema: Schema = new Schema(
     reportId: { type: String, unique: true, index: true },
     reportType: {
       type: String,
-      enum: ['post', 'profile', 'live_room', 'chat'],
+      enum: ['post', 'story', 'profile', 'live_room', 'party_room', 'chat', 'message'],
       required: true,
       index: true,
     },
