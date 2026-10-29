@@ -1146,6 +1146,9 @@ export class UserService {
     if (status === 'approved') {
       user.isVerified = true;
       user.verificationRejectReason = undefined;
+      if (!user.newHostEligibleAt) {
+        user.newHostEligibleAt = new Date();
+      }
     } else {
       user.isVerified = false;
       user.verificationRejectReason = reason || 'Documents did not meet verification criteria';

@@ -125,6 +125,8 @@ export interface IUser extends Document {
   deletionFeedback?: string;
   scheduledPermanentDeletionAt?: Date;
   isPermanentlyDeleted?: boolean;
+  newHostEligibleAt?: Date;
+  callRankingScore?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -262,6 +264,8 @@ const UserSchema: Schema = new Schema(
     deletionFeedback: { type: String },
     scheduledPermanentDeletionAt: { type: Date },
     isPermanentlyDeleted: { type: Boolean, default: false, index: true },
+    newHostEligibleAt: { type: Date, index: true },
+    callRankingScore: { type: Number, default: 50, index: true },
   },
   {
     timestamps: true,
@@ -272,6 +276,8 @@ UserSchema.index({ createdAt: -1 });
 UserSchema.index({ isBlocked: 1 });
 UserSchema.index({ isCoinseller: 1, isCoinsellerActive: 1 });
 UserSchema.index({ beans: -1 });
+UserSchema.index({ callRankingScore: -1 });
+UserSchema.index({ newHostEligibleAt: -1 });
 
 UserSchema.pre('save', async function (next) {
   const user = this as any;

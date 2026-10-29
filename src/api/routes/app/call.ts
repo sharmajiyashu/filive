@@ -4,8 +4,11 @@ import { CallService } from '../../../services/app/CallService';
 import { RandomMatchService } from '../../../services/app/RandomMatchService';
 import { ResponseWrapper } from '../../responseWrapper';
 
+import { HostFeedService } from '../../../services/app/HostFeedService';
+
 export default (router: Router) => {
   const callService = Container.get(CallService);
+  const hostFeedService = Container.get(HostFeedService);
   const callRouter = Router();
 
   router.use('/calls', callRouter);
@@ -45,9 +48,30 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/calls/hosts/new:
+   *   get:
+   *     summary: Get promoted new hosts (first 7 days with decay boost)
+   *     tags: [Calls]
+   */
+  callRouter.get('/hosts/new', async (req: any, res: Response) => {
+    try {
+      const page = parseInt(req.query.page?.toString() || '1', 10);
+      const limit = parseInt(req.query.limit?.toString() || '10', 10);
+      const callType = (req.query.callType || 'both') as 'voice' | 'video' | 'both';
+      const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
+      const userId = req.user.id;
+      const result = await hostFeedService.getNewFeed({ callerId: userId, page, limit, callType, countryCode: country });
+      return ResponseWrapper.success(res, result, 'New hosts fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/calls/hosts:
    *   get:
-   *     summary: Get hosts available for voice/video calling
+   *     summary: Get hosts available for voice/video calling using 100-point ranking system
    *     tags: [Calls]
    *     security:
    *       - bearerAuth: []
@@ -64,8 +88,13 @@ export default (router: Router) => {
    *         name: callType
    *         schema:
    *           type: string
-   *           enum: [voice, video]
+   *           enum: [voice, video, new, popular]
    *         description: Filter hosts by enabled call type
+   *       - in: query
+   *         name: tab
+   *         schema:
+   *           type: string
+   *           enum: [meet, talk, new, popular]
    *       - in: query
    *         name: country
    *         schema:
@@ -89,15 +118,24 @@ export default (router: Router) => {
     try {
       const page = parseInt(req.query.page?.toString() || '1', 10);
       const limit = parseInt(req.query.limit?.toString() || '10', 10);
-      const callType = req.query.callType as 'voice' | 'video' | undefined;
+      const callType = req.query.callType?.toString()?.toLowerCase();
+      const tab = (req.query.tab || req.query.type)?.toString()?.toLowerCase();
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
-      
-      if (callType && !['voice', 'video'].includes(callType)) {
-        throw new Error('Invalid callType filter. Use "voice" or "video".');
+      const userId = req.user.id;
+
+      let result;
+      if (tab === 'new' || callType === 'new') {
+        result = await hostFeedService.getNewFeed({ callerId: userId, page, limit, callType: 'both', countryCode: country });
+      } else if (tab === 'popular' || callType === 'popular') {
+        result = await hostFeedService.getPopularFeed({ callerId: userId, page, limit, countryCode: country });
+      } else if (callType === 'voice' || tab === 'talk') {
+        result = await hostFeedService.getTalkFeed({ callerId: userId, page, limit, countryCode: country });
+      } else if (callType === 'video' || tab === 'meet') {
+        result = await hostFeedService.getMeetFeed({ callerId: userId, page, limit, countryCode: country });
+      } else {
+        result = await callService.getCallingHosts(page, limit, userId, callType as any, country);
       }
 
-      const userId = req.user.id;
-      const result = await callService.getCallingHosts(page, limit, userId, callType, country);
       return ResponseWrapper.success(res, result, 'Calling hosts fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

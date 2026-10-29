@@ -6,10 +6,12 @@ import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 import { LevelService } from '../../../services/app/LevelService';
 import User from '../../../models/User';
+import { HostFeedService } from '../../../services/app/HostFeedService';
 
 export default (router: Router) => {
   const userService = Container.get(UserService);
   const securityService = Container.get(AccountSecurityService);
+  const hostFeedService = Container.get(HostFeedService);
   const appRouter = Router();
 
   router.use('/users', appRouter);
@@ -83,7 +85,7 @@ export default (router: Router) => {
       const search = req.query.search?.toString() || req.query.userId?.toString();
       const country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
 
-      let type = req.query.type?.toString();
+      let type = req.query.type?.toString()?.toLowerCase();
       if (!type) {
         if (req.query.isOnline === 'true' || req.query.isOnline === true) {
           type = 'online';
@@ -93,6 +95,29 @@ export default (router: Router) => {
       }
 
       const currentUserId = req.user.id;
+
+      if (!search) {
+        if (type === 'popular') {
+          const result = await hostFeedService.getPopularFeed({
+            callerId: currentUserId,
+            page,
+            limit,
+            countryCode: country,
+          });
+          return ResponseWrapper.success(res, result, 'Popular users fetched successfully');
+        }
+        if (type === 'new') {
+          const result = await hostFeedService.getNewFeed({
+            callerId: currentUserId,
+            page,
+            limit,
+            callType: 'both',
+            countryCode: country,
+          });
+          return ResponseWrapper.success(res, result, 'New hosts fetched successfully');
+        }
+      }
+
       const result = await userService.getAllUsers(page, limit, currentUserId, search, country, type);
       return ResponseWrapper.success(res, result, 'Users fetched successfully');
     } catch (error: any) {
