@@ -115,6 +115,9 @@ export interface IUser extends Document {
   blockReason?: string;
   blockedUntil?: Date;
   authProvider?: 'phone' | 'email' | 'google' | 'facebook' | 'apple';
+  registerIn?: 'filive' | 'fivo';
+  loginIn?: 'filive' | 'fivo';
+  appType?: 'filive' | 'fivo';
   googleId?: string;
   facebookId?: string;
   appleId?: string;
@@ -254,6 +257,9 @@ const UserSchema: Schema = new Schema(
     blockReason: { type: String },
     blockedUntil: { type: Date },
     authProvider: { type: String, enum: ['phone', 'email', 'google', 'facebook', 'apple'], default: 'phone' },
+    registerIn: { type: String, enum: ['filive', 'fivo'], default: 'filive', index: true },
+    loginIn: { type: String, enum: ['filive', 'fivo'], default: 'filive', index: true },
+    appType: { type: String, enum: ['filive', 'fivo'], default: 'filive', index: true },
     googleId: { type: String, sparse: true, index: true },
     facebookId: { type: String, sparse: true, index: true },
     appleId: { type: String, sparse: true, index: true },

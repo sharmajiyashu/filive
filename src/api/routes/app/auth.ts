@@ -3,7 +3,9 @@ import Container from "typedi";
 import { AuthenticationService } from "../../../services/common/AuthenticationService";
 import { ResponseWrapper } from '../../responseWrapper';
 import { validate } from '../../validators';
-import { sendOtpSchema, verifyOtpSchema, googleLoginSchema, facebookLoginSchema } from '../../validators/auth';
+import { sendOtpSchema, verifyOtpSchema, userRegisterSchema, userLoginSchema, googleLoginSchema, facebookLoginSchema } from '../../validators/auth';
+import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import User from '../../../models/User';
 import { countryCodeFromIpHeaders } from '../../../utils/phoneCountry';
 
 export default (router: Router) => {
@@ -405,6 +407,21 @@ export default (router: Router) => {
      *       200:
      *         description: Logged out successfully
      */
+        router.get('/auth/me',
+        appAuthMiddleware,
+        async (req: Request, res: Response) => {
+            try {
+                const userId = req.user?.id;
+                const user = await User.findById(userId).populate('profileImage').populate('countryId');
+                if (!user) {
+                    return ResponseWrapper.error(res, 'User not found', 404);
+                }
+                return ResponseWrapper.success(res, user, 'Current user profile fetched successfully');
+            } catch (error: any) {
+                return ResponseWrapper.error(res, error);
+            }
+        });
+
     router.post('/auth/logout', async (req: Request, res: Response) => {
         try {
             const userId = req.user?.id;

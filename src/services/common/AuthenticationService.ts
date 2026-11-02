@@ -179,9 +179,15 @@ export class AuthenticationService {
 
     async userRegister(data: {
         name: string;
-        email: string;
-        mobile: string;
+        email?: string;
+        mobile?: string;
         password?: string;
+        gender?: 'Male' | 'Female' | 'Other';
+        dob?: Date | string;
+        appType?: 'filive' | 'fivo';
+        referredBy?: string;
+        deviceId?: string;
+        deviceModel?: string;
         location?: {
             lat?: number;
             lng?: number;
@@ -190,92 +196,147 @@ export class AuthenticationService {
             state?: string;
             zipcode?: string;
         }
-    }): Promise<{ token: string; user: IUser }> {
-        const existingUser = await User.findOne({
-            $or: [{ email: data.email }, { mobile: data.mobile }]
-        });
+    }): Promise<{ token: string; user: IUser; isNewUser: boolean }> {
+        if (!data.email && !data.mobile) {
+            throw new Error('Email or mobile number is required');
+        }
+        const conds: any[] = [];
+        if (data.email && data.email.trim()) conds.push({ email: data.email.toLowerCase().trim() });
+        if (data.mobile && data.mobile.trim()) conds.push({ mobile: data.mobile.trim() });
 
-        if (existingUser) {
-            throw new Error('User with this email or mobile already exists');
+        if (conds.length > 0) {
+            const existingUser = await User.findOne({ $or: conds });
+            if (existingUser) {
+                throw new Error('User with this email or mobile already exists');
+            }
+        }
+
+        if (data.deviceId) {
+            await this.assertDeviceNotBanned(data.deviceId);
         }
 
         const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+        const appType: 'filive' | 'fivo' = data.appType === 'fivo' ? 'fivo' : 'filive';
+
+        let referrerObjId: mongoose.Types.ObjectId | undefined = undefined;
+        if (data.referredBy && data.referredBy.trim() !== '') {
+            const refStr = data.referredBy.trim();
+            let referrerUser = null;
+            if (mongoose.Types.ObjectId.isValid(refStr)) {
+                referrerUser = await User.findById(refStr);
+            }
+            if (!referrerUser) {
+                const searchNum = Number(refStr);
+                const searchConds: any[] = [{ referralCode: refStr }, { referCode: refStr }];
+                if (!isNaN(searchNum)) searchConds.push({ userId: searchNum });
+                referrerUser = await User.findOne({ $or: searchConds });
+            }
+            if (referrerUser) {
+                referrerObjId = referrerUser._id;
+            }
+        }
 
         const user = await User.create({
-            ...data,
+            name: data.name,
+            email: data.email ? data.email.toLowerCase().trim() : undefined,
+            mobile: data.mobile ? data.mobile.trim() : undefined,
+            gender: data.gender,
+            dob: data.dob ? new Date(data.dob) : undefined,
             password: hashedPassword,
             userRole: 'user',
-            authProvider: 'email',
+            authProvider: data.email ? 'email' : 'phone',
+            registerIn: appType,
+            loginIn: appType,
+            appType: appType,
+            deviceId: data.deviceId,
+            deviceModel: data.deviceModel,
+            location: data.location,
+            referredBy: referrerObjId,
+            lastLoginAt: new Date(),
         });
 
-        // Send OTP via email
-        const otp = this.generateOTP();
-        const otpExpires = addMinutes(new Date(), CONSTANTS.OTP_EXPIRY_MINUTES);
-        user.otp = otp;
-        user.otpExpires = otpExpires;
-        await user.save();
-
-        try {
-            await this.emailService.sendAuthOtpEmail({
-                to: data.email,
-                secret: otp,
-                purpose: 'EMAIL_VERIFICATION'
-            });
-        } catch (error) {
-            AppLogger.error(`Failed to send verification email to ${data.email}: ${error}`);
-        }
-
-        await user.populate('profileImage');
-
-        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
-        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
-
-        return {
-            token: '',
-            user: {
-                ...user.toObject(),
-                followersCount,
-                followingCount
-            } as any
-        }; // Return empty token, must verify first
-    }
-
-    async userLogin(email: string, password: string): Promise<{ token: string; user: IUser; isPendingDeletion?: boolean; deletionDetails?: any }> {
-        const user = await User.findOne({
-            email,
-            userRole: 'user'
-        }).populate('profileImage');
-
-        if (!user || !user.password) {
-            throw new Error('Invalid email or password');
-        }
-
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-            throw new Error('Invalid email or password');
-        }
-
-        await this.assertUserNotBlocked(user);
-        const deletionStatus = this.checkAndHandleDeletedAccount(user);
-
+        const { referralCode } = await ensureUserReferralCode(user);
         const token = this.generateToken(user._id.toString(), user.userRole);
-
-        // Update last login
-        user.lastLoginAt = new Date();
-        await user.save();
 
         const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
         const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
 
         return {
             token,
+            isNewUser: true,
+            user: {
+                ...user.toObject(),
+                referralCode,
+                followersCount,
+                followingCount
+            } as any
+        };
+    }
+
+    async userLogin(
+        identifier: string,
+        password: string,
+        appType: 'filive' | 'fivo' = 'filive',
+        deviceId?: string,
+        deviceModel?: string
+    ): Promise<{ token: string; user: IUser; isPendingDeletion?: boolean; deletionDetails?: any }> {
+        const cleanIdent = (identifier || '').trim();
+        const user = await User.findOne({
+            userRole: 'user',
+            $or: [
+                { email: cleanIdent.toLowerCase() },
+                { mobile: cleanIdent }
+            ]
+        }).populate('profileImage').populate('countryId');
+
+        if (!user || !user.password) {
+            throw new Error('Invalid email/mobile or password');
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            throw new Error('Invalid email/mobile or password');
+        }
+
+        if (deviceId) {
+            await this.assertDeviceNotBanned(deviceId);
+            user.deviceId = deviceId;
+        }
+        if (deviceModel) {
+            user.deviceModel = deviceModel;
+        }
+
+        await this.assertUserNotBlocked(user, deviceId);
+        const deletionStatus = this.checkAndHandleDeletedAccount(user);
+
+        if (!user.registerIn) {
+            user.registerIn = appType;
+        }
+        user.loginIn = appType;
+        user.appType = appType;
+        user.lastLoginAt = new Date();
+        await user.save();
+
+        const token = this.generateToken(user._id.toString(), user.userRole);
+
+        const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });
+        const followingCount = await Follow.countDocuments({ followerId: user._id, status: 'accepted' });
+        const { referralCode } = await ensureUserReferralCode(user);
+
+        const userObj: any = user.toObject();
+        if (typeof userObj.beans === 'number') userObj.beans = Math.round(userObj.beans);
+        if (typeof userObj.coins === 'number') userObj.coins = Math.round(userObj.coins);
+
+        return {
+            token,
             isPendingDeletion: deletionStatus.isPendingDeletion,
             deletionDetails: deletionStatus,
             user: {
-                ...user.toObject(),
+                ...userObj,
                 isDeleted: user.isDeleted,
                 deletionReason: user.deletionReason,
                 deletionDetails: deletionStatus,
+                referralCode,
                 followersCount,
                 followingCount
             } as any
@@ -327,7 +388,7 @@ export class AuthenticationService {
         mobile: string,
         countryId?: string,
         referredBy?: string,
-        extras?: { countryCode?: string; extension?: string; ipCountry?: string; deviceId?: string; deviceModel?: string }
+        extras?: { countryCode?: string; extension?: string; ipCountry?: string; deviceId?: string; deviceModel?: string; appType?: 'filive' | 'fivo' }
     ): Promise<{ otp: string }> {
         if (extras?.deviceId) {
             await this.assertDeviceNotBanned(extras.deviceId);
@@ -372,6 +433,7 @@ export class AuthenticationService {
             }
 
             const fallbackCode = extras?.countryCode || resolvedCountry?.country || isoFromDialCode(extras?.extension) || undefined;
+            const appType: 'filive' | 'fivo' = extras?.appType === 'fivo' ? 'fivo' : 'filive';
             // Register new user with this mobile
             user = await User.create({
                 name: 'User',
@@ -385,7 +447,10 @@ export class AuthenticationService {
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country || fallbackCode,
                 countryCode: fallbackCode,
-                referredBy: referrerObjId
+                referredBy: referrerObjId,
+                registerIn: appType,
+                loginIn: appType,
+                appType: appType,
             });
 
             await ensureUserReferralCode(user);
@@ -412,6 +477,13 @@ export class AuthenticationService {
             if (!user.authProvider) {
                 user.authProvider = 'phone';
             }
+            if (extras?.appType) {
+                user.loginIn = extras.appType;
+                user.appType = extras.appType;
+                if (!user.registerIn) {
+                    user.registerIn = extras.appType;
+                }
+            }
             await user.save();
         }
 
@@ -425,7 +497,8 @@ export class AuthenticationService {
         mobile: string,
         otp: string,
         deviceId?: string,
-        deviceModel?: string
+        deviceModel?: string,
+        appType: 'filive' | 'fivo' = 'filive'
     ): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (deviceId) {
             await this.assertDeviceNotBanned(deviceId);
@@ -459,6 +532,11 @@ export class AuthenticationService {
         if (deviceModel) {
             user.deviceModel = deviceModel;
         }
+        if (!user.registerIn) {
+            user.registerIn = appType;
+        }
+        user.loginIn = appType;
+        user.appType = appType;
         await user.save();
 
         if (isNewUserVerification && referrerId) {
@@ -623,6 +701,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
+        appType?: 'filive' | 'fivo';
     }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
@@ -738,6 +817,14 @@ export class AuthenticationService {
                 hasChanges = true;
             }
 
+            if (payload.appType) {
+                user.loginIn = payload.appType;
+                user.appType = payload.appType;
+                if (!user.registerIn) {
+                    user.registerIn = payload.appType;
+                }
+                hasChanges = true;
+            }
             user.lastLoginAt = new Date();
             await user.save();
         } else {
@@ -774,6 +861,7 @@ export class AuthenticationService {
                 }
             }
 
+            const appType: 'filive' | 'fivo' = payload.appType === 'fivo' ? 'fivo' : 'filive';
             user = await User.create({
                 name: resolvedName || 'Google User',
                 email: resolvedEmail || undefined,
@@ -786,6 +874,9 @@ export class AuthenticationService {
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),
+                registerIn: appType,
+                loginIn: appType,
+                appType: appType,
                 socialProfile: {
                     provider: 'google',
                     id: resolvedGoogleId,
@@ -848,6 +939,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
+        appType?: 'filive' | 'fivo';
     }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
@@ -967,6 +1059,7 @@ export class AuthenticationService {
                 }
             }
 
+            const appType: 'filive' | 'fivo' = payload.appType === 'fivo' ? 'fivo' : 'filive';
             user = await User.create({
                 name: resolvedName || 'Facebook User',
                 email: resolvedEmail || undefined,
@@ -979,6 +1072,9 @@ export class AuthenticationService {
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),
+                registerIn: appType,
+                loginIn: appType,
+                appType: appType,
                 socialProfile: {
                     provider: 'facebook',
                     id: resolvedFacebookId,
@@ -1042,6 +1138,7 @@ export class AuthenticationService {
         ipCountry?: string;
         deviceId?: string;
         deviceModel?: string;
+        appType?: 'filive' | 'fivo';
     }): Promise<{ token: string; user: IUser; isNewUser: boolean; isPendingDeletion?: boolean; deletionDetails?: any }> {
         if (payload.deviceId) {
             await this.assertDeviceNotBanned(payload.deviceId);
@@ -1141,6 +1238,7 @@ export class AuthenticationService {
                 }
             }
 
+            const appType: 'filive' | 'fivo' = payload.appType === 'fivo' ? 'fivo' : 'filive';
             user = await User.create({
                 name: resolvedName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'Apple User'),
                 email: resolvedEmail || undefined,
@@ -1154,6 +1252,9 @@ export class AuthenticationService {
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),
                 referredBy: referrerObjId,
+                registerIn: appType,
+                loginIn: appType,
+                appType: appType,
                 socialProfile: {
                     provider: 'apple',
                     id: resolvedAppleId,
