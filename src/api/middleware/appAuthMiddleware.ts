@@ -50,6 +50,14 @@ export const appAuthMiddleware = async (req: Request, res: Response, next: NextF
             next();
         } catch (error) {
             if (skipAuth) return next();
+            const msg = error instanceof Error ? error.message : String(error || '');
+            if (msg.startsWith('SESSION_TERMINATED:')) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'You have been logged out because your account was logged in on another device.',
+                    code: 'SESSION_TERMINATED'
+                });
+            }
             if (isAccountBlockedError(error)) {
                 return next(new ForbiddenError(error instanceof Error ? error : new Error(String(error))));
             }

@@ -132,6 +132,7 @@ export interface IUser extends Document {
   isPermanentlyDeleted?: boolean;
   newHostEligibleAt?: Date;
   callRankingScore?: number;
+  currentAuthToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -258,6 +259,7 @@ const UserSchema: Schema = new Schema(
     deviceBan: { type: Boolean, default: false },
     deviceId: { type: String, index: true },
     deviceModel: { type: String },
+    currentAuthToken: { type: String },
     blockReason: { type: String },
     blockedUntil: { type: Date },
     authProvider: { type: String, enum: ['phone', 'email', 'google', 'facebook', 'apple'], default: 'phone' },

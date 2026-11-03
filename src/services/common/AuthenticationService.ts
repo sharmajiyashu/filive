@@ -24,14 +24,36 @@ export class AuthenticationService {
         @Inject() private appSettingService: AppSettingService,
     ) { }
 
+    public async registerActiveSession(userId: string, token: string): Promise<void> {
+        try {
+            await User.findByIdAndUpdate(userId, { currentAuthToken: token });
+
+            const io = Container.has('io') ? Container.get<any>('io') : null;
+            if (io) {
+                const userRoom = `user_${userId}`;
+                io.to(userRoom).emit('session_terminated', {
+                    message: 'You have been logged out because your account was logged in on another device.'
+                });
+                const sockets = await io.in(userRoom).fetchSockets();
+                for (const s of sockets) {
+                    s.disconnect(true);
+                }
+            }
+        } catch (err: any) {
+            AppLogger.warn(`Failed to register active session for user ${userId}: ${err.message}`);
+        }
+    }
+
     private generateToken(userId: string, role: string): string {
         const payload = { userId, role };
         const secret = config.auth.secret;
         if (role === 'admin') {
             return jwt.sign(payload, secret, { expiresIn: CONSTANTS.JWT_ADMIN_ACCESS_EXPIRY }) as string;
         }
-        // Lifetime token for app users (never expires until user logs out)
-        return jwt.sign(payload, secret, { expiresIn: '36500d' }) as string;
+        // Lifetime token for app users (never expires until user logs out or logs in on another device)
+        const token = jwt.sign(payload, secret, { expiresIn: '36500d' }) as string;
+        void this.registerActiveSession(userId, token);
+        return token;
     }
 
     /**
@@ -640,9 +662,13 @@ export class AuthenticationService {
                 throw new Error('User not found');
             }
 
+            if (user.userRole === 'user' && user.currentAuthToken && user.currentAuthToken !== token) {
+                throw new Error('SESSION_TERMINATED: Your account was logged in on another device.');
+            }
+
             return await this.assertUserNotBlocked(user);
         } catch (error: any) {
-            if (typeof error?.message === 'string' && error.message.startsWith('ACCOUNT_BLOCKED:')) {
+            if (typeof error?.message === 'string' && (error.message.startsWith('ACCOUNT_BLOCKED:') || error.message.startsWith('SESSION_TERMINATED:'))) {
                 throw error;
             }
             throw new Error('Invalid or expired token');

@@ -36,6 +36,7 @@ import teamApplication from './teamApplication';
 import contactMessage from './contactMessage';
 import websiteSettings from './websiteSettings';
 import beans from './beans';
+import coins from './coins';
 import report from './report';
 import hashtag from './hashtag';
 import role from './role';
@@ -79,6 +80,7 @@ export default (router: Router): Router => {
   contactMessage(router);
   websiteSettings(router);
   beans(router);
+  coins(router);
   report(router);
   hashtag(router);
   role(router);
