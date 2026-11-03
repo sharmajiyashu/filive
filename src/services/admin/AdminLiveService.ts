@@ -24,6 +24,30 @@ export class AdminLiveService {
   }
 
   private formatDuration(startedAt?: Date, endedAt?: Date): string {
+    if (!startedAt) return '-';
+    const end = endedAt || new Date();
+    const ms = Math.max(0, end.getTime() - startedAt.getTime());
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  private formatDurationSeconds(seconds: number): string {
+    const totalSec = Math.max(0, Math.floor(seconds || 0));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  private _unused_formatDuration(startedAt?: Date, endedAt?: Date): string {
+    void startedAt; void endedAt;
     if (!startedAt || !endedAt) return '-';
     const ms = Math.max(0, endedAt.getTime() - startedAt.getTime());
     const totalSec = Math.floor(ms / 1000);
@@ -62,14 +86,31 @@ export class AdminLiveService {
     obj.liveType = this.liveTypeLabel(obj.roomType);
     obj.coins = obj.totalGiftRevenue || 0;
     obj.comments = obj.commentCount || 0;
-    obj.viewers = obj.viewerCount || 0;
-    obj.joinedUsersCount = Array.isArray(obj.joinedUsers) ? obj.joinedUsers.length : 0;
-    if (obj.status === 'ended') {
-      obj.duration = this.formatDuration(
+    const viewerListCount = Array.isArray(obj.viewers) ? obj.viewers.length : 0;
+    const joinedListCount = Array.isArray(obj.joinedUsers) ? obj.joinedUsers.length : 0;
+    const rawViewerCount = typeof obj.viewerCount === 'number' ? obj.viewerCount : 0;
+    obj.viewers = Math.max(rawViewerCount, viewerListCount, joinedListCount);
+    obj.viewerCount = obj.viewers;
+    obj.joinedUsersCount = Math.max(joinedListCount, obj.viewers);
+    if (typeof obj.duration === 'number' && obj.duration > 0) {
+      obj.duration = this.formatDurationSeconds(obj.duration);
+    } else if (obj.endedAt && (obj.startedAt || obj.createdAt)) {
+      obj.duration = this.formatDuration(new Date(obj.startedAt || obj.createdAt), new Date(obj.endedAt));
+    } else if (obj.startedAt || obj.createdAt) {
+      obj.duration = this.formatDuration(new Date(obj.startedAt || obj.createdAt), new Date());
+    } else {
+      obj.duration = '-';
+    }
+    obj.newFans = obj.roomFollowerCount || 0;
+    if (false) {
+      obj.duration = (typeof obj.duration === 'number' && obj.duration > 0) ? this.formatDuration(new Date(0), new Date(obj.duration * 1000)) : this.formatDuration(
         (obj.startedAt || obj.createdAt) ? new Date(obj.startedAt || obj.createdAt) : undefined,
         obj.endedAt ? new Date(obj.endedAt) : undefined
       );
       obj.newFans = obj.roomFollowerCount || 0;
+    } else {
+      const started = (obj.startedAt || obj.createdAt) ? new Date(obj.startedAt || obj.createdAt) : undefined;
+      obj.duration = started ? this.formatDuration(started, new Date()) : 'Live Now';
     }
 
     const maxSeats = obj.maxSeats || 8;

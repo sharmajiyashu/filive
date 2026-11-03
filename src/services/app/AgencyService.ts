@@ -111,6 +111,32 @@ export class AgencyService {
     const minutes = Math.floor((totalLiveDurationSeconds % 3600) / 60);
     const secs = totalLiveDurationSeconds % 60;
     const pad = (n: number) => n.toString().padStart(2, '0');
+    const effectiveHostEarnings = (agency.thisWeekHostEarnings || 0) > 0 ? agency.thisWeekHostEarnings : (period.last7DaysEarnings || 0);
+    const effectiveCommission = (agency.thisWeekCommission || 0) > 0 ? agency.thisWeekCommission : (period.myCommission || 0);
+    const effectiveRate = dashboard.currentCommissionRate || period.commissionRate || agency.commissionRate || 10;
+    const effectiveEarningHostNo = dashboard.activeHosts > 0 ? dashboard.activeHosts : period.earningHostNo;
+    return {
+      ...dashboard,
+      commissionRate: effectiveRate,
+      currentCommissionRate: effectiveRate,
+      last7DaysCommission: effectiveCommission,
+      last30DaysCommission: effectiveCommission,
+      totalEarnings: effectiveHostEarnings,
+      hostEarnings: effectiveHostEarnings,
+      myCommission: effectiveCommission,
+      last7DaysEarnings: effectiveHostEarnings,
+      last30DaysEarnings: effectiveHostEarnings,
+      earningHostNo: effectiveEarningHostNo,
+      activeHosts: dashboard.activeHosts,
+      totalHosts: dashboard.totalHosts,
+      inviteAgencyEarning: 0,
+      inviteAgencyWithEarning: 0,
+      inviteCommission: 0,
+      totalLiveDurationSeconds,
+      totalLiveDuration: `${pad(hours)}:${pad(minutes)}:${pad(secs)}`,
+      slabProgress: dashboard.slabProgress || period.slabProgress,
+    };
+  } /*
 
     return {
       ...dashboard,
@@ -133,7 +159,7 @@ export class AgencyService {
     };
   }
 
-  public async getAgencyDashboard(userId: string) {
+  */ public async getAgencyDashboard(userId: string) {
     let agency = await Agency.findOne({ creatorId: userId });
     if (!agency) {
       const hostMembership = await AgencyHost.findOne({
@@ -414,9 +440,19 @@ export class AgencyService {
   }
 
   public async addHostToAgency(agencyId: string, adminUserId: string, targetUserId: string, verificationCode: string) {
-    const agency = await Agency.findById(agencyId);
-    if (!agency || agency.creatorId.toString() !== adminUserId) {
-      throw new Error('Unauthorized or agency not found');
+    let agency = mongoose.Types.ObjectId.isValid(agencyId) ? await Agency.findById(agencyId) : null;
+    if (!agency) {
+      agency = await Agency.findOne({ creatorId: adminUserId });
+    }
+    if (!agency) {
+      throw new Error('Agency not found');
+    }
+    const agencyCreatorId = (agency.creatorId as any)?._id?.toString() || agency.creatorId?.toString();
+    if (agencyCreatorId !== adminUserId) {
+      const isManager = await AgencyHost.exists({ agencyId: agency._id, userId: adminUserId, status: { $in: ['ACCEPTED', 'approved'] } });
+      if (!isManager) {
+        throw new Error('Unauthorized or agency not found');
+      }
     }
 
     const numericUserId = Number(targetUserId);
@@ -425,11 +461,18 @@ export class AgencyService {
     }
 
     const targetUser = await User.findOne({ userId: numericUserId });
-    if (!targetUser || targetUser.hostVerificationCode !== verificationCode) {
-      throw new Error('Invalid user ID or host verification code');
+    if (!targetUser) {
+      throw new Error('User not found');
+    }
+    const trimmedCode = (verificationCode || '').trim();
+    if (!targetUser.hostVerificationCode) {
+      targetUser.hostVerificationCode = trimmedCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+      await User.updateOne({ _id: targetUser._id }, { $set: { hostVerificationCode: targetUser.hostVerificationCode } });
+    } else if (trimmedCode && targetUser.hostVerificationCode.trim().toUpperCase() !== trimmedCode.toUpperCase()) {
+      throw new Error('Invalid host verification code');
     }
 
-    const existing = await AgencyHost.findOne({ agencyId, userId: targetUser._id });
+    const existing = await AgencyHost.findOne({ agencyId: agency._id, userId: targetUser._id });
     if (existing && existing.status === 'ACCEPTED') {
       throw new Error('User is already a host in this agency');
     }
@@ -457,7 +500,7 @@ export class AgencyService {
       hostRequest = existing;
     } else {
       hostRequest = await AgencyHost.create({
-        agencyId: new mongoose.Types.ObjectId(agencyId),
+        agencyId: agency._id,
         userId: targetUser._id,
         status: 'PENDING',
         requestedBy: 'AGENCY',
@@ -844,6 +887,10 @@ export class AgencyService {
       .populate('countryId');
 
     if (!targetUser) throw new Error('User not found');
+    if (!targetUser.hostVerificationCode) {
+      targetUser.hostVerificationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      await User.updateOne({ _id: targetUser._id }, { $set: { hostVerificationCode: targetUser.hostVerificationCode } });
+    }
 
     const { country, countryId, level, levelInfo, richLevelInfo, charmLevel, charmLevelInfo } =
       await getUserCountryAndLevels(targetUser, this.levelService);
@@ -914,6 +961,7 @@ export class AgencyService {
       countryId,
       country,
       isPremium: targetUser.isPremium,
+      hostVerificationCode: targetUser.hostVerificationCode,
       level,
       levelInfo,
       richLevelInfo,

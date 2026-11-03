@@ -95,7 +95,8 @@ export class LiveStreamService {
     announcement?: string,
     gameId?: string,
     roomPhoto?: string | mongoose.Types.ObjectId,
-    file?: Express.Multer.File
+    file?: Express.Multer.File,
+    maxSeats?: number
   ) {
     const normalizedRoomType: 'livestream' | 'party_room' =
       roomType === 'party_room' ? 'party_room' : 'livestream';
@@ -117,16 +118,8 @@ export class LiveStreamService {
       throw new Error('You are banned from live streaming');
     }
 
-    // Live stream: Female only and video verification approved. Party room: both Male and Female can host.
+    // Both Male and Female hosts can host livestream and party room.
     const hostGender = (hostUser.gender || '').toLowerCase();
-    if (normalizedRoomType === 'livestream') {
-      if (hostGender !== 'female') {
-        throw new Error('Go Live streaming feature is restricted to Female hosts only.');
-      }
-      if (hostUser.videoVerificationStatus !== 'approved') {
-        throw new Error('You must complete video verification and be approved before starting a live stream.');
-      }
-    }
 
     // Fetch or create RoomSetting
     let roomSetting = await RoomSetting.findOne({ hostId });
@@ -273,20 +266,32 @@ export class LiveStreamService {
       }
 
       if (normalizedRoomType === 'party_room') {
-        const maxSeats = roomSetting.maxSeats || 10;
+        const effectiveMaxSeats = maxSeats && Number(maxSeats) > 0 ? Number(maxSeats) : (roomSetting.maxSeats || 10);
+        roomSetting.maxSeats = effectiveMaxSeats;
+        settingsUpdated = true;
         let existingSeats = activeStream.seats || [];
         let newSeats: any[] = [];
-        for (let i = 0; i < maxSeats; i++) {
-          const oldSeat = existingSeats.find(s => s.seatIndex === i);
-          if (oldSeat) {
-            if (oldSeat.status === 'occupied') {
-              oldSeat.status = 'open';
-              oldSeat.userId = undefined;
-              oldSeat.occupiedAt = undefined;
-            }
-            newSeats.push(oldSeat);
+        for (let i = 0; i < effectiveMaxSeats; i++) {
+          if (i === 0) {
+            newSeats.push({
+              seatIndex: 0,
+              userId: new mongoose.Types.ObjectId(hostId),
+              status: 'occupied',
+              isMuted: false,
+              occupiedAt: new Date()
+            });
           } else {
-            newSeats.push({ seatIndex: i, status: 'open', isMuted: roomSetting.muteAllSeats || false });
+            const oldSeat = existingSeats.find(s => s.seatIndex === i);
+            if (oldSeat) {
+              if (oldSeat.status === 'occupied') {
+                oldSeat.status = 'open';
+                oldSeat.userId = undefined;
+                oldSeat.occupiedAt = undefined;
+              }
+              newSeats.push(oldSeat);
+            } else {
+              newSeats.push({ seatIndex: i, status: 'open', isMuted: roomSetting.muteAllSeats || false });
+            }
           }
         }
         activeStream.seats = newSeats;
@@ -347,10 +352,22 @@ export class LiveStreamService {
     }
 
     let initialSeats: any[] = [];
+    const effectiveNewMaxSeats = maxSeats && Number(maxSeats) > 0 ? Number(maxSeats) : (roomSetting.maxSeats || 10);
     if (normalizedRoomType === 'party_room') {
-      const maxSeats = roomSetting.maxSeats || 10;
-      for (let i = 0; i < maxSeats; i++) {
-        initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+      roomSetting.maxSeats = effectiveNewMaxSeats;
+      settingsUpdated = true;
+      for (let i = 0; i < effectiveNewMaxSeats; i++) {
+        if (i === 0) {
+          initialSeats.push({
+            seatIndex: 0,
+            userId: new mongoose.Types.ObjectId(hostId),
+            status: 'occupied',
+            isMuted: false,
+            occupiedAt: new Date()
+          });
+        } else {
+          initialSeats.push({ seatIndex: i, status: 'open', isMuted: false });
+        }
       }
     }
 
@@ -364,6 +381,7 @@ export class LiveStreamService {
       partyRoomOption: normalizedPartyOption,
       blockedUsers: [],
       seats: initialSeats,
+      maxSeats: effectiveNewMaxSeats,
       startedAt: new Date(),
       token
     });
@@ -939,15 +957,32 @@ export class LiveStreamService {
 
     let query: any = { status: 'live' };
     if (channelName) {
-      query.channelName = channelName;
+      const clean = channelName.replace(/^live_/, '');
+      query.$or = [
+        { channelName: channelName },
+        { channelName: clean },
+        { channelName: `live_${clean}` }
+      ];
     } else {
       query.hostId = new mongoose.Types.ObjectId(hostId);
+      // Prefer active livestream over party rooms when ending live stream
+      query.roomType = { $ne: 'party_room' };
     }
 
     AppLogger.info(`[LiveStreamService: endLiveStream] Querying active stream with query: ${JSON.stringify(query)}`);
-    let liveStream = await Room.findOne(query);
+    let liveStream = await Room.findOne(query).sort({ startedAt: -1, createdAt: -1 });
+    if (!liveStream && !channelName) {
+      liveStream = await Room.findOne({ hostId: new mongoose.Types.ObjectId(hostId), status: 'live' }).sort({ startedAt: -1, createdAt: -1 });
+    }
     if (!liveStream && channelName) {
-      liveStream = await Room.findOne({ channelName });
+      const clean = channelName.replace(/^live_/, '');
+      liveStream = await Room.findOne({
+        $or: [
+          { channelName: channelName },
+          { channelName: clean },
+          { channelName: `live_${clean}` }
+        ]
+      }).sort({ startedAt: -1, createdAt: -1 });
     }
     if (!liveStream) {
       AppLogger.warn(`[LiveStreamService: endLiveStream] No active live stream found for query: ${JSON.stringify(query)}`);
@@ -975,7 +1010,11 @@ export class LiveStreamService {
     const totalSpendingsOfOnlineUsers = activeViewers.reduce((sum, u) => sum + (u.wealthCoins || u.coins || 0), 0);
 
     // 3. Count unique joined users
-    const joinedUsersCount = liveStream.joinedUsers ? liveStream.joinedUsers.length : 0;
+    const joinedUsersCount = Math.max(
+      Array.isArray(liveStream.joinedUsers) ? liveStream.joinedUsers.length : 0,
+      Array.isArray(liveStream.viewers) ? liveStream.viewers.length : 0,
+      typeof liveStream.viewerCount === 'number' ? liveStream.viewerCount : 0
+    );
 
     // 4. Calculate public comments count
     const commentCount = liveStream.commentCount || 0;
@@ -1043,6 +1082,7 @@ export class LiveStreamService {
     if (liveStream.roomType === 'party_room') {
       liveStream.status = 'live'; // Party rooms are 24/7 persistent
       liveStream.endedAt = endedAt;
+      liveStream.duration = duration;
       liveStream.startedAt = new Date(); // Next session starts clean
       liveStream.commentCount = 0;
       liveStream.joinedUsers = [];
@@ -1052,6 +1092,7 @@ export class LiveStreamService {
     } else {
       liveStream.status = 'ended';
       liveStream.endedAt = endedAt;
+      liveStream.duration = duration;
       liveStream.viewers = [];
       liveStream.viewerCount = 0;
     }
@@ -1065,6 +1106,7 @@ export class LiveStreamService {
           $set: {
             status: liveStream.status,
             endedAt: liveStream.endedAt,
+            duration: duration,
             viewers: liveStream.viewers,
             viewerCount: liveStream.viewerCount,
             totalGiftRevenue: liveStream.totalGiftRevenue,
@@ -1408,10 +1450,12 @@ export class LiveStreamService {
         userQueryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
       }
       userQueryConditions.push({ country: { $regex: new RegExp(targetCountry, 'i') } });
+      userQueryConditions.push({ countryCode: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
       if (countryNames.length > 0) {
         userQueryConditions.push({ country: { $in: countryNames } });
       }
       if (countryCodes.length > 0) {
+        userQueryConditions.push({ countryCode: { $in: countryCodes } });
         userQueryConditions.push({ country: { $in: countryCodes } });
       }
 
@@ -1606,21 +1650,19 @@ export class LiveStreamService {
       query.status = 'live';
     }
 
-    // For livestream feed (home page): strictly approved video-verified hosts only
+    // For livestream feed (home page): active and unbanned hosts
     if (query.roomType === 'livestream') {
-      const verifiedHosts = await User.find({
-        gender: { $regex: /^female$/i },
-        videoVerificationStatus: 'approved',
+      const activeHosts = await User.find({
         status: { $ne: 'banned' },
         isBanned: { $ne: true }
       }).select('_id').lean();
-      const verifiedHostIds = verifiedHosts.map(h => h._id);
+      const activeHostIds = activeHosts.map(h => h._id);
 
       if (query.hostId && query.hostId.$in) {
         const existingHostIds = query.hostId.$in.map((id: any) => id.toString());
-        query.hostId = { $in: verifiedHostIds.filter(v => existingHostIds.includes(v.toString())) };
-      } else {
-        query.hostId = { $in: verifiedHostIds };
+        query.hostId = { $in: activeHostIds.filter(v => existingHostIds.includes(v.toString())) };
+      } else if (!query.hostId) {
+        query.hostId = { $in: activeHostIds };
       }
     }
 
@@ -1909,6 +1951,14 @@ export class LiveStreamService {
         host.userId = host.userId ?? null;
         host.name = host.name ?? null;
         host.profileImage = host.profileImage ?? null;
+        if (host.profileImage && typeof host.profileImage === 'object' && host.profileImage.url) {
+          host.profileImageUrl = { url: host.profileImage.url };
+        } else if (typeof host.profileImage === 'string') {
+          host.profileImageUrl = { url: host.profileImage };
+          host.profileImage = { url: host.profileImage };
+        } else if (host.profileImageUrl && typeof host.profileImageUrl === 'object' && host.profileImageUrl.url) {
+          host.profileImage = { url: host.profileImageUrl.url };
+        }
         host.level = richLevelNum;
         host.levelNumber = richLevelNum;
         host.wealthLevel = richLevelNum;

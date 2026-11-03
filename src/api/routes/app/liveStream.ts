@@ -84,13 +84,14 @@ export default (router: Router) => {
     AppLogger.info(`[HTTP POST /app/room/start] Request received. userId=${userId}, body=${JSON.stringify(req.body)}`);
     try {
       const { title, roomType, partyRoomOption, roomTheme, announcement, gameId } = req.body;
+      const maxSeats = req.body.maxSeats || req.body.seatsCount || req.body.seats ? Number(req.body.maxSeats || req.body.seatsCount || req.body.seats) : undefined;
       const roomPhoto = req.body.roomPhoto || req.body.room_photo || req.body.photo || req.body.image || req.body.roomImage || req.body.room_image;
       const file = req.file || (req.files && Array.isArray(req.files) ? (req.files.find((f: any) => ['roomPhoto', 'room_photo', 'photo', 'image', 'roomImage', 'file'].includes(f.fieldname)) || req.files[0]) : undefined);
       if (!title) {
         AppLogger.warn(`[HTTP POST /app/room/start] Missing title in body. userId=${userId}`);
         throw new Error('Title is required to start a livestream/room');
       }
-      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId, roomPhoto, file);
+      const result = await liveStreamService.startLiveStream(userId, title, roomType, partyRoomOption, roomTheme, announcement, gameId, roomPhoto, file, maxSeats);
       AppLogger.info(`[HTTP POST /app/room/start] Success. userId=${userId}, response=${JSON.stringify(result)}`);
       return ResponseWrapper.success(res, result, 'Livestream/Room started successfully');
     } catch (error: any) {

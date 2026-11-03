@@ -8,6 +8,7 @@ import CoinHistory from '../../models/CoinHistory';
 import Country from '../../models/Country';
 import Follow from '../../models/Follow';
 import FriendRequest from '../../models/FriendRequest';
+import Story from '../../models/Story';
 import { LevelService } from '../app/LevelService';
 import { attachUserCountryAndAge, getUserCountryAndLevels, ageFromDob } from '../../utils/userLookup';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
@@ -296,11 +297,13 @@ export class UserService {
     // Status filter
     if (params.status && params.status !== 'all') {
       if (params.status === 'blocked') {
-        query.isBlocked = true;
+        query.$or = [{ isBlocked: true }, { instantBlock: true }, { deviceBan: true }];
       } else if (params.status === 'deleted') {
         query.isDeleted = true;
       } else if (params.status === 'active') {
-        query.isBlocked = false;
+        query.isBlocked = { $ne: true };
+        query.instantBlock = { $ne: true };
+        query.deviceBan = { $ne: true };
         query.isDeleted = { $ne: true };
       } else if (params.status === 'online') {
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -365,15 +368,15 @@ export class UserService {
       deletedUsers,
     ] = await Promise.all([
       User.countDocuments({ ...statsDateQuery }),
-      User.countDocuments({ ...statsDateQuery, isBlocked: false, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, isBlocked: { $ne: true }, instantBlock: { $ne: true }, deviceBan: { $ne: true }, isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, isVerified: true, isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, isPremium: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, $or: [{ isVip: true }, { isPremium: true }, { vipExpiresAt: { $gt: new Date() } }, { vipPlanId: { $ne: null } }], isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, isCoinseller: true, isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, gender: 'Male', isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, gender: 'Female', isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, gender: { $nin: ['Male', 'Female'] }, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: { $regex: /^male$/i }, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: { $regex: /^female$/i }, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, gender: { $nin: ['Male', 'Female', 'male', 'female'] }, isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, lastLoginAt: { $gte: fifteenMinsAgo }, isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, isBlocked: true }),
+      User.countDocuments({ ...statsDateQuery, $or: [{ isBlocked: true }, { instantBlock: true }, { deviceBan: true }] }),
       User.countDocuments({ ...statsDateQuery, isDeleted: true }),
     ]);
 
@@ -404,7 +407,8 @@ export class UserService {
         const myFollowing = await Follow.find({ followerId: userObj._id, status: { $ne: 'rejected' } }).select('followingId');
         const myFollowingIds = myFollowing.map((f: any) => f.followingId);
 
-        const [followersCount, followingCount, mutualFriendsCount, acceptedRequestsCount] = await Promise.all([
+        const [userPostsCount, followersCount, followingCount, mutualFriendsCount, acceptedRequestsCount] = await Promise.all([
+          Story.countDocuments({ userId: userObj._id, isBlocked: { $ne: true } }),
           Follow.countDocuments({ followingId: userObj._id, status: { $ne: 'rejected' } }),
           Follow.countDocuments({ followerId: userObj._id, status: { $ne: 'rejected' } }),
           Follow.countDocuments({
@@ -433,11 +437,15 @@ export class UserService {
 
         const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 0);
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
-        const levelNameStr = typeof levelNameVal === 'string' ? levelNameVal : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : 'Bronze Explorer');
+        const levelNameStr = typeof levelNameVal === 'string' && levelNameVal.trim() !== ''
+          ? levelNameVal
+          : (typeof levelNameVal === 'object' && levelNameVal?.en ? levelNameVal.en : (levelNum > 0 ? `Wealth Lv.${levelNum}` : 'Wealth Lv.0'));
 
         const charmLevelNum = typeof charmLevel === 'number' ? charmLevel : (typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0);
         const charmNameVal = charmLevelInfo?.currentLevel?.name || charmLevelInfo?.name;
-        const charmNameStr = typeof charmNameVal === 'string' ? charmNameVal : (typeof charmNameVal === 'object' && charmNameVal?.en ? charmNameVal.en : 'Rising Star');
+        const charmNameStr = typeof charmNameVal === 'string' && charmNameVal.trim() !== ''
+          ? charmNameVal
+          : (typeof charmNameVal === 'object' && charmNameVal?.en ? charmNameVal.en : (charmLevelNum > 0 ? `Charm Lv.${charmLevelNum}` : 'Charm Lv.0'));
 
         let authProvider = userObj.authProvider;
         if (!authProvider) {
@@ -487,7 +495,7 @@ export class UserService {
           followersCount,
           followingCount,
           friendsCount,
-          postsCount: 0,
+          postsCount: userPostsCount,
           videosCount: 0,
           instantBlock: !!userObj.instantBlock,
           deviceBan: !!userObj.deviceBan,
@@ -651,9 +659,14 @@ export class UserService {
       user.coinSellerCoins = Math.max(0, Number(updateData.coinSellerCoins));
     }
 
+    if (updateData.securityDeposit !== undefined && !Number.isNaN(Number(updateData.securityDeposit))) {
+      user.securityDeposit = Math.max(0, Number(updateData.securityDeposit));
+    }
+
     if (updateData.isCoinseller !== undefined) {
       const isCs = updateData.isCoinseller === true || updateData.isCoinseller === 'true';
       user.isCoinseller = isCs;
+      if (isCs && !user.coinsellerJoinedAt) { user.coinsellerJoinedAt = new Date(); }
       if (isCs && user.isCoinsellerActive === undefined) {
         user.isCoinsellerActive = true;
       }
@@ -1003,6 +1016,7 @@ export class UserService {
     user.isCoinseller = !user.isCoinseller;
     if (user.isCoinseller) {
       user.isCoinsellerActive = true;
+      if (!user.coinsellerJoinedAt) { user.coinsellerJoinedAt = new Date(); }
     }
     await user.save();
     return user;
@@ -1027,6 +1041,7 @@ export class UserService {
       initialCoins?: number;
       countryId?: string;
       countryCode?: string;
+      securityDeposit?: number;
     }
   ) {
     const user = await User.findById(userId);
@@ -1035,6 +1050,7 @@ export class UserService {
     user.isCoinseller = isCoinseller;
     if (isCoinseller) {
       user.isCoinsellerActive = true;
+      if (!user.coinsellerJoinedAt) { user.coinsellerJoinedAt = new Date(); }
     }
 
     const whatsapp = extras?.whatsapp?.trim();
@@ -1061,6 +1077,9 @@ export class UserService {
     const initialCoins = Number(extras?.initialCoins) || 0;
     if (initialCoins < 0) {
       throw new Error('Initial coins cannot be negative');
+    }
+    if (extras?.securityDeposit !== undefined && !Number.isNaN(Number(extras.securityDeposit))) {
+      user.securityDeposit = Math.max(0, Number(extras.securityDeposit));
     }
     if (initialCoins > 0) {
       user.coinSellerCoins = (user.coinSellerCoins || 0) + initialCoins;
@@ -1269,6 +1288,7 @@ export class UserService {
           totalDeals: dealsCount || 0,
           totalBuyers: uniqueBuyers.length || 0,
           coinBalance: trader.coinSellerCoins || trader.coins || 0,
+          securityDeposit: trader.securityDeposit || 0,
         };
       })
     );
@@ -1385,6 +1405,7 @@ export class UserService {
         isVerified: user.isVerified,
         isCoinseller: user.isCoinseller,
         isCoinsellerActive: user.isCoinsellerActive !== false,
+        securityDeposit: user.securityDeposit || 0,
         createdAt: user.createdAt,
         country: country || null,
         countryId: country || null,
@@ -1404,6 +1425,7 @@ export class UserService {
         receivedCoins,
         receivedGifts,
         withdrawnCoins,
+        securityDeposit: user.securityDeposit || 0,
       },
       level: {
         name: typeof levelInfo?.name === 'string' ? levelInfo.name : (typeof levelInfo?.name === 'object' ? (levelInfo.name.en || 'Sapphire Visionary') : (levelInfo?.levelName || 'Sapphire Visionary')),

@@ -76,6 +76,17 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         }
     });
 
+    // Leave room for a chat session
+    socket.on('leave_chat', (data: { chatId: string }, callback?: any) => {
+        if (data?.chatId) {
+            socket.leave(`chat_${data.chatId}`);
+            AppLogger.info(`User ${userId} left chat_${data.chatId}`);
+            if (typeof callback === 'function') {
+                callback({ success: true, type: 'SUCCESS', event: 'leave_chat', data: { chatId: data.chatId } });
+            }
+        }
+    });
+
     // Retrieve user's inbox / chat threads
     socket.on('get_chats', async (data: { page?: number; limit?: number; filter?: 'online' | 'frequent' | 'follow'; search?: string }, callback?: any) => {
         try {

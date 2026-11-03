@@ -309,7 +309,7 @@ export class CoinSellerService {
     });
 
     return {
-      totalCoinsSold,
+            totalCoinsSold,
       soldUsersList,
       pagination: {
         total,
@@ -324,7 +324,7 @@ export class CoinSellerService {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
 
     const seller = await User.findById(sellerId)
-      .select('userId name coins coinSellerCoins beans mobile whatsapp country countryId profileImage coinSellerPaymentMethods')
+      .select('userId name coins coinSellerCoins beans mobile whatsapp country countryId profileImage coinSellerPaymentMethods securityDeposit')
       .populate('profileImage')
       .populate('countryId')
       .populate('coinSellerPaymentMethods.qrCode');
@@ -372,6 +372,8 @@ export class CoinSellerService {
       coinSellerBalance: seller.coinSellerCoins || 0,
       userCoinsBalance: seller.coins || 0,
       beansBalance: seller.beans || 0,
+      totalBalance: (seller.coinSellerCoins || 0) + (seller.coins || 0),
+      securityDeposit: (seller as any).securityDeposit || 0,
       totalCoinsSold,
       customerNumbers,
       coinSellerRank
@@ -381,7 +383,7 @@ export class CoinSellerService {
   async convertBeansToCoins(
     userId: string,
     beansAmount: number,
-    targetUserId?: number
+    targetUserId?: number | string
   ) {
     if (!beansAmount || beansAmount <= 0) {
       throw new Error('Beans amount must be greater than zero');
@@ -394,12 +396,20 @@ export class CoinSellerService {
     }
 
     let recipient = sender;
-    if (targetUserId && targetUserId !== sender.userId) {
-      const foundTarget = await User.findOne({ userId: targetUserId });
-      if (!foundTarget) {
+    if (targetUserId) {
+      let foundTarget: any = null;
+      const numTarget = Number(targetUserId);
+      if (!isNaN(numTarget)) {
+        foundTarget = await User.findOne({ userId: numTarget });
+      }
+      if (!foundTarget && mongoose.Types.ObjectId.isValid(String(targetUserId))) {
+        foundTarget = await User.findById(targetUserId);
+      }
+      if (foundTarget && foundTarget._id.toString() !== sender._id.toString()) {
+        recipient = foundTarget;
+      } else if (!foundTarget && targetUserId) {
         throw new Error('Recipient user with specified ID not found');
       }
-      recipient = foundTarget;
     }
 
     const appSettingService = Container.get(AppSettingService);
@@ -417,10 +427,6 @@ export class CoinSellerService {
     if (coinsToCredit <= 0) {
       throw new Error('Converted coins value is too low');
     }
-    // All transfers/conversions from beans wallet must credit coinSellerCoins (Coin Trader coins), NEVER normal coins
-    const incField = 'coinSellerCoins';
-    const recipientWallet = 'coinSellerCoins';
-    const transferTarget = !isTransfer ? 'self' : 'coinseller';
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -431,43 +437,52 @@ export class CoinSellerService {
         $inc: { beans: -beansAmount }
       }, { session });
 
-      // 2. Credit coinSellerCoins to recipient and ensure coin seller status is active
-      await User.findByIdAndUpdate(recipient._id, {
-        $inc: { [incField]: coinsToCredit },
-        $set: { isCoinseller: true, isCoinsellerActive: true }
-      }, { session });
-
-      // 3. Create history records
+      // 2. Credit coins and wealthCoins (and coinSellerCoins if coinseller)
       if (isTransfer) {
-        // Record for sender
+        const recipientUpdate: any = {
+          $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
+        };
+        if (recipient.isCoinseller) {
+          recipientUpdate.$inc.coinSellerCoins = coinsToCredit;
+        }
+        await User.findByIdAndUpdate(recipient._id, recipientUpdate, { session });
+
+        // 3. Create history records
         await CoinHistory.create([{
           userId: sender._id,
           relatedUserId: recipient._id,
           amount: -beansAmount,
           type: 'beans_to_coins',
           wallet: 'beans',
-          transferTarget,
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
+          transferTarget: 'user',
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
         }], { session });
 
-        // Record for recipient
         await CoinHistory.create([{
           userId: recipient._id,
           relatedUserId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
-          wallet: recipientWallet,
-          transferTarget,
-          description: `Received ${coinsToCredit} Coin Trader coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
+          wallet: 'coins',
+          transferTarget: 'user',
+          description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
         }], { session });
       } else {
+        const senderUpdate: any = {
+          $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
+        };
+        if (sender.isCoinseller) {
+          senderUpdate.$inc.coinSellerCoins = coinsToCredit;
+        }
+        await User.findByIdAndUpdate(sender._id, senderUpdate, { session });
+
         await CoinHistory.create([{
           userId: sender._id,
           amount: coinsToCredit,
           type: 'beans_to_coins',
-          wallet: recipientWallet,
-          transferTarget,
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins`
+          wallet: 'coins',
+          transferTarget: 'self',
+          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
         }], { session });
       }
 
@@ -478,31 +493,29 @@ export class CoinSellerService {
         if (isTransfer) {
           await this.chatService.sendSystemMessage(
             recipient._id.toString(),
-            'Coin Trader Stock Received',
-            `🎉 You have received ${coinsToCredit} Coin Trader coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId}). Updated Coin Trader Balance: ${(recipient.coinSellerCoins || 0) + coinsToCredit} Coins.`,
+            'Coins Received',
+            `🎉 You have received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId}). Updated Coins Balance: ${(recipient.coins || 0) + coinsToCredit} Coins.`,
             {
               isRecharge: true,
               amount: coinsToCredit,
               fromUserId: sender.userId,
               fromUserName: sender.name,
-              newBalance: (recipient.coinSellerCoins || 0) + coinsToCredit,
-              wallet: 'coinSellerCoins',
-              isCoinseller: true,
+              newBalance: (recipient.coins || 0) + coinsToCredit,
+              wallet: 'coins',
             }
           );
         } else {
           await this.chatService.sendSystemMessage(
             sender._id.toString(),
-            'Beans Converted to Coin Trader Stock',
-            `🎉 Successfully converted ${beansAmount} beans to ${coinsToCredit} Coin Trader coins! Updated Coin Trader Balance: ${(sender.coinSellerCoins || 0) + coinsToCredit} Coins.`,
+            'Beans Converted to Coins',
+            `🎉 Successfully converted ${beansAmount} beans to ${coinsToCredit} coins! Updated Coins Balance: ${(sender.coins || 0) + coinsToCredit} Coins.`,
             {
               isRecharge: true,
               amount: coinsToCredit,
               fromUserId: sender.userId,
               fromUserName: sender.name,
-              newBalance: (sender.coinSellerCoins || 0) + coinsToCredit,
-              wallet: 'coinSellerCoins',
-              isCoinseller: true,
+              newBalance: (sender.coins || 0) + coinsToCredit,
+              wallet: 'coins',
             }
           );
         }
@@ -513,11 +526,11 @@ export class CoinSellerService {
       return {
         success: true,
         message: isTransfer
-          ? `Beans converted to Coin Trader coins and transferred to User (ID: ${recipient.userId}) successfully`
-          : `Beans converted to Coin Trader coins successfully`,
+          ? `Beans converted to coins and transferred to User (ID: ${recipient.userId}) successfully`
+          : 'Beans converted to coins successfully',
         beansDeducted: beansAmount,
         coinsCredited: coinsToCredit,
-        wallet: 'coinSellerCoins',
+        wallet: 'coins',
         recipient: {
           id: recipient._id,
           userId: recipient.userId,
@@ -668,14 +681,31 @@ export class CoinSellerService {
       const searchStr = params.search.trim();
       const searchRegex = new RegExp(searchStr, 'i');
       const numericSearch = Number(searchStr);
-      andConditions.push({
+
+      const matchingCountries = await Country.find({
         $or: [
-          { name: searchRegex },
-          { mobile: searchRegex },
-          { whatsapp: searchRegex },
-          ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : [])
+          { name: { $regex: searchRegex } },
+          { code: { $regex: searchRegex } }
         ]
-      });
+      }).select('_id name code').lean();
+      const searchCountryIds = matchingCountries.map((c: any) => c._id);
+      const searchCountryNames = matchingCountries.map((c: any) => c.name);
+
+      const searchOrConditions: any[] = [
+        { name: searchRegex },
+        { mobile: searchRegex },
+        { whatsapp: searchRegex },
+        { country: searchRegex },
+        { nationality: searchRegex },
+        ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : []),
+        ...(searchCountryIds.length > 0 ? [{ countryId: { $in: searchCountryIds } }] : []),
+        ...(searchCountryNames.length > 0 ? [
+          { country: { $in: searchCountryNames } },
+          { nationality: { $in: searchCountryNames } }
+        ] : [])
+      ];
+
+      andConditions.push({ $or: searchOrConditions });
     }
 
     if (andConditions.length > 0) {

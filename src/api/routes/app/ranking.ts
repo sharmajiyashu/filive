@@ -55,13 +55,13 @@ export default (router: Router) => {
    */
   rankingRouter.get('/', async (req: any, res: Response) => {
     try {
-      const type = req.query.type as 'rich' | 'charm';
+      const type = (req.query.type || 'charm').toString().toLowerCase() as 'rich' | 'charm' | 'gift';
       const period = req.query.period as 'daily' | 'weekly' | 'monthly' | 'alltime';
       const page = parseInt(req.query.page?.toString() || '1');
       const limit = parseInt(req.query.limit?.toString() || '20');
       let country = (req.query.country || req.query.countryId || req.query.countryCode)?.toString();
 
-      if (!type || !['rich', 'charm'].includes(type)) {
+      if (!type || !['rich', 'charm', 'gift'].includes(type)) {
         throw new Error('Invalid type parameter. Must be "rich" or "charm".');
       }
 

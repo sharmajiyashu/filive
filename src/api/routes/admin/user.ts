@@ -654,7 +654,7 @@ export default (router: Router) => {
    */
   userRouter.post('/coinsellers/add', async (req: any, res: Response) => {
     try {
-      const { identifier, whatsapp, initialCoins, countryId, countryCode } = req.body;
+      const { identifier, whatsapp, initialCoins, countryId, countryCode, securityDeposit } = req.body;
       if (!identifier || String(identifier).trim() === '') {
         throw new Error('User identifier is required');
       }
@@ -693,6 +693,7 @@ export default (router: Router) => {
       const result = await userService.setCoinsellerAndRemoveFromAgencies(user._id.toString(), true, {
         whatsapp: trimmedWhatsapp,
         initialCoins: Number.isNaN(coins) ? 0 : coins,
+        securityDeposit: securityDeposit !== undefined && securityDeposit !== null && securityDeposit !== '' ? Number(securityDeposit) : undefined,
         countryId,
         countryCode,
       });
@@ -726,7 +727,7 @@ export default (router: Router) => {
         throw new Error('Coin Trader not found');
       }
 
-      const { whatsapp, mobile, name, countryId, countryCode, country } = req.body;
+      const { whatsapp, mobile, name, countryId, countryCode, country, securityDeposit } = req.body;
       const updateData: any = {};
       if (whatsapp !== undefined) updateData.whatsapp = typeof whatsapp === 'string' ? whatsapp.trim() : whatsapp;
       if (mobile !== undefined) updateData.mobile = typeof mobile === 'string' ? mobile.trim() : mobile;
@@ -734,6 +735,12 @@ export default (router: Router) => {
       if (countryId !== undefined) updateData.countryId = countryId;
       if (countryCode !== undefined) updateData.countryCode = countryCode;
       if (country !== undefined) updateData.country = country;
+      if (securityDeposit !== undefined && securityDeposit !== null && securityDeposit !== '') {
+        const depNum = Number(securityDeposit);
+        if (!isNaN(depNum) && depNum >= 0) {
+          updateData.securityDeposit = depNum;
+        }
+      }
 
       const user = await userService.updateUserProfile(targetUser._id.toString(), updateData);
       return ResponseWrapper.success(res, user, 'Coin Trader updated successfully');

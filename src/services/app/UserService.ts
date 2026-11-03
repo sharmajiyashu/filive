@@ -491,6 +491,15 @@ export class UserService {
       weeklyRank = null;
     }
 
+    let ioInstance: any;
+    try {
+      ioInstance = Container.get('socket');
+    } catch (_) { }
+
+    const uidStr = user._id.toString();
+    const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
+    const isOnline = hasSocket || (user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false);
+
     // Party room is always accessible and live
     const resolvedPartyRoom = activeParty || {
       _id: user._id.toString(),
@@ -498,7 +507,7 @@ export class UserService {
       roomId: user.userId || 1000,
       channelName: `party_room_${user.userId || user._id}`,
       title: user.name ? `${user.name}'s Party Room` : 'Party Room',
-      status: 'live',
+      status: isOnline ? 'live' : 'ended',
       roomType: 'party_room',
       partyRoomOption: 'chat',
       token: '',
@@ -541,15 +550,6 @@ export class UserService {
     })
       .select('name mediaId type participants createdAt')
     const { referralCode } = await ensureUserReferralCode(user);
-
-    let ioInstance: any;
-    try {
-      ioInstance = Container.get('socket');
-    } catch (_) { }
-
-    const uidStr = user._id.toString();
-    const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
-    const isOnline = hasSocket || (user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false);
 
     // User is busy ONLY if currently on an active call
     const ringTimeout = new Date(Date.now() - 45 * 1000);

@@ -171,7 +171,7 @@ export default (router: Router) => {
       const result = await coinSellerService.convertBeansToCoins(
         req.user.id,
         Number(beansAmount),
-        targetId ? Number(targetId) : undefined
+        targetId ? (!isNaN(Number(targetId)) ? Number(targetId) : String(targetId)) : undefined
       );
       return ResponseWrapper.success(res, result, result.message || 'Beans converted to coins successfully');
     } catch (error: any) {

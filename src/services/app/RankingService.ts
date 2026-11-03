@@ -11,7 +11,7 @@ export class RankingService {
   constructor(private levelService: LevelService) { }
 
   public async getRanking(
-    type: 'rich' | 'charm',
+    type: 'rich' | 'charm' | 'gift',
     period: 'daily' | 'weekly' | 'monthly' | 'alltime',
     page: number = 1,
     limit: number = 20,
@@ -222,7 +222,7 @@ export class RankingService {
     return populatedRankList;
   }
 
-  private async getPeriodRanks(type: 'rich' | 'charm', period: 'daily' | 'weekly' | 'monthly', countryUserIds?: any[] | null) {
+  private async getPeriodRanks(type: 'rich' | 'charm' | 'gift', period: 'daily' | 'weekly' | 'monthly', countryUserIds?: any[] | null) {
     const startDate = getPeriodStartDate(period);
     const historyMatch: Record<string, any> = {
       createdAt: { $gte: startDate },
@@ -266,12 +266,21 @@ export class RankingService {
     }
   }
 
-  private buildGiftHistoryMatch(type: 'rich' | 'charm') {
+  private buildGiftHistoryMatch(type: 'rich' | 'charm' | 'gift') {
     if (type === 'rich') {
       return {
         $or: [
           { type: 'gift_sent' },
           { type: 'transfer', description: { $regex: /sent gift/i } },
+        ]
+      };
+    }
+    if (type === 'gift') {
+      return {
+        $or: [
+          { type: 'gift_sent' },
+          { type: 'gift_received' },
+          { type: 'charm_received' },
         ]
       };
     }

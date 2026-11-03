@@ -272,7 +272,7 @@ export class CallService {
       throw new Error('Host has not completed video verification');
     }
 
-    const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
+    let rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
     const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
 
     if (!isCallEnabled) {
@@ -392,7 +392,7 @@ export class CallService {
   /**
    * Creates an already-accepted random match call with Agora tokens (no ring / accept step).
    */
-  public async createInstantMatchedCall(callerId: string, receiverId: string, callType: 'voice' | 'video') {
+  public async createInstantMatchedCall(callerId: string, receiverId: string, callType: 'voice' | 'video', isMutualRandom: boolean = false) {
     AppLogger.info(`[CallService: createInstantMatchedCall] callerId=${callerId}, receiverId=${receiverId}, callType=${callType}`);
 
     if (!mongoose.Types.ObjectId.isValid(callerId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
@@ -409,16 +409,20 @@ export class CallService {
     const receiver = await User.findById(receiverId);
     if (!receiver) throw new Error('Receiver profile not found');
 
-    const rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
+    let rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
     const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
 
-    // If receiver charges a rate, they must have calling enabled; if rate is 0 (mutual random match), allow connection
-    if (rate > 0 && !isCallEnabled) {
-      throw new Error(`Receiver does not have ${callType} calling enabled`);
-    }
-
-    if (caller.coins < rate) {
-      throw new Error(`Insufficient coins to start call. You need at least ${rate} coins.`);
+    if (isMutualRandom) {
+      if (!isCallEnabled || (caller.coins || 0) < rate) {
+        rate = 0;
+      }
+    } else {
+      if (rate > 0 && !isCallEnabled) {
+        throw new Error(`Receiver does not have ${callType} calling enabled`);
+      }
+      if ((caller.coins || 0) < rate) {
+        throw new Error(`Insufficient coins to start call. You need at least ${rate} coins.`);
+      }
     }
 
     if (await this.isUserBusy(callerId)) {

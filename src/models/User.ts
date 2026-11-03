@@ -74,6 +74,8 @@ export interface IUser extends Document {
   isCoinseller: boolean;
   isCoinsellerActive: boolean;
   coinSellerCoins: number;
+  securityDeposit?: number;
+  coinsellerJoinedAt?: Date;
   coinSellerPaymentMethods?: {
     country?: string;
     upiId?: string;
@@ -214,6 +216,8 @@ const UserSchema: Schema = new Schema(
     isCoinseller: { type: Boolean, default: false },
     isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },
+    securityDeposit: { type: Number, default: 0 },
+    coinsellerJoinedAt: { type: Date },
     coinSellerPaymentMethods: {
       country: { type: String },
       upiId: { type: String },

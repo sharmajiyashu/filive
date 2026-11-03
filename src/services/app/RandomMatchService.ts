@@ -460,8 +460,8 @@ export class RandomMatchService {
     if (userAId === userBId) return false;
 
     if (await this.areUsersBlocked(userAId, userBId)) return false;
-    if (await this.callService.isUserBusy(userAId)) return false;
-    if (await this.callService.isUserBusy(userBId)) return false;
+    await this.callService.endUserActiveCalls(userAId, 'random_match_pairing');
+    await this.callService.endUserActiveCalls(userBId, 'random_match_pairing');
 
     const [userA, userB] = await Promise.all([
       User.findById(userAId).select('gender coins enableVoiceCall enableVideoCall voiceCallPrice videoCallPrice'),
@@ -600,7 +600,7 @@ export class RandomMatchService {
     callType: RandomCallType,
     io: Server
   ): Promise<void> {
-    const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType);
+    const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType, true);
     if (!call) {
       throw new Error('Failed to create matched call');
     }
@@ -653,7 +653,7 @@ export class RandomMatchService {
       throw new Error('Host is no longer available');
     }
 
-    const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType);
+    const call = await this.callService.createInstantMatchedCall(callerId, hostId, callType, !isAvailableHost);
     if (!call) {
       throw new Error('Failed to create matched call');
     }

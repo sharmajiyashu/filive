@@ -108,6 +108,7 @@ export class ChatMessageService {
       AppLogger.warn(
         `No socket recipients for invite message delete. chatId=${payload.chatId} messageId=${payload.messageId}`
       );
+
     }
 
     for (const userId of userIds) {
@@ -185,6 +186,7 @@ export class ChatMessageService {
       AppLogger.warn(
         `Skipped invite accept socket emit, message missing. messageId=${payload.messageId}`
       );
+
       return;
     }
 
@@ -624,6 +626,7 @@ export class ChatMessageService {
       const other = chat.participants.find(
         (p: any) => p.userId && p.userId.toString() !== userId
       );
+
       if (other?.userId) {
         await assertUsersNotBlocked(userId, other.userId.toString());
       }
@@ -640,6 +643,7 @@ export class ChatMessageService {
           [file],
           `chat/${data.chatId}`
         );
+  
 
         if (uploadResults && uploadResults.length > 0) {
           const res = uploadResults[0];
@@ -816,6 +820,9 @@ export class ChatMessageService {
     const userObjectId = new mongoose.Types.ObjectId(userId);
     const messageObjectId = new mongoose.Types.ObjectId(messageId);
 
+    const message = await Message.findById(messageObjectId);
+    if (!message) return;
+
     const alreadySeen = await Message.findOne({
       _id: messageObjectId,
       'seenBy.userId': userObjectId
@@ -826,6 +833,16 @@ export class ChatMessageService {
         { _id: messageObjectId },
         { $push: { seenBy: { userId: userObjectId, seenAt: new Date() } } }
       );
+
+      const io = this.getSocketIo();
+      if (io) {
+        const payload = { userId, messageId, chatId: message.chatId.toString() };
+        io.to(`chat_${message.chatId}`).emit('seen_update', payload);
+        io.to(`user_${message.senderId.toString()}`).emit('seen_update', payload);
+      }
+      return;
+
+
     }
   }
 
@@ -848,6 +865,22 @@ export class ChatMessageService {
       { _id: chatObjectId, 'participants.userId': userObjectId },
       { $set: { 'participants.$.lastSeenAt': new Date() } }
     );
+
+    const chat = await Chat.findById(chatObjectId);
+    const io = this.getSocketIo();
+    if (io) {
+      const payload = { chatId, userId, success: true };
+      io.to(`chat_${chatId}`).emit('chat_read_update', payload);
+      if (chat && chat.participants) {
+        for (const p of chat.participants) {
+          const pId = p.userId?.toString();
+          if (pId && pId !== userId) {
+            io.to(`user_${pId}`).emit('chat_read_update', payload);
+          }
+        }
+      }
+    }
+    return;
   }
 
   async deleteMessage(userId: string, messageId: string) {

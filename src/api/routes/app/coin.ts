@@ -41,6 +41,12 @@ export default (router: Router) => {
         const user = await User.findById(req.user.id);
         if (user?.countryId) {
           countryId = user.countryId.toString();
+        } else if (user?.country) {
+          countryId = user.country;
+        } else if (user?.countryCode) {
+          countryId = user.countryCode;
+        } else if (user?.nationality) {
+          countryId = user.nationality;
         }
       }
 
@@ -63,7 +69,7 @@ export default (router: Router) => {
    *       200:
    *         description: Wallet details
    */
-  coinRouter.get('/wallet', async (req: any, res: Response) => {
+  coinRouter.get('/wallet', appAuthMiddleware, async (req: any, res: Response) => {
     try {
       const result = await coinService.getWallet(req.user.id);
       return ResponseWrapper.success(res, result, 'Wallet fetched successfully');
@@ -97,7 +103,7 @@ export default (router: Router) => {
    *       200:
    *         description: History details
    */
-  coinRouter.get('/history', async (req: any, res: Response) => {
+  coinRouter.get('/history', appAuthMiddleware, async (req: any, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;

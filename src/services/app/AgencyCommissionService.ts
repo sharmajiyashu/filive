@@ -232,9 +232,23 @@ export class AgencyCommissionService {
         cycleStart,
         description: `Commission accrual from host earning of ${input.beansAmount} beans at ${rate}%`,
       });
+      const roundedDeduction = Math.round(commissionDelta);
+      if (roundedDeduction > 0) {
+        await User.findByIdAndUpdate(input.hostUserId, { $inc: { beans: -roundedDeduction } });
+        await CoinHistory.create({
+          userId: new mongoose.Types.ObjectId(input.hostUserId),
+          relatedUserId: agency.creatorId,
+          amount: -roundedDeduction,
+          type: 'agency_commission_deduction',
+          wallet: 'beans',
+          description: `Agency commission deduction (${rate}% cut: -${roundedDeduction} beans) for agency '${agency.name}'`,
+        });
+        AppLogger.info(`[AgencyCommission] Deducted ${roundedDeduction} beans from host ${input.hostUserId} for agency '${agency.name}' (Rate: ${rate}%)`); } /*
+      }
+      });
     }
 
-    return { earning, commissionAccrued: commissionDelta, rate, totalPendingCommission: commission };
+*/ } return { earning, commissionAccrued: commissionDelta, rate, totalPendingCommission: commission };
   }
 
   public async getActiveHostCount(agencyId: mongoose.Types.ObjectId, cycleStart: Date): Promise<number> {
@@ -537,9 +551,9 @@ export class AgencyCommissionService {
 
     const last7DaysEarnings = weekAgg[0]?.total || 0;
     const last7DaysCommission = settledAgg[0]?.total || 0;
-    const commissionRate = await this.resolveCommissionRate(last7DaysEarnings);
+    const agency = await Agency.findById(agencyId); const commissionRate = await this.resolveCommissionRate(last7DaysEarnings, agency);
     const myCommission = Number(((last7DaysEarnings * commissionRate) / 100).toFixed(2));
-    const slabProgress = await this.getSlabProgress(last7DaysEarnings);
+    const slabProgress = await this.getSlabProgress(last7DaysEarnings, agency);
 
     return {
       periodStart: start,

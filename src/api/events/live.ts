@@ -251,7 +251,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       }
 
       // Check if user is blocked in this stream
-      const liveStream = await Room.findOne({ channelName, status: 'live' });
+      const cleanChannel = channelName.replace(/^live_/, '');
+      const liveStream = await Room.findOne({
+        status: 'live',
+        $or: [
+          { channelName },
+          { channelName: cleanChannel },
+          { channelName: `live_${cleanChannel}` }
+        ]
+      });
       if (liveStream && liveStream.blockedUsers && liveStream.blockedUsers.some(uid => uid.toString() === userId)) {
         emitSocketError(socket, 'room_comment', 'You are blocked from chatting in this room', 'Action forbidden', 'USER_BLOCKED_FROM_ROOM', callback);
         return;
