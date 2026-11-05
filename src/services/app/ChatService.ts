@@ -219,6 +219,9 @@ export class ChatService {
     const skip = (page - 1) * limit;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    const currentUser = await User.findById(userObjectId).select('appType registerIn loginIn');
+    const isFivo = currentUser?.appType === 'fivo' || currentUser?.registerIn === 'fivo' || currentUser?.loginIn === 'fivo';
+
     let systemUser: any = null;
     let supportUser: any = null;
     let systemUserIdStr = '';
@@ -237,11 +240,14 @@ export class ChatService {
         if (sysChat) {
           const msgCount = await Message.countDocuments({ chatId: sysChat._id, deletedAt: { $exists: false } });
           if (msgCount === 0) {
+            const welcomeText = isFivo
+              ? 'Welcome to FIVO! Official system notifications and announcements will appear here.'
+              : 'Welcome to Filive! Official system notifications and announcements will appear here.';
             await Message.create({
               chatId: sysChat._id,
               senderId: systemUser._id,
               type: 'system',
-              text: 'Welcome to Filive! Official system notifications and announcements will appear here.',
+              text: welcomeText,
               seenBy: [],
               reactions: []
             });
@@ -503,18 +509,20 @@ export class ChatService {
         const isSupport = Boolean(supportUserIdStr && otherParticipantIdStr === supportUserIdStr);
 
         if (isSystem) {
-          name = 'System Message';
+          name = isFivo ? 'FIVO Team' : 'System Message';
           isOnline = true;
           userStatus = 'online';
-          if (!mediaUrl) {
+          if (isFivo) {
+            mediaUrl = '';
+          } else if (!mediaUrl) {
             mediaUrl = systemUser?.profileImage ? ((systemUser.profileImage as any).url || systemUser.profileImage) : ChatService.SYSTEM_AVATAR_URL;
           }
           if (otherParticipantDetails && !otherParticipantDetails.profileImage) {
-            otherParticipantDetails.profileImage = systemUser?.profileImage || {
+            otherParticipantDetails.profileImage = isFivo ? null : (systemUser?.profileImage || {
               url: ChatService.SYSTEM_AVATAR_URL,
               mimetype: 'image/jpeg',
               type: 'image'
-            };
+            });
           }
         } else if (isSupport) {
           name = 'Contact Support';
@@ -643,17 +651,17 @@ export class ChatService {
           const isSupport = Boolean(supportUserIdStr && globalUserIdStr === supportUserIdStr);
 
           const defaultImg = isSystem
-            ? (systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' })
+            ? (isFivo ? null : (systemUser?.profileImage || { url: ChatService.SYSTEM_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' }))
             : isSupport
               ? (supportUser?.profileImage || { url: ChatService.SUPPORT_AVATAR_URL, mimetype: 'image/jpeg', type: 'image' })
               : null;
           const globalUserProfileImg = globalUserObj.profileImage || defaultImg;
-          const itemMediaUrl = globalUserProfileImg ? ((globalUserProfileImg as any).url || globalUserProfileImg) : '';
+          const itemMediaUrl = (isSystem && isFivo) ? '' : (globalUserProfileImg ? ((globalUserProfileImg as any).url || globalUserProfileImg) : '');
 
           data.push({
             id: existingSingleChat ? existingSingleChat._id : (null as any),
             type: 'private',
-            name: isSystem ? 'System Message' : isSupport ? 'Contact Support' : (globalUser.name || globalUser.email || 'User'),
+            name: isSystem ? (isFivo ? 'FIVO Team' : 'System Message') : isSupport ? 'Contact Support' : (globalUser.name || globalUser.email || 'User'),
             mediaUrl: itemMediaUrl,
             role: 'member',
             isMuted: false,
