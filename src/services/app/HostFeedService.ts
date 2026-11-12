@@ -422,7 +422,7 @@ export class HostFeedService {
         const hostId = h._id.toString();
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-        const isOnline = socketOnline || recentLogin;
+        const isOnline = Boolean(socketOnline);
         const isBusy = busySet.has(hostId);
         const isLive = liveSet.has(hostId);
         const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));
@@ -535,7 +535,7 @@ export class HostFeedService {
         const hostId = h._id.toString();
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-        const isOnline = socketOnline || recentLogin;
+        const isOnline = Boolean(socketOnline);
         const isBusy = busySet.has(hostId);
         const isLive = liveSet.has(hostId);
         const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));
@@ -676,7 +676,7 @@ export class HostFeedService {
         const hostId = h._id.toString();
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-        const isOnline = socketOnline || recentLogin;
+        const isOnline = Boolean(socketOnline);
         const isBusy = busySet.has(hostId);
         const isLive = liveSet.has(hostId);
         const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));

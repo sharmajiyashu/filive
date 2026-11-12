@@ -43,14 +43,19 @@ export interface AgencyDashboardStats {
   thisWeekCommission: number;
   lastSettlementDate: Date | null;
   nextSettlementDate: Date | null;
+  currentCycleStart?: Date | null;
+  currentCycleEnd?: Date | null;
   isFrozen: boolean;
   isCommissionHeld: boolean;
   slabProgress?: {
     currentCommissionRate: number;
+    currentSlabName?: string | null;
     weeklyEligibleBeans: number;
     nextSlabMinEarnings: number | null;
     nextSlabRate: number | null;
+    nextSlabName?: string | null;
     remainingBeans: number;
+    progressPercentage: number;
   };
 }
 
@@ -127,6 +132,217 @@ export class AgencyCommissionService {
     if (globalRate != null) return Number(globalRate);
 
     return agency?.commissionRate ?? 10;
+  }
+
+  /**
+   * Calculate all eligible host earnings for an agency during a cycle
+   * Strictly includes Agency Owner Self ID as an eligible host/member!
+   * Counts User Gifting + Voice Calls + Video Calls; Excludes Platform Rewards.
+   */
+  public async calculateAgencyWeeklyEarnings(
+    agencyId: string,
+    cycleStart: Date,
+    cycleEnd: Date
+  ): Promise<{
+    totalEligibleBeans: number;
+    giftingBeans: number;
+    voiceCallBeans: number;
+    videoCallBeans: number;
+    hostCount: number;
+    currentSlabName?: string;
+    warning?: string;
+  }> {
+    const breakdown = await this.getAgencyHostEarningBreakdown(agencyId, cycleStart, cycleEnd);
+    return {
+      totalEligibleBeans: breakdown.totalEligibleBeans,
+      giftingBeans: breakdown.totalGifting,
+      voiceCallBeans: breakdown.totalVoice,
+      videoCallBeans: breakdown.totalVideo,
+      hostCount: breakdown.hosts.length,
+      currentSlabName: breakdown.currentSlabName,
+      warning: breakdown.warning,
+    };
+  }
+
+  /**
+   * Get host-by-host breakdown for an agency
+   * Includes Owner Self ID clearly labelled "Agency Owner - Self Host"
+   */
+  public async getAgencyHostEarningBreakdown(
+    agencyId: string,
+    cycleStart: Date,
+    cycleEnd: Date
+  ): Promise<{
+    hosts: Array<{
+      hostId: string;
+      numericId: number;
+      name: string;
+      avatar?: string;
+      isOwnerSelfHost: boolean;
+      roleLabel: string;
+      giftingBeans: number;
+      voiceCallBeans: number;
+      videoCallBeans: number;
+      platformRewardsExcluded: number;
+      netEligibleBeans: number;
+    }>;
+    totalEligibleBeans: number;
+    totalGifting: number;
+    totalVoice: number;
+    totalVideo: number;
+    currentSlabName?: string;
+    warning?: string;
+  }> {
+    const agency = await Agency.findById(agencyId);
+    if (!agency) throw new Error('Agency not found');
+
+    // 1. Get all accepted agency hosts
+    const memberships = await AgencyHost.find({
+      agencyId: agency._id,
+      status: 'ACCEPTED',
+    }).populate('userId', 'userId name profileImage').lean();
+
+    const hostMap = new Map<string, any>();
+    for (const m of memberships) {
+      if (m.userId && (m.userId as any)._id) {
+        hostMap.set((m.userId as any)._id.toString(), {
+          user: m.userId,
+          isOwner: false,
+        });
+      }
+    }
+
+    // 2. Section I & A.2: Agency owner ka Self ID bhi usi agency ka host/member hoga
+    const ownerIdStr = agency.creatorId.toString();
+    const ownerUser = await User.findById(agency.creatorId).select('userId name profileImage').lean();
+    if (ownerUser) {
+      hostMap.set(ownerIdStr, {
+        user: ownerUser,
+        isOwner: true,
+      });
+    }
+
+    // 3. For each host, calculate Gifting + Voice Calls + Video Calls between cycleStart and cycleEnd
+    const hostBreakdownList: any[] = [];
+    let totalEligibleBeans = 0;
+    let totalGifting = 0;
+    let totalVoice = 0;
+    let totalVideo = 0;
+
+    for (const [uidStr, item] of hostMap.entries()) {
+      const userObjId = new mongoose.Types.ObjectId(uidStr);
+
+      // Gifting Beans (gift_received, charm_received)
+      const giftAgg = await CoinHistory.aggregate([
+        {
+          $match: {
+            userId: userObjId,
+            amount: { $gt: 0 },
+            type: { $in: ['gift_received', 'charm_received'] },
+            createdAt: { $gte: cycleStart, $lte: cycleEnd },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const giftingBeans = giftAgg[0]?.total || 0;
+
+      // Voice Call Beans (call_income with audio context)
+      const voiceAgg = await CoinHistory.aggregate([
+        {
+          $match: {
+            userId: userObjId,
+            amount: { $gt: 0 },
+            type: 'call_income',
+            contextType: 'audio_call',
+            createdAt: { $gte: cycleStart, $lte: cycleEnd },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const voiceCallBeans = voiceAgg[0]?.total || 0;
+
+      // Video Call Beans (call_income with video context or general call_income)
+      const videoAgg = await CoinHistory.aggregate([
+        {
+          $match: {
+            userId: userObjId,
+            amount: { $gt: 0 },
+            type: 'call_income',
+            contextType: { $ne: 'audio_call' },
+            createdAt: { $gte: cycleStart, $lte: cycleEnd },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const videoCallBeans = videoAgg[0]?.total || 0;
+
+      // Platform rewards: explicitly 0 towards eligible commission
+      const platformRewardsExcluded = 0;
+      const netEligibleBeans = giftingBeans + voiceCallBeans + videoCallBeans;
+
+      totalEligibleBeans += netEligibleBeans;
+      totalGifting += giftingBeans;
+      totalVoice += voiceCallBeans;
+      totalVideo += videoCallBeans;
+
+      hostBreakdownList.push({
+        hostId: uidStr,
+        numericId: item.user?.userId,
+        name: item.user?.name || (item.isOwner ? 'Agency Owner' : 'Host'),
+        avatar: item.user?.profileImage?.url || null,
+        isOwnerSelfHost: item.isOwner,
+        roleLabel: item.isOwner ? 'Agency Owner - Self Host' : 'Host',
+        giftingBeans,
+        voiceCallBeans,
+        videoCallBeans,
+        platformRewardsExcluded,
+        netEligibleBeans,
+      });
+    }
+
+    // Sort: Owner Self ID on top, then by net eligible beans DESC
+    hostBreakdownList.sort((a, b) => {
+      if (a.isOwnerSelfHost && !b.isOwnerSelfHost) return -1;
+      if (!a.isOwnerSelfHost && b.isOwnerSelfHost) return 1;
+      return b.netEligibleBeans - a.netEligibleBeans;
+    });
+
+    // Determine current slab name and check boundary/warning
+    let currentSlabName = 'No Slab';
+    let warning = undefined;
+
+    const slabs = await CommissionSlab.find({ isActive: true }).sort({ minEarnings: 1 }).lean();
+    if (slabs.length > 0) {
+      let matchedSlab = null;
+      for (const slab of slabs) {
+        const withinMin = totalEligibleBeans >= slab.minEarnings;
+        const withinMax = slab.isUnlimited || slab.maxEarnings == null || totalEligibleBeans <= slab.maxEarnings;
+        if (withinMin && withinMax) {
+          matchedSlab = slab;
+          break;
+        }
+      }
+
+      if (matchedSlab) {
+        currentSlabName = `${matchedSlab.name} (${matchedSlab.percentage}%)`;
+      } else {
+        const highest = slabs[slabs.length - 1];
+        if (totalEligibleBeans > (highest.maxEarnings ?? highest.minEarnings) && !highest.isUnlimited) {
+          warning = 'Slab not configured for this volume';
+          currentSlabName = 'Above Maximum Slab (Warning)';
+        }
+      }
+    }
+
+    return {
+      hosts: hostBreakdownList,
+      totalEligibleBeans,
+      totalGifting,
+      totalVoice,
+      totalVideo,
+      currentSlabName,
+      warning,
+    };
   }
 
   private async validateGiftEarning(
@@ -291,6 +507,8 @@ export class AgencyCommissionService {
       thisWeekCommission: agency.thisWeekCommission,
       lastSettlementDate: agency.lastSettlementDate ?? null,
       nextSettlementDate: agency.nextSettlementDate ?? this.getNextSettlementDate(),
+      currentCycleStart: agency.currentCycleStart ?? null,
+      currentCycleEnd: agency.currentCycleStart ? this.getCycleEnd(agency.currentCycleStart) : null,
       isFrozen: agency.isFrozen,
       isCommissionHeld: agency.isCommissionHeld,
       slabProgress,
@@ -303,15 +521,24 @@ export class AgencyCommissionService {
   ) {
     const currentCommissionRate = await this.resolveCommissionRate(weekEarnings, agency);
     const slabs = await CommissionSlab.find({ isActive: true }).sort({ sortOrder: 1, minEarnings: 1 });
+    const currentSlab = slabs
+      .filter((s) => weekEarnings >= s.minEarnings && (s.isUnlimited || s.maxEarnings == null || weekEarnings <= s.maxEarnings))
+      .pop();
     const nextSlab = slabs.find((slab) => weekEarnings < slab.minEarnings);
     const remainingBeans = nextSlab ? Math.max(0, nextSlab.minEarnings - weekEarnings) : 0;
+    const progressPercentage = nextSlab && nextSlab.minEarnings > 0
+      ? Math.min(100, Math.max(0, Math.round((weekEarnings / nextSlab.minEarnings) * 100)))
+      : (slabs.length > 0 ? 100 : 0);
 
     return {
       currentCommissionRate,
+      currentSlabName: currentSlab?.name ?? null,
       weeklyEligibleBeans: weekEarnings,
       nextSlabMinEarnings: nextSlab?.minEarnings ?? null,
       nextSlabRate: nextSlab?.percentage ?? null,
+      nextSlabName: nextSlab?.name ?? null,
       remainingBeans,
+      progressPercentage,
     };
   }
 

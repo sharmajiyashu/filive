@@ -25,6 +25,22 @@ export default async (expressApp: Express): Promise<void> => {
         AppLogger.error('❌ Failed to run startup cleanup for stuck calls:', err);
     }
 
+    // Startup online status cleanup: Reset stale online flags from past server runs
+    try {
+        const User = (await import('../../models/User')).default;
+        const UserOnlineSession = (await import('../../models/UserOnlineSession')).default;
+        const onlineReset = await User.updateMany({ isOnline: true }, { $set: { isOnline: false } });
+        if (onlineReset.modifiedCount > 0) {
+            AppLogger.info(`🧹 Startup cleanup: Reset ${onlineReset.modifiedCount} stale online users to offline.`);
+        }
+        await UserOnlineSession.updateMany(
+            { isClosed: false },
+            { $set: { isClosed: true, endTime: new Date() } }
+        );
+    } catch (err: any) {
+        AppLogger.error('❌ Failed to reset online statuses on startup:', err);
+    }
+
     // Auto-migration: Move any legacy 'entity' store items and activeEntity user fields to 'entry' / activeEntry
     try {
         const StoreItem = (await import('../../models/StoreItem')).default;

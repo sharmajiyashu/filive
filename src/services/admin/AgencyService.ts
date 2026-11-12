@@ -29,7 +29,7 @@ export class AgencyService {
   private populateAgency(query: any) {
     return query
       .populate('countryId', 'name code flag')
-      .populate('creatorId', 'name email profileImage userId mobile coins')
+      .populate('creatorId', 'name email profileImage userId mobile coins beans')
       .populate('bdId', 'name email profileImage userId mobile')
       .populate('logo');
   }
@@ -404,16 +404,17 @@ export class AgencyService {
     const agency = await Agency.findById(agencyId).select('creatorId name');
     if (!agency) throw new Error('Agency not found');
 
-    const user = await this.userService.adjustUserCoins(
+    // Agency adjustments must always credit/debit BEANS to the agency owner wallet, never normal coins
+    const user = await this.userService.adjustUserBeans(
       agency.creatorId.toString(),
       amount,
-      description || `Agency coin adjustment for ${agency.name}`
+      description || `Agency beans adjustment for ${agency.name}`
     );
 
     return {
       agencyId,
       creatorId: agency.creatorId,
-      coins: user.coins,
+      beans: user.beans,
       amount,
     };
   }

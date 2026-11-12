@@ -5,6 +5,7 @@ import { ResponseWrapper } from '../../responseWrapper';
 import { validate } from '../../validators';
 import { sendOtpSchema, verifyOtpSchema, userRegisterSchema, userLoginSchema, googleLoginSchema, facebookLoginSchema } from '../../validators/auth';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
+import { UserService } from '../../../services/app/UserService';
 import User from '../../../models/User';
 import { countryCodeFromIpHeaders } from '../../../utils/phoneCountry';
 
@@ -421,6 +422,22 @@ export default (router: Router) => {
                 return ResponseWrapper.error(res, error);
             }
         });
+
+    router.post('/auth/fcm-token', appAuthMiddleware, async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id;
+            const { token, fcmToken, deviceType } = req.body || {};
+            const targetToken = token || fcmToken;
+            if (!targetToken) {
+                return ResponseWrapper.error(res, 'FCM token is required', 400);
+            }
+            const userService = Container.get(UserService);
+            const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+            return ResponseWrapper.success(res, result, result.message);
+        } catch (error: any) {
+            return ResponseWrapper.error(res, error);
+        }
+    });
 
     router.post('/auth/logout', async (req: Request, res: Response) => {
         try {

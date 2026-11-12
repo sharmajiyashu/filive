@@ -117,7 +117,7 @@ export class AdminSupportChatService {
           const recentLogin = customerUser.lastLoginAt
             ? new Date(customerUser.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
             : false;
-          isOnline = socketOnline || recentLogin;
+          isOnline = Boolean(socketOnline);
           userStatus = isOnline ? 'online' : 'offline';
         }
 

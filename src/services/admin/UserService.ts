@@ -339,11 +339,7 @@ export class UserService {
     }
 
     // Date range filter
-    if (params.startDate || params.endDate) {
-      query.createdAt = {};
-      if (params.startDate) query.createdAt.$gte = new Date(params.startDate);
-      if (params.endDate) query.createdAt.$lte = new Date(params.endDate);
-    }
+    // Date range applies to deals/transaction metrics rather than user creation date
 
     // Date filter base for stats
     const statsDateQuery: any = {};
@@ -623,13 +619,15 @@ export class UserService {
           countryId: updateData.countryId,
           countryCode: updateData.countryCode || updateData.country,
         });
-        if (!resolved?.countryId) {
-          throw new Error('Invalid country. Please select a valid country.');
-        }
-        user.countryId = resolved.countryId;
-        user.country = resolved.country;
-        if (resolved.country) {
-          user.countryCode = resolved.country;
+        if (resolved?.countryId) {
+          user.countryId = resolved.countryId;
+          user.country = resolved.country || updateData.country || updateData.countryCode;
+          if (resolved.country) {
+            user.countryCode = resolved.country;
+          }
+        } else {
+          if (updateData.country) user.country = updateData.country;
+          if (updateData.countryCode) user.countryCode = updateData.countryCode;
         }
       } else if (updateData.countryId === '' || updateData.country === '') {
         user.set('countryId', undefined);
@@ -1271,13 +1269,30 @@ export class UserService {
 
     const tradersWithStats = await Promise.all(
       traders.map(async (trader) => {
+        const traderIdObj = new mongoose.Types.ObjectId(trader._id.toString());
+        const historyMatch: any = {
+          userId: traderIdObj,
+          amount: { $lt: 0 },
+          $or: [
+            { type: { $in: ['transfer', 'beans_to_coins', 'coinseller', 'recharge'] } },
+            { wallet: 'coinSellerCoins' },
+            { transferTarget: { $in: ['user', 'coinseller'] } },
+            { paymentGateway: 'CoinSeller' }
+          ]
+        };
+        if (params.startDate || params.endDate) {
+          historyMatch.createdAt = {};
+          if (params.startDate) historyMatch.createdAt.$gte = new Date(params.startDate);
+          if (params.endDate) historyMatch.createdAt.$lte = new Date(params.endDate);
+        }
+
         const [spentAgg, dealsCount, uniqueBuyers] = await Promise.all([
           CoinHistory.aggregate([
-            { $match: { userId: trader._id, type: 'transfer', amount: { $lt: 0 } } },
+            { $match: historyMatch },
             { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
           ]),
-          CoinHistory.countDocuments({ userId: trader._id, type: 'transfer', amount: { $lt: 0 } }),
-          CoinHistory.distinct('relatedUserId', { userId: trader._id, type: 'transfer', amount: { $lt: 0 } }),
+          CoinHistory.countDocuments(historyMatch),
+          CoinHistory.distinct('relatedUserId', historyMatch),
         ]);
 
         const spentCoins = spentAgg[0]?.total || 0;

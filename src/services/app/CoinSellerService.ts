@@ -11,6 +11,7 @@ import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaType } from '../../constants/enum';
 import { getUserCountryAndLevels, resolveCountryObject, toPlainObject } from '../../utils/userLookup';
 import Country from '../../models/Country';
+import { CoinsellerRankingService } from './CoinsellerRankingService';
 
 @Service()
 export class CoinSellerService {
@@ -18,7 +19,8 @@ export class CoinSellerService {
     @Inject() private levelService: LevelService,
     @Inject() private chatService: ChatService,
     @Inject() private mediaService: MediaService,
-    @Inject() private cloudinaryService: CloudinaryService
+    @Inject() private cloudinaryService: CloudinaryService,
+    @Inject() private rankingService: CoinsellerRankingService
   ) { }
 
 
@@ -330,29 +332,101 @@ export class CoinSellerService {
       .populate('coinSellerPaymentMethods.qrCode');
     if (!seller) throw new Error('Seller not found');
 
-    // 1. Calculate total coins sold
-    const salesAggregation = await CoinHistory.aggregate([
-      { $match: { userId: sellerObjectId, type: 'transfer', amount: { $lt: 0 } } },
-      { $group: { _id: null, totalCoinsSold: { $sum: { $abs: '$amount' } } } }
-    ]);
-    const totalCoinsSold = salesAggregation[0]?.totalCoinsSold || 0;
+    const sinceDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    // 2. Calculate customer numbers (unique buyers)
-    const uniqueCustomers = await CoinHistory.distinct('relatedUserId', {
+    // 1. Calculate 30-day member recharge sales
+    const salesMatch30Days = {
       userId: sellerObjectId,
-      type: 'transfer',
-      amount: { $lt: 0 }
-    });
-    const customerNumbers = uniqueCustomers.length;
-
-    // 3. Calculate coin seller rank
-    const rankingResult = await CoinHistory.aggregate([
-      { $match: { type: 'transfer', amount: { $lt: 0 } } },
-      { $group: { _id: '$userId', totalSold: { $sum: { $abs: '$amount' } } } },
-      { $sort: { totalSold: -1 } }
+      amount: { $lt: 0 },
+      createdAt: { $gte: sinceDate },
+      $or: [
+        { type: { $in: ['transfer', 'beans_to_coins', 'coinseller', 'recharge'] } },
+        { wallet: 'coinSellerCoins' },
+        { transferTarget: { $in: ['user', 'coinseller'] } },
+        { paymentGateway: 'CoinSeller' },
+      ],
+    };
+    const salesAggregation30 = await CoinHistory.aggregate([
+      { $match: salesMatch30Days },
+      {
+        $group: {
+          _id: null,
+          totalCoinsSold: { $sum: { $abs: '$amount' } },
+          dealsCount: { $sum: 1 },
+        },
+      },
     ]);
-    const rankIndex = rankingResult.findIndex(r => r._id.toString() === sellerId);
-    const coinSellerRank = rankIndex !== -1 ? rankIndex + 1 : rankingResult.length + 1;
+    const dealsLast30Days = salesAggregation30[0]?.totalCoinsSold || 0;
+    const dealsCountLast30Days = salesAggregation30[0]?.dealsCount || 0;
+
+    const uniqueCustomers30 = await CoinHistory.distinct('relatedUserId', {
+      ...salesMatch30Days,
+      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+    });
+    const buyersCount30Days = uniqueCustomers30.filter(Boolean).length;
+
+    // 2. Calculate lifetime member recharge sales
+    const salesMatchLifetime = {
+      userId: sellerObjectId,
+      amount: { $lt: 0 },
+      $or: [
+        { type: { $in: ['transfer', 'beans_to_coins', 'coinseller', 'recharge'] } },
+        { wallet: 'coinSellerCoins' },
+        { transferTarget: { $in: ['user', 'coinseller'] } },
+        { paymentGateway: 'CoinSeller' },
+      ],
+    };
+    const salesAggregationLifetime = await CoinHistory.aggregate([
+      { $match: salesMatchLifetime },
+      {
+        $group: {
+          _id: null,
+          totalCoinsSold: { $sum: { $abs: '$amount' } },
+          dealsCount: { $sum: 1 },
+        },
+      },
+    ]);
+    const totalCoinsSold = salesAggregationLifetime[0]?.totalCoinsSold || dealsLast30Days;
+    const totalDealsCount = salesAggregationLifetime[0]?.dealsCount || dealsCountLast30Days;
+
+    const uniqueCustomersLifetime = await CoinHistory.distinct('relatedUserId', {
+      ...salesMatchLifetime,
+      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+    });
+    const customerNumbers = uniqueCustomersLifetime.filter(Boolean).length || buyersCount30Days;
+
+    // 3. Dynamic rank and badge
+    let coinSellerRank = 1;
+    let badge = 'Active Seller';
+    try {
+      const ranked = await this.rankingService.getRankedSellers({
+        country: (seller.countryId as any)?.code || seller.country,
+        category: ((seller as any).coinsellerCategory === 'normal' ? 'normal' : 'recharge_service'),
+        limit: 100,
+        includeExcluded: false,
+      });
+      const found: any = ranked.sellers.find((s: any) => s.seller._id.toString() === seller._id.toString());
+      if (found) {
+        coinSellerRank = found.rank;
+        badge = found.badge;
+      }
+    } catch {}
+
+    // 4. Online presence
+    let ioServer: any = null;
+    try { ioServer = Container.get('socket'); } catch {}
+    const sellerIdStr = seller._id.toString();
+    const userRoom = ioServer?.sockets?.adapter?.rooms?.get(`user_${sellerIdStr}`);
+    const isSocketOnline = Boolean(userRoom && userRoom.size > 0);
+    const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+    const isRecentActive = (seller as any).lastActiveAt ? new Date((seller as any).lastActiveAt).getTime() > twoMinutesAgo : false;
+    const isOnline = isSocketOnline || (!ioServer && (seller as any).isOnline === true && isRecentActive);
+
+    const formatCoinsAbbr = (n: number) => {
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+      if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+      return n.toString();
+    };
 
     return {
       userId: seller.userId,
@@ -375,8 +449,19 @@ export class CoinSellerService {
       totalBalance: (seller.coinSellerCoins || 0) + (seller.coins || 0),
       securityDeposit: (seller as any).securityDeposit || 0,
       totalCoinsSold,
+      totalCoinsSoldFormatted: formatCoinsAbbr(totalCoinsSold),
+      dealsLast30Days,
+      dealsLast30DaysFormatted: formatCoinsAbbr(dealsLast30Days),
+      dealsCount: dealsCountLast30Days,
+      buyersCount: buyersCount30Days,
+      totalDealsCount,
       customerNumbers,
-      coinSellerRank
+      coinSellerRank,
+      rank: coinSellerRank,
+      badge,
+      isTopSeller: coinSellerRank <= 3,
+      isOnline,
+      status: isOnline ? 'online' : 'offline',
     };
   }
 
@@ -623,175 +708,37 @@ export class CoinSellerService {
   }
 
   /**
-   * Get public paginated coin sellers list for app users (Recharge Service)
+   * Get public paginated coin sellers list for app users (Recharge Service or Normal Recharge)
+   * Ranked dynamically using the 30-day Coins Sold, Unique Users, and Online Duration metrics,
+   * plus 7-Day New Seller Promotion and Country-Wise filtering.
    */
   async getPublicCoinSellersList(params: {
     currentUserId?: string;
     page?: number;
     limit?: number;
     country?: string;
+    category?: 'normal' | 'recharge_service' | 'all';
     search?: string;
   }) {
-    const page = Math.max(1, params.page || 1);
-    const limit = Math.max(1, Math.min(100, params.limit || 20));
-    const skip = (page - 1) * limit;
-
-    const query: any = { isCoinseller: true, isBlocked: false, isCoinsellerActive: { $ne: false } };
-    const andConditions: any[] = [];
-
-    if (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all') {
-      const targetCountry = params.country.trim();
-      const countryConditions: any[] = [];
-
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      countryConditions.push({ name: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ code: { $regex: new RegExp(`^${targetCountry}$`, 'i') } });
-      countryConditions.push({ name: { $regex: targetCountry, $options: 'i' } });
-
-      const matchingCountries = await Country.find({ $or: countryConditions });
-      const countryObjIds = matchingCountries.map(c => c._id);
-      const countryNames = matchingCountries.map(c => c.name);
-      const countryCodes = matchingCountries.map(c => c.code);
-
-      const userCountryConditions: any[] = [
-        { country: { $regex: new RegExp(targetCountry, 'i') } },
-        { nationality: { $regex: new RegExp(targetCountry, 'i') } }
-      ];
-
-      if (mongoose.Types.ObjectId.isValid(targetCountry)) {
-        userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
-      }
-      if (countryObjIds.length > 0) {
-        userCountryConditions.push({ countryId: { $in: countryObjIds } });
-      }
-      if (countryNames.length > 0) {
-        userCountryConditions.push({ country: { $in: countryNames } });
-        userCountryConditions.push({ nationality: { $in: countryNames } });
-      }
-      if (countryCodes.length > 0) {
-        userCountryConditions.push({ country: { $in: countryCodes } });
-      }
-
-      andConditions.push({ $or: userCountryConditions });
-    }
-
-    if (params.search && params.search.trim() !== '') {
-      const searchStr = params.search.trim();
-      const searchRegex = new RegExp(searchStr, 'i');
-      const numericSearch = Number(searchStr);
-
-      const matchingCountries = await Country.find({
-        $or: [
-          { name: { $regex: searchRegex } },
-          { code: { $regex: searchRegex } }
-        ]
-      }).select('_id name code').lean();
-      const searchCountryIds = matchingCountries.map((c: any) => c._id);
-      const searchCountryNames = matchingCountries.map((c: any) => c.name);
-
-      const searchOrConditions: any[] = [
-        { name: searchRegex },
-        { mobile: searchRegex },
-        { whatsapp: searchRegex },
-        { country: searchRegex },
-        { nationality: searchRegex },
-        ...(!isNaN(numericSearch) ? [{ userId: numericSearch }] : []),
-        ...(searchCountryIds.length > 0 ? [{ countryId: { $in: searchCountryIds } }] : []),
-        ...(searchCountryNames.length > 0 ? [
-          { country: { $in: searchCountryNames } },
-          { nationality: { $in: searchCountryNames } }
-        ] : [])
-      ];
-
-      andConditions.push({ $or: searchOrConditions });
-    }
-
-    if (andConditions.length > 0) {
-      query.$and = andConditions;
-    }
-
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    // Fetch all active matching sellers to calculate performance & rank accurately
-    const allSellers = await User.find(query)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt')
-      .populate('profileImage')
-      .populate('countryId')
-      .populate('coinSellerPaymentMethods.qrCode')
-      .lean();
-
-    const total = allSellers.length;
-
-    // Calculate 30-day deals and buyer metrics for ranking
-    const sellerMetrics = await Promise.all(
-      allSellers.map(async (seller) => {
-        const sellerObjectId = seller._id;
-        const countryObj = await resolveCountryObject(seller as any);
-
-        const deals30DaysAgg = await CoinHistory.aggregate([
-          {
-            $match: {
-              userId: sellerObjectId,
-              type: 'transfer',
-              amount: { $lt: 0 },
-              createdAt: { $gte: thirtyDaysAgo }
-            }
-          },
-          { $group: { _id: null, totalCoinsSold: { $sum: { $abs: '$amount' } } } }
-        ]);
-        const dealsLast30Days = deals30DaysAgg[0]?.totalCoinsSold || 0;
-
-        const uniqueCustomers = await CoinHistory.distinct('relatedUserId', {
-          userId: sellerObjectId,
-          type: 'transfer',
-          amount: { $lt: 0 }
-        });
-        const buyersCount = uniqueCustomers.length;
-
-        return {
-          seller,
-          countryObj,
-          dealsLast30Days,
-          buyersCount,
-        };
-      })
-    );
-
-    // Sort sellers by 30-day sales performance descending, then balance, then newest
-    sellerMetrics.sort((a, b) => {
-      if (b.dealsLast30Days !== a.dealsLast30Days) {
-        return b.dealsLast30Days - a.dealsLast30Days;
-      }
-      const balanceA = a.seller.coinSellerCoins || 0;
-      const balanceB = b.seller.coinSellerCoins || 0;
-      if (balanceB !== balanceA) {
-        return balanceB - balanceA;
-      }
-      return new Date(b.seller.createdAt || 0).getTime() - new Date(a.seller.createdAt || 0).getTime();
+    const rankingResult = await this.rankingService.getRankedSellers({
+      currentUserId: params.currentUserId,
+      page: params.page,
+      limit: params.limit,
+      country: params.country,
+      category: params.category || 'recharge_service',
+      search: params.search,
+      includeExcluded: false,
     });
 
-    // Paginate sorted rankings
-    const paginatedItems = sellerMetrics.slice(skip, skip + limit);
-
     const list = await Promise.all(
-      paginatedItems.map(async (item, index) => {
-        const { seller, countryObj, dealsLast30Days, buyersCount } = item;
-        const rank = skip + index + 1;
+      rankingResult.sellers.map(async (item: any) => {
+        const { seller, countryObj, coinsSold, uniqueUsersCount, onlineHours, isOnline, isNewSeller, rank, badge, score } = item;
 
-        let badge = 'Active Seller';
-        if (rank === 1) badge = '#1 Top Gold Seller';
-        else if (rank === 2) badge = '#2 Silver Seller';
-        else if (rank === 3) badge = '#3 Bronze Seller';
-        else if (rank <= 10) badge = 'Senior Seller';
-
-        let dealsFormatted = dealsLast30Days.toString();
-        if (dealsLast30Days >= 1_000_000) {
-          dealsFormatted = (dealsLast30Days / 1_000_000).toFixed(1) + 'M';
-        } else if (dealsLast30Days >= 1_000) {
-          dealsFormatted = (dealsLast30Days / 1_000).toFixed(1) + 'K';
+        let dealsFormatted = coinsSold.toString();
+        if (coinsSold >= 1_000_000) {
+          dealsFormatted = (coinsSold / 1_000_000).toFixed(1) + 'M';
+        } else if (coinsSold >= 1_000) {
+          dealsFormatted = (coinsSold / 1_000).toFixed(1) + 'K';
         }
 
         const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
@@ -821,9 +768,22 @@ export class CoinSellerService {
           countryObject: countryObj || null,
           rank,
           badge,
-          buyersCount,
-          dealsLast30Days,
-          dealsLast30DaysFormatted: dealsFormatted,
+          isNewSeller,
+          isTopSeller: rank <= 3,
+          score: score || 0,
+          buyersCount: uniqueUsersCount,
+          dealsCount: item.dealsCount || 0,
+          dealsLast30Days: coinsSold,
+          dealsLast30DaysFormatted: item.dealsLast30DaysFormatted || dealsFormatted,
+          coinsSold,
+          totalCoinsSold: item.totalCoinsSold || coinsSold,
+          totalCoinsSoldFormatted: item.totalCoinsSoldFormatted || dealsFormatted,
+          totalDealsCount: item.totalDealsCount || item.dealsCount || 0,
+          totalBuyersCount: item.totalBuyersCount || uniqueUsersCount,
+          onlineHours,
+          isOnline,
+          status: isOnline ? 'online' : 'offline',
+          sellerCategory: item.category || 'recharge_service',
           paymentMethods: seller.coinSellerPaymentMethods ? {
             upiId: seller.coinSellerPaymentMethods.upiId || '',
             qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
@@ -838,12 +798,8 @@ export class CoinSellerService {
 
     return {
       sellers: list,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
+      pagination: rankingResult.pagination,
+      summary: rankingResult.settingsSummary,
     };
   }
 
@@ -987,6 +943,15 @@ export class CoinSellerService {
           }
         }
 
+        let ioServer: any = null;
+        try { ioServer = Container.get('socket'); } catch {}
+        const sellerIdStr = seller._id.toString();
+        const userRoom = ioServer?.sockets?.adapter?.rooms?.get(`user_${sellerIdStr}`);
+        const isSocketOnline = Boolean(userRoom && userRoom.size > 0);
+        const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+        const isRecentActive = (seller as any).lastActiveAt ? new Date((seller as any).lastActiveAt).getTime() > twoMinutesAgo : false;
+        const isOnline = isSocketOnline || (!ioServer && (seller as any).isOnline === true && isRecentActive);
+
         return {
           _id: seller._id,
           userId: seller.userId,
@@ -1000,11 +965,17 @@ export class CoinSellerService {
           countryObject: countryObj || null,
           rank,
           badge,
+          isTopSeller: rank <= 3,
+          isOnline,
+          status: isOnline ? 'online' : 'offline',
           buyersCount,
           periodDeals,
           periodDealsFormatted: dealsFormatted,
           deals: periodDeals,
           dealsFormatted,
+          dealsLast30Days: periodDeals,
+          dealsLast30DaysFormatted: dealsFormatted,
+          coinsSold: periodDeals,
           paymentMethods: seller.coinSellerPaymentMethods ? {
             upiId: seller.coinSellerPaymentMethods.upiId || '',
             qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
@@ -1278,7 +1249,8 @@ export class CoinSellerService {
     }
 
     const seller = await User.findOne(query)
-      .select('userId name mobile whatsapp country countryId coinSellerPaymentMethods')
+      .select('userId name mobile whatsapp country countryId profileImage isOnline lastActiveAt isCoinseller coinsellerCategory coinSellerCoins coinSellerPaymentMethods coinsellerJoinedAt createdAt')
+      .populate('profileImage')
       .populate('coinSellerPaymentMethods.qrCode')
       .populate('countryId');
 
@@ -1288,13 +1260,138 @@ export class CoinSellerService {
     const countryCode = countryFilter || seller.coinSellerPaymentMethods?.country || countryObj?.code || seller.country || 'IN';
     const availableGateways = await this.getAvailableGatewaysForCountry(countryCode);
 
+    const sellerObjectId = seller._id;
+    const sinceDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // 1. Last 30 days member recharge sales
+    const historyMatch = {
+      userId: sellerObjectId,
+      amount: { $lt: 0 },
+      createdAt: { $gte: sinceDate },
+      $or: [
+        { type: { $in: ['transfer', 'beans_to_coins', 'coinseller', 'recharge'] } },
+        { wallet: 'coinSellerCoins' },
+        { transferTarget: { $in: ['user', 'coinseller'] } },
+        { paymentGateway: 'CoinSeller' },
+      ],
+    };
+    const dealsAgg = await CoinHistory.aggregate([
+      { $match: historyMatch },
+      {
+        $group: {
+          _id: null,
+          totalCoinsSold: { $sum: { $abs: '$amount' } },
+          dealsCount: { $sum: 1 },
+        },
+      },
+    ]);
+    const coinsSold30Days = dealsAgg[0]?.totalCoinsSold || 0;
+    const dealsCount30Days = dealsAgg[0]?.dealsCount || 0;
+
+    const uniqueBuyers30Days = await CoinHistory.distinct('relatedUserId', {
+      ...historyMatch,
+      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+    });
+    const buyersCount30Days = uniqueBuyers30Days.filter(Boolean).length;
+
+    // 2. Lifetime member recharge sales
+    const lifetimeMatch = {
+      userId: sellerObjectId,
+      amount: { $lt: 0 },
+      $or: [
+        { type: { $in: ['transfer', 'beans_to_coins', 'coinseller', 'recharge'] } },
+        { wallet: 'coinSellerCoins' },
+        { transferTarget: { $in: ['user', 'coinseller'] } },
+        { paymentGateway: 'CoinSeller' },
+      ],
+    };
+    const lifetimeAgg = await CoinHistory.aggregate([
+      { $match: lifetimeMatch },
+      {
+        $group: {
+          _id: null,
+          totalCoinsSold: { $sum: { $abs: '$amount' } },
+          dealsCount: { $sum: 1 },
+        },
+      },
+    ]);
+    const lifetimeCoinsSold = lifetimeAgg[0]?.totalCoinsSold || coinsSold30Days;
+    const lifetimeDealsCount = lifetimeAgg[0]?.dealsCount || dealsCount30Days;
+    const lifetimeBuyers = await CoinHistory.distinct('relatedUserId', {
+      ...lifetimeMatch,
+      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+    });
+    const lifetimeBuyersCount = lifetimeBuyers.filter(Boolean).length || buyersCount30Days;
+
+    // 3. Real-time online presence with socket check
+    let ioServer: any = null;
+    try { ioServer = Container.get('socket'); } catch {}
+    const sellerIdStr = seller._id.toString();
+    const userRoom = ioServer?.sockets?.adapter?.rooms?.get(`user_${sellerIdStr}`);
+    const isSocketOnline = Boolean(userRoom && userRoom.size > 0);
+    const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+    const isRecentActive = seller.lastActiveAt ? new Date(seller.lastActiveAt).getTime() > twoMinutesAgo : false;
+    const isOnline = isSocketOnline || (!ioServer && seller.isOnline === true && isRecentActive);
+
+    // 4. WhatsApp link
+    const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+    const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+    const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+
+    // 5. Rank and Badge in Category & Country
+    let sellerRank = 1;
+    let sellerBadge = 'Active Seller';
+    let isNewSeller = false;
+    try {
+      const ranked = await this.rankingService.getRankedSellers({
+        country: countryObj?.code || seller.country,
+        category: (seller.coinsellerCategory === 'normal' ? 'normal' : 'recharge_service'),
+        limit: 100,
+        includeExcluded: false,
+      });
+      const found: any = ranked.sellers.find((s: any) => s.seller._id.toString() === seller._id.toString());
+      if (found) {
+        sellerRank = found.rank;
+        sellerBadge = found.badge;
+        isNewSeller = Boolean(found.isNewSeller);
+      }
+    } catch {}
+
+    const formatCoinsAbbr = (n: number) => {
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+      if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+      return n.toString();
+    };
+
     return {
       sellerId: seller._id,
+      _id: seller._id,
       userId: seller.userId,
-      name: seller.name,
-      mobile: seller.mobile,
-      whatsapp: seller.whatsapp,
+      name: seller.name || 'Seller',
+      profileImage: toPlainObject(seller.profileImage) || null,
+      mobile: seller.mobile || '',
+      whatsapp: seller.whatsapp || seller.mobile || '',
+      whatsappUrl,
       country: countryObj || countryCode,
+      countryObject: countryObj || null,
+      rank: sellerRank,
+      badge: sellerBadge,
+      isTopSeller: sellerRank <= 3,
+      isNewSeller,
+      isOnline,
+      status: isOnline ? 'online' : 'offline',
+      dealsLast30Days: coinsSold30Days,
+      dealsLast30DaysFormatted: formatCoinsAbbr(coinsSold30Days),
+      coinsSold: coinsSold30Days,
+      dealsCount: dealsCount30Days,
+      buyersCount: buyersCount30Days,
+      totalCoinsSold: lifetimeCoinsSold,
+      totalCoinsSoldFormatted: formatCoinsAbbr(lifetimeCoinsSold),
+      totalDealsCount: lifetimeDealsCount,
+      totalBuyersCount: lifetimeBuyersCount,
+      availableBalance: seller.coinSellerCoins || 0,
+      coinSellerCoins: seller.coinSellerCoins || 0,
+      sellerCategory: seller.coinsellerCategory || 'recharge_service',
       availableGateways,
       paymentMethods: seller.coinSellerPaymentMethods ? {
         country: seller.coinSellerPaymentMethods.country || countryCode,

@@ -970,7 +970,7 @@ export class CallService {
       const hostId = hObj._id?.toString();
       const socketOnline = (io && hostId) ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
       const recentLogin = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-      const isOnline = socketOnline || recentLogin;
+      const isOnline = Boolean(socketOnline);
       const isBusy = busyHostSet.has(hostId);
       const isLive = liveHostSet.has(hostId);
       const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');

@@ -252,12 +252,14 @@ export default (router: Router) => {
       const limit = parseInt(req.query.limit?.toString() || '20');
       const country = req.query.country?.toString();
       const search = req.query.search?.toString();
+      const category = (req.query.category?.toString() || 'recharge_service') as any;
 
       const result = await coinSellerService.getPublicCoinSellersList({
         currentUserId,
         page,
         limit,
         country,
+        category,
         search,
       });
       return ResponseWrapper.success(res, result, 'Coin sellers list fetched successfully');
@@ -370,6 +372,28 @@ export default (router: Router) => {
       const country = (req.query.country || req.query.countryCode)?.toString();
       const result = await coinSellerService.getPaymentMethods(sellerId, country);
       return ResponseWrapper.success(res, result, 'Seller payment methods retrieved successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  sellerRouter.get('/detail/:sellerId', async (req: any, res: Response) => {
+    try {
+      const { sellerId } = req.params;
+      const country = (req.query.country || req.query.countryCode)?.toString();
+      const result = await coinSellerService.getPaymentMethods(sellerId, country);
+      return ResponseWrapper.success(res, result, 'Seller details retrieved successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  sellerRouter.get('/profile/:sellerId', async (req: any, res: Response) => {
+    try {
+      const { sellerId } = req.params;
+      const country = (req.query.country || req.query.countryCode)?.toString();
+      const result = await coinSellerService.getPaymentMethods(sellerId, country);
+      return ResponseWrapper.success(res, result, 'Seller profile retrieved successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }

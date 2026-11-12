@@ -621,6 +621,83 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/users/fcm-token:
+   *   post:
+   *     summary: Register or refresh device FCM token for push notifications
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               token:
+   *                 type: string
+   *               deviceType:
+   *                 type: string
+   *                 enum: [android, ios, web]
+   *     responses:
+   *       200:
+   *         description: Token registered successfully
+   */
+  appRouter.post('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken, deviceType } = req.body || {};
+      const targetToken = token || fcmToken;
+      if (!targetToken) {
+        throw new Error('FCM token is required in request body');
+      }
+
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * PUT /app/users/fcm-token
+   * Alias to register/update device FCM token
+   */
+  appRouter.put('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken, deviceType } = req.body || {};
+      const targetToken = token || fcmToken;
+      if (!targetToken) {
+        throw new Error('FCM token is required in request body');
+      }
+
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * DELETE /app/users/fcm-token
+   * Unregister device FCM token
+   */
+  appRouter.delete('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken } = req.body || {};
+      const targetToken = token || fcmToken || req.query.token;
+
+      const result = await userService.removeFcmToken(userId, targetToken);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/users/{id}:
    *   get:
    *     summary: Get user details

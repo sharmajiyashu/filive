@@ -3,7 +3,17 @@ import { z } from 'zod';
 export const updateProfileSchema = z.object({
   name: z.string().optional(),
   bio: z.string().optional(),
-  gender: z.enum(['Male', 'Female', 'Other']).optional(),
+  gender: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const lower = val.trim().toLowerCase();
+      if (lower === 'male') return 'Male';
+      if (lower === 'female') return 'Female';
+      if (lower === 'other') return 'Other';
+      if (lower === '') return undefined;
+    }
+    return val;
+  }, z.enum(['Male', 'Female', 'Other']).optional()),
+  email: z.string().optional(),
   dob: z.string().optional(),
   location: z.preprocess((val) => {
     if (typeof val === 'string') {

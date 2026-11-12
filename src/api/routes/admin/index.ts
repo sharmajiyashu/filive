@@ -41,6 +41,7 @@ import report from './report';
 import hashtag from './hashtag';
 import role from './role';
 import adminUser from './adminUser';
+import coinsellerRanking from './coinsellerRanking';
 
 export default (router: Router): Router => {
   auth(router);
@@ -85,6 +86,6 @@ export default (router: Router): Router => {
   hashtag(router);
   role(router);
   adminUser(router);
+  coinsellerRanking(router);
   return router;
 };
-

@@ -37,6 +37,24 @@ export class FirebasePushService {
                 });
                 if (res.failureCount > 0) {
                     AppLogger.warn(`FCM partial failure: ${res.failureCount}/${chunk.length}`);
+                    const staleTokens: string[] = [];
+                    res.responses.forEach((resp, idx) => {
+                        if (!resp.success && resp.error) {
+                            const errCode = resp.error.code;
+                            if (
+                                errCode === 'messaging/registration-token-not-registered' ||
+                                errCode === 'messaging/invalid-registration-token'
+                            ) {
+                                staleTokens.push(chunk[idx]);
+                            }
+                        }
+                    });
+                    if (staleTokens.length > 0) {
+                        User.updateMany(
+                            { 'fcmTokens.token': { $in: staleTokens } },
+                            { $pull: { fcmTokens: { token: { $in: staleTokens } } } }
+                        ).catch((err) => AppLogger.warn('Error pruning stale FCM tokens:', err));
+                    }
                 }
             } catch (error) {
                 AppLogger.error('FCM send failed:', error);

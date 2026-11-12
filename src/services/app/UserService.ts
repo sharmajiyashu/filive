@@ -200,7 +200,7 @@ export class UserService {
       const uObj = u.toObject ? u.toObject() : u;
       const uid = uObj._id?.toString();
       const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uid}`)?.size > 0;
-      const isOnline = hasSocket || (uObj.lastLoginAt ? new Date(uObj.lastLoginAt).getTime() > Date.now() - 30 * 60 * 1000 : false);
+      const isOnline = hasSocket;
       const isBusy = busyUserSet.has(uid);
       const isLive = liveUserSet.has(uid);
       const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
@@ -498,7 +498,7 @@ export class UserService {
 
     const uidStr = user._id.toString();
     const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
-    const isOnline = hasSocket || (user.lastLoginAt ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false);
+    const isOnline = hasSocket;
 
     // Party room is always accessible and live
     const resolvedPartyRoom = activeParty || {
@@ -974,6 +974,74 @@ export class UserService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Register / update device FCM token for push notifications
+   */
+  public async registerFcmToken(
+    userId: string,
+    token: string,
+    deviceType: 'android' | 'ios' | 'web' = 'android'
+  ) {
+    if (!token || typeof token !== 'string' || token.trim() === '') {
+      throw new Error('Valid FCM token is required');
+    }
+    const cleanToken = token.trim();
+    const cleanDeviceType = ['android', 'ios', 'web'].includes(deviceType) ? deviceType : 'android';
+
+    // 1. Remove this token from other users to avoid device cross-talk
+    await User.updateMany(
+      { _id: { $ne: new mongoose.Types.ObjectId(userId) }, 'fcmTokens.token': cleanToken },
+      { $pull: { fcmTokens: { token: cleanToken } } }
+    );
+
+    // 2. Fetch user and update token array
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (!Array.isArray(user.fcmTokens)) {
+      user.fcmTokens = [];
+    }
+
+    // Filter out previous occurrences of this token
+    user.fcmTokens = user.fcmTokens.filter((t) => t.token !== cleanToken);
+
+    // Push newest token
+    user.fcmTokens.push({
+      token: cleanToken,
+      deviceType: cleanDeviceType,
+      updatedAt: new Date(),
+    });
+
+    // Retain only the latest 10 tokens to avoid unbounded array growth
+    if (user.fcmTokens.length > 10) {
+      user.fcmTokens = user.fcmTokens.slice(-10);
+    }
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'FCM token registered successfully',
+      tokenCount: user.fcmTokens.length,
+    };
+  }
+
+  /**
+   * Remove a specific device FCM token (e.g. on manual logout or device unbind)
+   */
+  public async removeFcmToken(userId: string, token: string) {
+    if (!token || typeof token !== 'string') {
+      return { success: true };
+    }
+    const cleanToken = token.trim();
+    await User.findByIdAndUpdate(userId, {
+      $pull: { fcmTokens: { token: cleanToken } },
+    });
+    return { success: true, message: 'FCM token removed successfully' };
   }
 }
 

@@ -1,11 +1,13 @@
 import { Service, Container } from 'typedi';
 import mongoose from 'mongoose';
+import { Server } from 'socket.io';
 import PayoutRequest, { IPayoutFieldValue } from '../../models/PayoutRequest';
 import PayoutMethod from '../../models/PayoutMethod';
 import User from '../../models/User';
 import CoinHistory from '../../models/CoinHistory';
 import Country from '../../models/Country';
 import { AppSettingService } from '../common/AppSettingService';
+import { ChatService } from '../app/ChatService';
 import AppLogger from '../../api/loaders/logger';
 
 @Service()
@@ -197,6 +199,37 @@ export class PayoutRequestService {
       transactionId: payoutRequest._id.toString(),
     });
 
+    // 9. Send In-App System Message & Push Notification confirming submission
+    try {
+      const chatService = Container.get(ChatService);
+      const formattedAmount = `${netAmount.toLocaleString('en-IN')} ${currency}`;
+      const formattedCoins = `${beansToDebit.toLocaleString('en-IN')}`;
+      const title = '📝 Withdrawal Request Submitted';
+      const text = [
+        `Aapka withdrawal request successfully submit ho gaya hai.`,
+        ``,
+        `📋 Request Summary:`,
+        `• Net Amount: ${formattedAmount}`,
+        `• Beans Redeemed: ${formattedCoins} Beans`,
+        `• Payout Method: ${method.name}`,
+        feeAmount > 0 ? `• Processing Fee: ${feeAmount.toLocaleString('en-IN')} ${currency} (${feePercent}%)` : null,
+        `• Status: Pending Review`,
+        ``,
+        `Finance team 24-48 ghanto me iski janch karke payment process karegi. Status Beans History me track kar sakte hain.`
+      ].filter(Boolean).join('\n');
+
+      await chatService.sendSystemMessage(userId, title, text, {
+        type: 'withdrawal_submitted',
+        payoutRequestId: payoutRequest._id.toString(),
+        amount: netAmount,
+        currency: currency,
+        coins: beansToDebit,
+        methodName: method.name,
+      });
+    } catch (msgErr: any) {
+      AppLogger.warn(`[PayoutRequestService] Non-blocking error sending submission message: ${msgErr?.message}`);
+    }
+
     return payoutRequest;
   }
 
@@ -330,6 +363,114 @@ export class PayoutRequestService {
       });
 
       AppLogger.info(`[PayoutRequestService] Refunded ${payoutRequest.coins} beans to user ${payoutRequest.user} upon rejection`);
+    }
+
+    // Send formatted In-App System Message & Push Notification
+    try {
+      const chatService = Container.get(ChatService);
+      const formattedDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      const methodName = payoutRequest.payoutMethodSnapshot?.name || 'Bank/Wallet Transfer';
+      const formattedAmount = `${(payoutRequest.amount || 0).toLocaleString('en-IN')} ${payoutRequest.currency || 'INR'}`;
+      const formattedCoins = `${(payoutRequest.coins || 0).toLocaleString('en-IN')}`;
+      const targetUserId = payoutRequest.user.toString();
+
+      if (data.status === 'approved') {
+        const title = '🎉 Withdrawal Approved - Fund Transferred';
+        const text = [
+          `🎉 Badhai ho! Aapka withdrawal request successfully approve ho gaya hai aur payment transfer kar di gayi hai.`,
+          ``,
+          `📋 Payout Details:`,
+          `• Amount Paid: ${formattedAmount}`,
+          `• Beans Redeemed: ${formattedCoins} Beans`,
+          `• Payout Method: ${methodName}`,
+          data.transactionId ? `• Reference/UTR No: ${data.transactionId}` : null,
+          `• Processed On: ${formattedDate}`,
+          data.adminNote ? `• Admin Note: ${data.adminNote}` : null,
+          ``,
+          `Kripya apna bank account ya payment wallet check karein. Filive ke saath bane rehne ke liye dhanyawad! 🌟`
+        ].filter(Boolean).join('\n');
+
+        await chatService.sendSystemMessage(targetUserId, title, text, {
+          type: 'withdrawal_approved',
+          payoutRequestId: payoutRequest._id.toString(),
+          amount: payoutRequest.amount,
+          currency: payoutRequest.currency,
+          coins: payoutRequest.coins,
+          transactionId: data.transactionId || '',
+          adminNote: data.adminNote || '',
+          payoutMethod: methodName,
+        });
+      } else if (data.status === 'rejected') {
+        const reason = data.adminNote || 'Payment details verification failed or incorrect account information.';
+        const title = '❌ Withdrawal Request Rejected - Beans Refunded';
+        const text = [
+          `⚠️ Aapka withdrawal request approve nahi ho saka aur reject kar diya gaya hai.`,
+          ``,
+          `📋 Rejection Details:`,
+          `• Requested Amount: ${formattedAmount}`,
+          `• Refunded Beans: +${formattedCoins} Beans (Aapke Beans balance me wapas credit ho gaye hain ✅)`,
+          `• Payout Method: ${methodName}`,
+          `• Rejection Reason: ${reason}`,
+          `• Date: ${formattedDate}`,
+          ``,
+          `💡 Next Steps:`,
+          `Kripya apni payment details (Bank/UPI/Wallet) verify karein aur sahi jankari ke sath dubara withdrawal request submit karein. Kisi bhi sahayata ke liye Support team se sampark karein.`
+        ].join('\n');
+
+        await chatService.sendSystemMessage(targetUserId, title, text, {
+          type: 'withdrawal_rejected',
+          payoutRequestId: payoutRequest._id.toString(),
+          amount: payoutRequest.amount,
+          currency: payoutRequest.currency,
+          coins: payoutRequest.coins,
+          refundedBeans: payoutRequest.coins,
+          adminNote: reason,
+          payoutMethod: methodName,
+        });
+      } else if (data.status === 'processing') {
+        const title = '⏳ Withdrawal Under Processing';
+        const text = [
+          `ℹ️ Aapka withdrawal request hamari finance team dwara verify aur process kiya ja raha hai.`,
+          ``,
+          `📋 Details:`,
+          `• Amount: ${formattedAmount} (${formattedCoins} Beans)`,
+          `• Payout Method: ${methodName}`,
+          data.adminNote ? `• Note: ${data.adminNote}` : null,
+          ``,
+          `Payment complete hote hi aapko turant confirm kiya jayega. Thoda intezar karne ke liye dhanyawad!`
+        ].filter(Boolean).join('\n');
+
+        await chatService.sendSystemMessage(targetUserId, title, text, {
+          type: 'withdrawal_processing',
+          payoutRequestId: payoutRequest._id.toString(),
+          amount: payoutRequest.amount,
+          currency: payoutRequest.currency,
+          coins: payoutRequest.coins,
+          adminNote: data.adminNote || '',
+          payoutMethod: methodName,
+        });
+      }
+
+      // Real-time socket event to user's personal channel
+      try {
+        const io: Server = Container.get('io');
+        if (io) {
+          io.to(`user_${targetUserId}`).emit('payout_status_updated', {
+            requestId: payoutRequest._id.toString(),
+            status: data.status,
+            amount: payoutRequest.amount,
+            currency: payoutRequest.currency,
+            coins: payoutRequest.coins,
+            adminNote: payoutRequest.adminNote,
+            transactionId: payoutRequest.transactionId,
+            updatedAt: payoutRequest.processedAt,
+          });
+        }
+      } catch (socketErr) {
+        // Socket broadcast is non-blocking
+      }
+    } catch (notifErr: any) {
+      AppLogger.warn(`[PayoutRequestService] Non-blocking error sending status notification: ${notifErr?.message}`);
     }
 
     return await PayoutRequest.findById(requestId)

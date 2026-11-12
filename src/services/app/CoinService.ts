@@ -29,6 +29,7 @@ const BEANS_HISTORY_TYPES = [
 
 const BEANS_HISTORY_FILTER_TYPES = [
   { key: 'all', label: 'All Transactions' },
+  { key: 'agency_commission', label: 'Agency Commission' },
   { key: 'cash_out', label: 'Cash Out' },
   { key: 'gift_income', label: 'Gift Income' },
   { key: 'call_income', label: 'Call Income' },
@@ -190,12 +191,19 @@ export class CoinService {
   async getHistory(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
+    // Normal Coin History strictly excludes beans wallet and beans-only earnings (agency_commission, etc.)
+    const query = {
+      userId,
+      wallet: { $ne: 'beans' },
+      type: { $nin: ['agency_commission', 'cash_out', 'charm_received', 'call_income', 'coins_to_beans'] }
+    };
+
     const [history, total] = await Promise.all([
-      CoinHistory.find({ userId })
+      CoinHistory.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      CoinHistory.countDocuments({ userId })
+      CoinHistory.countDocuments(query)
     ]);
 
     return {
@@ -252,6 +260,11 @@ export class CoinService {
 
     if (filterType === 'all') {
       query.type = { $in: [...BEANS_HISTORY_TYPES] };
+      return query;
+    }
+
+    if (filterType === 'agency_commission') {
+      query.type = 'agency_commission';
       return query;
     }
 
@@ -349,6 +362,7 @@ export class CoinService {
   }
 
   private resolveTransactionType(row: any): string {
+    if (row.type === 'agency_commission') return 'agency_commission';
     if (row.type === 'charm_received') return 'gift_income';
     if (row.type === 'cash_out') return 'cash_out';
     if (row.type === 'call_income') return 'call_income';

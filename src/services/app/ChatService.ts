@@ -9,6 +9,7 @@ import Block from '../../models/Block';
 import Call from '../../models/Call';
 import { assertUsersNotBlocked } from '../../utils/blockCheck';
 import AppLogger from '../../api/loaders/logger';
+import { FirebasePushService } from '../common/FirebasePushService';
 
 @Service()
 export class ChatService {
@@ -200,6 +201,43 @@ export class ChatService {
           title,
           text,
         });
+      }
+
+      // Deliver via Firebase Push Notification (FCM)
+      try {
+        const pushService = Container.get(FirebasePushService);
+        const dataPayload: Record<string, string> = {
+          type: String(metadata?.type || 'system_message'),
+          chatId: chat._id.toString(),
+          messageId: message._id.toString(),
+        };
+
+        if (metadata) {
+          for (const key of Object.keys(metadata)) {
+            const val = metadata[key];
+            if (val !== undefined && val !== null) {
+              dataPayload[key] = typeof val === 'object' ? JSON.stringify(val) : String(val);
+            }
+          }
+        }
+
+        const notificationTitle = title || 'Official System Notification';
+        // Clean text preview for push notification alert
+        const cleanNotificationBody = (text || '')
+          .replace(/[*_~`#]/g, '')
+          .replace(/\n{2,}/g, ' \n')
+          .trim();
+        const notificationBody = cleanNotificationBody.length > 200
+          ? cleanNotificationBody.substring(0, 197) + '...'
+          : cleanNotificationBody;
+
+        await pushService.notifyUser(targetUserId, {
+          title: notificationTitle,
+          body: notificationBody,
+          data: dataPayload,
+        });
+      } catch (pushErr: any) {
+        AppLogger.warn(`[ChatService: sendSystemMessage] FCM push delivery skipped/failed: ${pushErr?.message}`);
       }
 
       return { chat, message, payload };
@@ -397,7 +435,7 @@ export class ChatService {
             ? new Date(otherUser.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
             : false;
 
-          isOnline = socketOnline || recentLogin;
+          isOnline = Boolean(socketOnline);
           isBusy = busyUserSet.has(otherParticipantIdStr);
           userStatus = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
 
@@ -633,7 +671,7 @@ export class ChatService {
 
           const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${globalUserIdStr}`)?.size || 0) > 0 : false;
           const recentLogin = globalUser.lastLoginAt ? new Date(globalUser.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-          const isOnline = socketOnline || recentLogin;
+          const isOnline = Boolean(socketOnline);
           const userStatus = isOnline ? 'online' : 'offline';
 
           const isFollowed = followedUserIds.has(globalUserIdStr);

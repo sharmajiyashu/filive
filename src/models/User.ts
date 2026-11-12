@@ -76,6 +76,11 @@ export interface IUser extends Document {
   coinSellerCoins: number;
   securityDeposit?: number;
   coinsellerJoinedAt?: Date;
+  coinsellerCategory?: 'normal' | 'recharge_service' | 'both';
+  coinsellerRankingExcluded?: boolean;
+  coinsellerRankingExcludeReason?: string;
+  coinsellerRankingExcludedAt?: Date;
+  coinsellerRankingExcludedBy?: mongoose.Types.ObjectId;
   coinSellerPaymentMethods?: {
     country?: string;
     upiId?: string;
@@ -133,6 +138,8 @@ export interface IUser extends Document {
   newHostEligibleAt?: Date;
   callRankingScore?: number;
   currentAuthToken?: string;
+  isOnline?: boolean;
+  lastActiveAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -219,6 +226,11 @@ const UserSchema: Schema = new Schema(
     coinSellerCoins: { type: Number, default: 0 },
     securityDeposit: { type: Number, default: 0 },
     coinsellerJoinedAt: { type: Date },
+    coinsellerCategory: { type: String, enum: ['normal', 'recharge_service', 'both'], default: 'recharge_service' },
+    coinsellerRankingExcluded: { type: Boolean, default: false },
+    coinsellerRankingExcludeReason: { type: String },
+    coinsellerRankingExcludedAt: { type: Date },
+    coinsellerRankingExcludedBy: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
     coinSellerPaymentMethods: {
       country: { type: String },
       upiId: { type: String },
@@ -278,6 +290,8 @@ const UserSchema: Schema = new Schema(
     isPermanentlyDeleted: { type: Boolean, default: false, index: true },
     newHostEligibleAt: { type: Date, index: true },
     callRankingScore: { type: Number, default: 50, index: true },
+    isOnline: { type: Boolean, default: false, index: true },
+    lastActiveAt: { type: Date },
   },
   {
     timestamps: true,
@@ -287,6 +301,7 @@ const UserSchema: Schema = new Schema(
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ isBlocked: 1 });
 UserSchema.index({ isCoinseller: 1, isCoinsellerActive: 1 });
+UserSchema.index({ isCoinseller: 1, coinsellerCategory: 1, coinsellerRankingExcluded: 1 });
 UserSchema.index({ beans: -1 });
 UserSchema.index({ callRankingScore: -1 });
 UserSchema.index({ newHostEligibleAt: -1 });

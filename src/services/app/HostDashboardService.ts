@@ -191,13 +191,8 @@ export class HostDashboardService {
     }
 
     const hostId = user?._id?.toString();
-    const socketOnline = io && hostId
-      ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0
-      : false;
-    const recentLogin = user?.lastLoginAt
-      ? new Date(user.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
-      : false;
-    return socketOnline || recentLogin;
+    const socketOnline = Boolean(io && hostId && (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0);
+    return socketOnline;
   }
 
   private async findHostUserIdsBySearch(search?: string): Promise<mongoose.Types.ObjectId[] | null> {

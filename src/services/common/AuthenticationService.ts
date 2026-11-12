@@ -1357,10 +1357,12 @@ export class AuthenticationService {
         const user = await User.findById(userId);
         if (!user) return;
 
+        user.isOnline = false;
+        user.lastActiveAt = new Date();
         if (fcmToken && user.fcmTokens) {
             user.fcmTokens = user.fcmTokens.filter(t => t.token !== fcmToken);
-            await user.save();
         }
+        await user.save();
     }
 }
 
