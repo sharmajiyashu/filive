@@ -361,7 +361,7 @@ export class CoinSellerService {
 
     const uniqueCustomers30 = await CoinHistory.distinct('relatedUserId', {
       ...salesMatch30Days,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const buyersCount30Days = uniqueCustomers30.filter(Boolean).length;
 
@@ -391,7 +391,7 @@ export class CoinSellerService {
 
     const uniqueCustomersLifetime = await CoinHistory.distinct('relatedUserId', {
       ...salesMatchLifetime,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const customerNumbers = uniqueCustomersLifetime.filter(Boolean).length || buyersCount30Days;
 
@@ -820,8 +820,18 @@ export class CoinSellerService {
 
     const query: any = { isCoinseller: true, isBlocked: false, isCoinsellerActive: { $ne: false } };
 
-    if (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all') {
-      const targetCountry = params.country.trim();
+    let targetCountry: string | null = (params.country && params.country.trim() !== '' && params.country.trim().toLowerCase() !== 'all')
+      ? params.country.trim()
+      : null;
+
+    if (!targetCountry && params.currentUserId) {
+      const currentUser = await User.findById(params.currentUserId).select('country countryCode countryId').populate('countryId').lean();
+      if (currentUser) {
+        targetCountry = currentUser.countryCode || (currentUser.countryId as any)?.code || (currentUser.countryId as any)?.name || currentUser.country || null;
+      }
+    }
+
+    if (targetCountry && targetCountry.toLowerCase() !== 'all') {
       const countryConditions: any[] = [];
       if (mongoose.Types.ObjectId.isValid(targetCountry)) {
         countryConditions.push({ _id: new mongoose.Types.ObjectId(targetCountry) });
@@ -832,10 +842,12 @@ export class CoinSellerService {
       const matchingCountries = await Country.find({ $or: countryConditions });
       const countryObjIds = matchingCountries.map(c => c._id);
       const countryNames = matchingCountries.map(c => c.name);
+      const countryCodes = matchingCountries.map(c => c.code);
 
       const userCountryConditions: any[] = [
-        { country: { $regex: new RegExp(targetCountry, 'i') } },
-        { nationality: { $regex: new RegExp(targetCountry, 'i') } }
+        { country: { $regex: new RegExp(`^${targetCountry}$`, 'i') } },
+        { countryCode: { $regex: new RegExp(`^${targetCountry}$`, 'i') } },
+        { nationality: { $regex: new RegExp(`^${targetCountry}$`, 'i') } }
       ];
       if (mongoose.Types.ObjectId.isValid(targetCountry)) {
         userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
@@ -846,6 +858,9 @@ export class CoinSellerService {
       if (countryNames.length > 0) {
         userCountryConditions.push({ country: { $in: countryNames } });
         userCountryConditions.push({ nationality: { $in: countryNames } });
+      }
+      if (countryCodes.length > 0) {
+        userCountryConditions.push({ countryCode: { $in: countryCodes } });
       }
       query.$or = userCountryConditions;
     }
@@ -1290,7 +1305,7 @@ export class CoinSellerService {
 
     const uniqueBuyers30Days = await CoinHistory.distinct('relatedUserId', {
       ...historyMatch,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const buyersCount30Days = uniqueBuyers30Days.filter(Boolean).length;
 
@@ -1319,7 +1334,7 @@ export class CoinSellerService {
     const lifetimeDealsCount = lifetimeAgg[0]?.dealsCount || dealsCount30Days;
     const lifetimeBuyers = await CoinHistory.distinct('relatedUserId', {
       ...lifetimeMatch,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const lifetimeBuyersCount = lifetimeBuyers.filter(Boolean).length || buyersCount30Days;
 

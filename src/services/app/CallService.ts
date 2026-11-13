@@ -929,7 +929,7 @@ export class CallService {
     const hostObjectIds = hosts.map((h: any) => h._id);
 
     const ringTimeout = new Date(Date.now() - 45 * 1000);
-    const staleAcceptedTimeout = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    const staleAcceptedTimeout = new Date(Date.now() - 15 * 60 * 1000);
 
     const [activeCalls, activeRooms] = await Promise.all([
       Call.find({
@@ -970,9 +970,10 @@ export class CallService {
       const hostId = hObj._id?.toString();
       const socketOnline = (io && hostId) ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
       const recentLogin = hObj.lastLoginAt ? new Date(hObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
-      const isOnline = Boolean(socketOnline);
-      const isBusy = busyHostSet.has(hostId);
-      const isLive = liveHostSet.has(hostId);
+      const isOnline = Boolean(socketOnline || (hObj.isOnline === true && recentLogin));
+      // Issue 8: An offline host can NEVER be marked busy or live!
+      const isBusy = Boolean(isOnline && busyHostSet.has(hostId));
+      const isLive = Boolean(isOnline && liveHostSet.has(hostId));
       const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
 
       const voiceCallPrice = Number(hObj.voiceCallPrice || hObj.audioCallChargePerMinute || 0);

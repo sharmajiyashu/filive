@@ -838,8 +838,11 @@ export class AuthenticationService {
                 user.name = resolvedName;
                 hasChanges = true;
             }
-            if (!user.isVerified) {
+            if (user.videoVerificationStatus === 'approved' && !user.isVerified) {
                 user.isVerified = true;
+                hasChanges = true;
+            } else if (user.videoVerificationStatus !== 'approved' && user.isVerified) {
+                user.isVerified = false;
                 hasChanges = true;
             }
 
@@ -896,7 +899,7 @@ export class AuthenticationService {
                 userRole: 'user',
                 deviceId: payload.deviceId,
                 deviceModel: payload.deviceModel,
-                isVerified: true,
+                isVerified: false,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),
@@ -1044,8 +1047,11 @@ export class AuthenticationService {
                 user.name = resolvedName;
                 hasChanges = true;
             }
-            if (!user.isVerified) {
+            if (user.videoVerificationStatus === 'approved' && !user.isVerified) {
                 user.isVerified = true;
+                hasChanges = true;
+            } else if (user.videoVerificationStatus !== 'approved' && user.isVerified) {
+                user.isVerified = false;
                 hasChanges = true;
             }
 
@@ -1094,7 +1100,7 @@ export class AuthenticationService {
                 userRole: 'user',
                 deviceId: payload.deviceId,
                 deviceModel: payload.deviceModel,
-                isVerified: true,
+                isVerified: false,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),
@@ -1273,7 +1279,7 @@ export class AuthenticationService {
                 userRole: 'user',
                 deviceId: payload.deviceId,
                 deviceModel: payload.deviceModel,
-                isVerified: true,
+                isVerified: false,
                 countryId: resolvedCountry?.countryId,
                 country: resolvedCountry?.country,
                 lastLoginAt: new Date(),

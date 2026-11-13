@@ -490,25 +490,36 @@ export class AgencyCommissionService {
 
     await this.ensureAgencyCycle(agency);
 
+    const cycleStart = agency.currentCycleStart || this.getCycleStart();
+    const cycleEnd = agency.currentCycleStart ? this.getCycleEnd(agency.currentCycleStart) : this.getCycleEnd();
+
+    // Calculate real-time weekly host earnings (including Owner Self ID)
+    let liveEligibleBeans = agency.thisWeekHostEarnings || 0;
+    try {
+      const breakdown = await this.calculateAgencyWeeklyEarnings(agency._id.toString(), cycleStart, cycleEnd);
+      liveEligibleBeans = Math.max(liveEligibleBeans, breakdown.totalEligibleBeans);
+    } catch (_) {}
+
     const [totalHosts, activeHosts, rate] = await Promise.all([
       AgencyHost.countDocuments({ agencyId: agency._id, status: 'ACCEPTED' }),
-      this.getActiveHostCount(agency._id, agency.currentCycleStart),
-      this.resolveCommissionRate(agency.thisWeekHostEarnings, agency),
+      this.getActiveHostCount(agency._id, cycleStart),
+      this.resolveCommissionRate(liveEligibleBeans, agency),
     ]);
 
-    const slabProgress = await this.getSlabProgress(agency.thisWeekHostEarnings, agency);
+    const slabProgress = await this.getSlabProgress(liveEligibleBeans, agency);
+    const estimatedCommission = rate > 0 ? Math.round(((liveEligibleBeans * rate) / 100) * 100) / 100 : 0;
 
     return {
       totalHosts,
       activeHosts,
-      totalHostEarnings: agency.thisWeekHostEarnings,
+      totalHostEarnings: liveEligibleBeans,
       currentCommissionRate: rate,
-      pendingCommission: agency.pendingCommission,
-      thisWeekCommission: agency.thisWeekCommission,
+      pendingCommission: agency.pendingCommission || estimatedCommission,
+      thisWeekCommission: estimatedCommission,
       lastSettlementDate: agency.lastSettlementDate ?? null,
       nextSettlementDate: agency.nextSettlementDate ?? this.getNextSettlementDate(),
-      currentCycleStart: agency.currentCycleStart ?? null,
-      currentCycleEnd: agency.currentCycleStart ? this.getCycleEnd(agency.currentCycleStart) : null,
+      currentCycleStart: cycleStart,
+      currentCycleEnd: cycleEnd,
       isFrozen: agency.isFrozen,
       isCommissionHeld: agency.isCommissionHeld,
       slabProgress,

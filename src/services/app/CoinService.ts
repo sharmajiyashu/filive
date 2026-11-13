@@ -129,13 +129,35 @@ export class CoinService {
   }
 
   async getWallet(userId: string) {
-    const user = await User.findById(userId).select('coins beans coinSellerCoins isCoinseller');
+    const user = await User.findById(userId).select('coins beans coinSellerCoins isCoinseller country countryId countryCode');
     if (!user) throw new Error('User not found');
+
+    let country: any = null;
+    if (user.countryId) {
+      country = await Country.findById(user.countryId);
+    }
+    if (!country && user.countryCode) {
+      country = await Country.findOne({ code: user.countryCode.toUpperCase() });
+    }
+    if (!country && user.country) {
+      country = await Country.findOne({
+        $or: [{ code: user.country.toUpperCase() }, { name: new RegExp(`^${user.country}$`, 'i') }],
+      });
+    }
+
+    const currencyCode = country?.currencyCode || 'INR';
+    const currencySymbol = country?.currencySymbol || '₹';
+
     return {
       coins: user.coins || 0,
       beans: user.beans || 0,
       coinSellerCoins: user.coinSellerCoins || 0,
       isCoinseller: user.isCoinseller || false,
+      country: country?.name || user.country || 'India',
+      countryCode: country?.code || user.countryCode || 'IN',
+      countryFlag: country?.flag || 'https://flagcdn.com/w160/in.png',
+      currencyCode,
+      currencySymbol,
     };
   }
 

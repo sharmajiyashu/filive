@@ -1650,11 +1650,16 @@ export class LiveStreamService {
       query.status = 'live';
     }
 
-    // For livestream feed (home page): active and unbanned hosts
-    if (query.roomType === 'livestream') {
+    // For livestream feed (home page): strictly online and unbanned hosts (Issue 7)
+    if (query.roomType === 'livestream' && !filters?.isMine) {
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
       const activeHosts = await User.find({
         status: { $ne: 'banned' },
-        isBanned: { $ne: true }
+        isBanned: { $ne: true },
+        $or: [
+          { isOnline: true },
+          { lastActiveAt: { $gte: tenMinutesAgo } },
+        ]
       }).select('_id').lean();
       const activeHostIds = activeHosts.map(h => h._id);
 

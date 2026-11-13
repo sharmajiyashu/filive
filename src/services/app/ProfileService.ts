@@ -71,8 +71,34 @@ export class ProfileService {
 
     const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
-    const richCoins = profile.wealthCoins !== undefined ? profile.wealthCoins : (profile.coins || 0);
-    const charmCoins = profile.charmCoins || 0;
+    // Accurate wealthCoins & charmCoins (fallback to CoinHistory spent/earned if 0)
+    let richCoins = profile.wealthCoins || 0;
+    let charmCoins = profile.charmCoins || 0;
+
+    if (richCoins === 0) {
+      const spentAgg = await CoinHistory.aggregate([
+        { $match: { userId: profile._id, amount: { $lt: 0 }, type: { $in: ['gift_sent', 'call_spent'] } } },
+        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+      ]);
+      const lifetimeSpent = spentAgg[0]?.total || 0;
+      richCoins = Math.max(lifetimeSpent, profile.coins || 0);
+      if (lifetimeSpent > 0 && !profile.wealthCoins) {
+        await User.updateOne({ _id: profile._id }, { $set: { wealthCoins: lifetimeSpent } });
+      }
+    }
+
+    if (charmCoins === 0) {
+      const earnedAgg = await CoinHistory.aggregate([
+        { $match: { userId: profile._id, amount: { $gt: 0 }, type: { $in: ['charm_received', 'gift_received', 'call_earned'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]);
+      const lifetimeEarned = earnedAgg[0]?.total || 0;
+      charmCoins = Math.max(lifetimeEarned, profile.beans || 0);
+      if (lifetimeEarned > 0 && !profile.charmCoins) {
+        await User.updateOne({ _id: profile._id }, { $set: { charmCoins: lifetimeEarned } });
+      }
+    }
+
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
 
@@ -83,10 +109,14 @@ export class ProfileService {
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
-    const agency: any = ownedAgency || null;
-    const isAgencyOwner = Boolean(ownedAgency);
+    const isAgencyApproved = ownedAgency?.status === 'approved';
+    const isAgencyPending = ownedAgency?.status === 'pending';
+    // Agency Data must ONLY be shown when agency is approved (Rules 3 & 4)
+    const agency: any = isAgencyApproved ? ownedAgency : null;
+    const isAgencyOwner = isAgencyApproved;
     let isAgencyHost = false;
-    let isBecomeHost = false;
+    // When agency is pending or approved, Become Host option must be hidden (Rules 3 & 4)
+    let isBecomeHost = Boolean(isAgencyApproved || isAgencyPending);
     let becomeHostMessage: string | null = null;
     let joinedAgency: any = null;
 
@@ -168,8 +198,12 @@ export class ProfileService {
       levelInfo: richLevelInfo,
       richLevelInfo,
       charmLevelInfo,
+      isVerified: profile.videoVerificationStatus === 'approved',
+      videoVerificationStatus: profile.videoVerificationStatus || 'none',
       agency,
       isAgencyOwner,
+      hasPendingAgency: isAgencyPending,
+      pendingAgency: isAgencyPending ? ownedAgency : null,
       joinedAgency,
       isAgencyHost,
       isBecomeHost,
@@ -358,8 +392,34 @@ export class ProfileService {
 
     const visitorsCount = await UserVisitor.distinct('visitorId', { userId }).then(ids => ids.length);
 
-    const richCoins = updatedUser.wealthCoins !== undefined ? updatedUser.wealthCoins : (updatedUser.coins || 0);
-    const charmCoins = updatedUser.charmCoins || 0;
+    // Accurate wealthCoins & charmCoins (fallback to CoinHistory spent/earned if 0)
+    let richCoins = updatedUser.wealthCoins || 0;
+    let charmCoins = updatedUser.charmCoins || 0;
+
+    if (richCoins === 0) {
+      const spentAgg = await CoinHistory.aggregate([
+        { $match: { userId: updatedUser._id, amount: { $lt: 0 }, type: { $in: ['gift_sent', 'call_spent'] } } },
+        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+      ]);
+      const lifetimeSpent = spentAgg[0]?.total || 0;
+      richCoins = Math.max(lifetimeSpent, updatedUser.coins || 0);
+      if (lifetimeSpent > 0 && !updatedUser.wealthCoins) {
+        await User.updateOne({ _id: updatedUser._id }, { $set: { wealthCoins: lifetimeSpent } });
+      }
+    }
+
+    if (charmCoins === 0) {
+      const earnedAgg = await CoinHistory.aggregate([
+        { $match: { userId: updatedUser._id, amount: { $gt: 0 }, type: { $in: ['charm_received', 'gift_received', 'call_earned'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]);
+      const lifetimeEarned = earnedAgg[0]?.total || 0;
+      charmCoins = Math.max(lifetimeEarned, updatedUser.beans || 0);
+      if (lifetimeEarned > 0 && !updatedUser.charmCoins) {
+        await User.updateOne({ _id: updatedUser._id }, { $set: { charmCoins: lifetimeEarned } });
+      }
+    }
+
     const richLevelInfo = await this.levelService.getLevelInfoForCoins(richCoins, 'rich');
     const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
     const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
@@ -372,10 +432,13 @@ export class ProfileService {
       .populate('countryId')
       .populate({ path: 'creatorId', select: 'name profileImage userId', populate: { path: 'profileImage' } });
 
-    const agency: any = ownedAgency || null;
-    const isAgencyOwner = Boolean(ownedAgency);
+    const isAgencyApproved = ownedAgency?.status === 'approved';
+    const isAgencyPending = ownedAgency?.status === 'pending';
+    // Agency Data must ONLY be shown when agency is approved (Rules 3 & 4)
+    const agency: any = isAgencyApproved ? ownedAgency : null;
+    const isAgencyOwner = isAgencyApproved;
     let isAgencyHost = false;
-    let isBecomeHost = false;
+    let isBecomeHost = Boolean(isAgencyApproved || isAgencyPending);
     let becomeHostMessage: string | null = null;
     let joinedAgency: any = null;
 
@@ -428,8 +491,12 @@ export class ProfileService {
         levelInfo: richLevelInfo,
         richLevelInfo,
         charmLevelInfo,
+        isVerified: updatedUser.videoVerificationStatus === 'approved',
+        videoVerificationStatus: updatedUser.videoVerificationStatus || 'none',
         agency,
         isAgencyOwner,
+        hasPendingAgency: isAgencyPending,
+        pendingAgency: isAgencyPending ? ownedAgency : null,
         joinedAgency,
         isAgencyHost,
         isBecomeHost,

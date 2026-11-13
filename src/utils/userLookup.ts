@@ -138,6 +138,11 @@ export async function attachUserCountryAndAge<T extends Record<string, any>>(
   payload.country_flag = country?.flag ?? (typeof rawUser.country_flag === 'string' ? rawUser.country_flag : null);
   payload.age = ageFromDob(rawUser.dob);
 
+  // Issue 3: Verification badge strictly requires approved face/video verification
+  payload.isVerified = rawUser.videoVerificationStatus === 'approved';
+  payload.isFaceVerified = rawUser.videoVerificationStatus === 'approved';
+  payload.videoVerificationStatus = rawUser.videoVerificationStatus || 'none';
+
   try {
     const levelService = Container.get(LevelService);
     const richCoins = rawUser.wealthCoins !== undefined ? rawUser.wealthCoins : (rawUser.coins || 0);

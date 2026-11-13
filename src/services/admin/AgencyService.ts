@@ -308,6 +308,23 @@ export class AgencyService {
     agency.status = status;
     if (status === 'approved') {
       agency.isVerified = true;
+
+      // Rule 5: Automatically add Agency Owner as an accepted Self-Host in the agency
+      if (agency.creatorId) {
+        await AgencyHost.findOneAndUpdate(
+          { agencyId: agency._id, userId: agency.creatorId },
+          {
+            agencyId: agency._id,
+            userId: agency.creatorId,
+            status: 'ACCEPTED',
+            requestedBy: 'AGENCY',
+            isOpened: true,
+            isVerified: true,
+            verifiedAt: new Date(),
+          },
+          { upsert: true, new: true }
+        );
+      }
     }
     await agency.save();
 

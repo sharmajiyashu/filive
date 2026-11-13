@@ -188,6 +188,25 @@ export class AgencyService {
   }
 
   private async acceptUserAsHost(userId: string, agencyId: mongoose.Types.ObjectId) {
+    // Rule 8: Check if user is already a host in another agency
+    const otherHost = await AgencyHost.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      agencyId: { $ne: agencyId },
+      status: { $in: ['ACCEPTED', 'approved'] },
+    });
+    if (otherHost) {
+      throw new Error('You are already an active host in another agency.');
+    }
+
+    // Rule 8: Check if user is the owner of another agency
+    const ownedAgency = await Agency.findOne({
+      creatorId: new mongoose.Types.ObjectId(userId),
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (ownedAgency && ownedAgency._id.toString() !== agencyId.toString()) {
+      throw new Error('Agency owners cannot join another agency as a host.');
+    }
+
     const existing = await AgencyHost.findOne({ agencyId, userId });
 
     if (existing && existing.status === 'ACCEPTED') {
@@ -283,6 +302,24 @@ export class AgencyService {
     email?: string;
     description?: string;
   }) {
+    // Rule 8: A user who is already a host in an agency cannot create an agency
+    const existingHost = await AgencyHost.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: { $in: ['ACCEPTED', 'approved'] },
+    });
+    if (existingHost) {
+      throw new Error('You are already a host in an agency. You cannot create an agency.');
+    }
+
+    // Rule 8: A user cannot own more than one agency (pending or approved)
+    const existingUserAgency = await Agency.findOne({
+      creatorId: new mongoose.Types.ObjectId(userId),
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (existingUserAgency) {
+      throw new Error('You already have an existing agency registered or pending approval.');
+    }
+
     const existing = await Agency.findOne({ mobile: data.mobile });
     if (existing && existing.isVerified) {
       throw new Error('Agency with this mobile already exists and is verified');
@@ -477,6 +514,25 @@ export class AgencyService {
       throw new Error('User is already a host in this agency');
     }
 
+    // Rule 8: Check if target user is an agency owner of another agency
+    const targetOwnedAgency = await Agency.findOne({
+      creatorId: targetUser._id,
+      status: { $in: ['pending', 'approved'] },
+    });
+    if (targetOwnedAgency && targetOwnedAgency._id.toString() !== agency._id.toString()) {
+      throw new Error('This user owns an agency and cannot be added as a host.');
+    }
+
+    // Rule 8: Check if target user is already a host in another agency
+    const otherAgencyHost = await AgencyHost.findOne({
+      userId: targetUser._id,
+      agencyId: { $ne: agency._id },
+      status: { $in: ['ACCEPTED', 'approved'] },
+    });
+    if (otherAgencyHost) {
+      throw new Error('This user is already an active host in another agency.');
+    }
+
     if (existing && existing.status === 'PENDING' && existing.requestedBy === 'AGENCY') {
       throw new Error('Host invite already pending for this user');
     }
@@ -559,6 +615,27 @@ export class AgencyService {
 
     if (request.status !== 'PENDING') {
       throw new Error('Host invite already responded');
+    }
+
+    if (status === 'ACCEPTED') {
+      // Rule 8: Check if user is an agency owner of another agency
+      const userOwnedAgency = await Agency.findOne({
+        creatorId: new mongoose.Types.ObjectId(userId),
+        status: { $in: ['pending', 'approved'] },
+      });
+      if (userOwnedAgency && userOwnedAgency._id.toString() !== request.agencyId.toString()) {
+        throw new Error('Agency owners cannot join another agency as a host.');
+      }
+
+      // Rule 8: Check if user is already a host in another agency
+      const activeHost = await AgencyHost.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        agencyId: { $ne: request.agencyId },
+        status: { $in: ['ACCEPTED', 'approved'] },
+      });
+      if (activeHost) {
+        throw new Error('You are already an active host in another agency.');
+      }
     }
 
     const agency = await Agency.findById(request.agencyId).select('name');
@@ -818,6 +895,24 @@ export class AgencyService {
     if (!isOwner && !isHost) {
       throw new Error('Unauthorized or agency not found');
     }
+
+    // Rule 5 & 6: Ensure owner is registered as a host in an approved agency
+    if (agency.status === 'approved' && agency.creatorId) {
+      await AgencyHost.findOneAndUpdate(
+        { agencyId: agency._id, userId: agency.creatorId },
+        {
+          agencyId: agency._id,
+          userId: agency.creatorId,
+          status: 'ACCEPTED',
+          requestedBy: 'AGENCY',
+          isOpened: true,
+          isVerified: true,
+          verifiedAt: new Date(),
+        },
+        { upsert: true }
+      );
+    }
+
     const skip = (page - 1) * limit;
     const hosts = await AgencyHost.find({ agencyId, status: 'ACCEPTED' })
       .populate(this.hostUserPopulate)

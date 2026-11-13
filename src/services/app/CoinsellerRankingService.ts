@@ -215,7 +215,7 @@ export class CoinsellerRankingService {
     // 2. Total Unique Users Served (Last 30 Days) - Deduplicated buyers
     const uniqueUserIds = await CoinHistory.distinct('relatedUserId', {
       ...historyMatch,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const uniqueUsersCount = uniqueUserIds.filter(Boolean).length;
 
@@ -245,7 +245,7 @@ export class CoinsellerRankingService {
 
     const lifetimeUserIds = await CoinHistory.distinct('relatedUserId', {
       ...lifetimeMatch,
-      relatedUserId: { $ne: sellerObjectId, $exists: true, $nin: [null, ''] },
+      relatedUserId: { $exists: true, $ne: null, $nin: [sellerObjectId] },
     });
     const totalBuyersCount = lifetimeUserIds.filter(Boolean).length || uniqueUsersCount;
 
@@ -368,9 +368,9 @@ export class CoinsellerRankingService {
       targetCountryCode = options.country.trim();
     } else if (settings.general.countryWiseRanking && options.currentUserId) {
       // Automatic country-wise enforcement for app users
-      const currentUser = await User.findById(options.currentUserId).select('country countryId').populate('countryId').lean();
+      const currentUser = await User.findById(options.currentUserId).select('country countryCode countryId').populate('countryId').lean();
       if (currentUser) {
-        targetCountryCode = (currentUser.countryId as any)?.code || (currentUser.countryId as any)?.name || currentUser.country || null;
+        targetCountryCode = currentUser.countryCode || (currentUser.countryId as any)?.code || (currentUser.countryId as any)?.name || currentUser.country || null;
       }
     }
 
@@ -389,6 +389,7 @@ export class CoinsellerRankingService {
 
       const userCountryConditions: any[] = [
         { country: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
+        { countryCode: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
         { nationality: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
       ];
 
@@ -404,6 +405,7 @@ export class CoinsellerRankingService {
       }
       if (countryCodes.length > 0) {
         userCountryConditions.push({ country: { $in: countryCodes } });
+        userCountryConditions.push({ countryCode: { $in: countryCodes } });
       }
 
       baseQuery.$and = baseQuery.$and || [];

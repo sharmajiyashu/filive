@@ -76,6 +76,28 @@ export default (io: Server): void => {
                                 session.isClosed = true;
                                 await session.save();
                             }
+
+                            // Issue 7 & 8: Auto-cleanup active calls and live streams when host/user disconnects
+                            if (uid) {
+                                try {
+                                    const { Container } = await import('typedi');
+                                    const { CallService } = await import('../../services/app/CallService');
+                                    const callService = Container.get(CallService);
+                                    await callService.endUserActiveCalls(uid, 'disconnected');
+                                } catch (_) {}
+
+                                try {
+                                    const mongoose = await import('mongoose');
+                                    const Room = mongoose.default.model('Room');
+                                    const activeLiveRoom = await Room.findOne({ hostId: uid, status: 'live', roomType: 'livestream' });
+                                    if (activeLiveRoom) {
+                                        const { Container } = await import('typedi');
+                                        const { LiveStreamService } = await import('../../services/app/LiveStreamService');
+                                        const liveStreamService = Container.get(LiveStreamService);
+                                        await liveStreamService.endLiveStream(uid, activeLiveRoom.channelName);
+                                    }
+                                } catch (_) {}
+                            }
                         }
                     } catch (e: any) {
                         AppLogger.warn(`Failed to update offline status for user ${uid}: ${e.message}`);
