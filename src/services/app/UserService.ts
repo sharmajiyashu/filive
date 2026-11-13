@@ -734,9 +734,7 @@ export class UserService {
       .filter(b => b.blockedId !== null)
       .map(b => {
         const userObj = (b.blockedId as any).toObject ? (b.blockedId as any).toObject() : b.blockedId;
-        const isOnline = userObj.lastLoginAt
-          ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
-          : false;
+        const isOnline = Boolean(userObj.isOnline);
         return {
           ...userObj,
           userId: userObj.userId,

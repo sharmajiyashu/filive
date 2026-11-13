@@ -21,6 +21,13 @@ export default (io: Server): void => {
                 AppLogger.warn(`Failed to update online status for connected user ${socket.userId}: ${err.message}`);
             });
 
+            // Broadcast online status to all connected clients
+            io.emit('user_status_changed', {
+                userId: socket.userId.toString(),
+                isOnline: true,
+                status: 'online'
+            });
+
             // Start or refresh online session without double-counting
             UserOnlineSession.findOne({ userId: socket.userId, isClosed: false })
                 .then((existingSession) => {

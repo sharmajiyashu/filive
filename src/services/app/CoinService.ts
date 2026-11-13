@@ -213,10 +213,10 @@ export class CoinService {
   async getHistory(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
-    // Normal Coin History strictly excludes beans wallet and beans-only earnings (agency_commission, etc.)
+    // Normal Coin History strictly excludes beans wallet, coinSellerCoins wallet, and beans-only earnings
     const query = {
       userId,
-      wallet: { $ne: 'beans' },
+      wallet: { $nin: ['beans', 'coinSellerCoins'] },
       type: { $nin: ['agency_commission', 'cash_out', 'charm_received', 'call_income', 'coins_to_beans'] }
     };
 

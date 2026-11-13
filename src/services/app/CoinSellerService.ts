@@ -12,6 +12,7 @@ import { MediaType } from '../../constants/enum';
 import { getUserCountryAndLevels, resolveCountryObject, toPlainObject } from '../../utils/userLookup';
 import Country from '../../models/Country';
 import { CoinsellerRankingService } from './CoinsellerRankingService';
+import { CoinService } from './CoinService';
 
 @Service()
 export class CoinSellerService {
@@ -45,7 +46,7 @@ export class CoinSellerService {
       await User.findByIdAndUpdate(senderId, { isCoinsellerActive: true });
     }
     if ((sender.coinSellerCoins || 0) < amount) {
-      throw new Error('Insufficient coinseller coins balance');
+      throw new Error('Insufficient available coins balance. Security deposit is locked and cannot be used for trading.');
     }
 
     const target = await User.findOne({ userId: targetUserId }).populate('profileImage');
@@ -264,16 +265,36 @@ export class CoinSellerService {
     const skip = (page - 1) * limit;
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
 
-    // Sales are negative transfers out of the seller's account
+    // Query all transactions belonging to this seller's coinSellerCoins wallet
     const query = {
       userId: sellerObjectId,
-      type: 'transfer',
-      amount: { $lt: 0 }
+      $or: [
+        { wallet: 'coinSellerCoins' },
+        {
+          type: 'transfer',
+          paymentGateway: 'CoinSeller',
+          $or: [
+            { transferTarget: { $in: ['user', 'coinseller', 'self'] } },
+            { amount: { $lt: 0 } }
+          ]
+        },
+        { description: /coinseller|coin seller|initial coins added by admin/i }
+      ]
     };
 
-    // Calculate total coins sold
+    // Calculate total coins sold (outgoing debits)
     const salesAggregation = await CoinHistory.aggregate([
-      { $match: { userId: sellerObjectId, type: 'transfer', amount: { $lt: 0 } } },
+      {
+        $match: {
+          userId: sellerObjectId,
+          amount: { $lt: 0 },
+          $or: [
+            { wallet: 'coinSellerCoins' },
+            { paymentGateway: 'CoinSeller', type: 'transfer' },
+            { description: /coinseller|coin seller/i }
+          ]
+        }
+      },
       { $group: { _id: null, totalCoinsSold: { $sum: { $abs: '$amount' } } } }
     ]);
     const totalCoinsSold = salesAggregation[0]?.totalCoinsSold || 0;
@@ -293,12 +314,42 @@ export class CoinSellerService {
 
     const soldUsersList = history.map(h => {
       const relatedUser = h.relatedUserId as any;
+      const isCredit = (h.amount || 0) > 0;
+      let transactionType = 'Transfer';
+      let subtitle = 'To User';
+
+      if (isCredit) {
+        if (!relatedUser) {
+          transactionType = 'Deposit';
+          subtitle = h.description || 'From Admin';
+        } else {
+          transactionType = 'Received';
+          subtitle = `From ${relatedUser.name || 'Coin Seller'}`;
+        }
+      } else {
+        if (h.transferTarget === 'coinseller') {
+          transactionType = 'Transfer';
+          subtitle = 'To Coin Seller';
+        } else if (h.transferTarget === 'self') {
+          transactionType = 'Self Recharge';
+          subtitle = 'To Personal Wallet';
+        } else {
+          transactionType = 'Transfer';
+          subtitle = 'To User';
+        }
+      }
+
       return {
         transactionId: h._id,
         coinsSold: Math.abs(h.amount),
+        amount: h.amount,
+        isCredit,
+        type: transactionType,
+        subtitle,
+        description: h.description,
         soldAt: h.createdAt,
         user: relatedUser ? {
-          id: relatedUser._id,
+          id: relatedUser._id,  
           userId: relatedUser.userId,
           name: relatedUser.name,
           email: relatedUser.email,
@@ -306,7 +357,12 @@ export class CoinSellerService {
           isPremium: relatedUser.isPremium,
           location: relatedUser.location,
           country: relatedUser.country
-        } : null
+        } : (isCredit ? {
+          id: null,
+          userId: 'Admin',
+          name: 'Admin Deposit',
+          profileImage: null
+        } : null)
       };
     });
 
@@ -446,7 +502,8 @@ export class CoinSellerService {
       coinSellerBalance: seller.coinSellerCoins || 0,
       userCoinsBalance: seller.coins || 0,
       beansBalance: seller.beans || 0,
-      totalBalance: (seller.coinSellerCoins || 0) + (seller.coins || 0),
+      pendingBalance: 0,
+      totalBalance: (seller.coinSellerCoins || 0) + ((seller as any).securityDeposit || 0),
       securityDeposit: (seller as any).securityDeposit || 0,
       totalCoinsSold,
       totalCoinsSoldFormatted: formatCoinsAbbr(totalCoinsSold),
@@ -1014,15 +1071,9 @@ export class CoinSellerService {
     };
   }
 
-  async getCoinSellerPackages() {
-    return CoinPackage.find({
-      isActive: true,
-      $or: [
-        { targetAudience: { $in: ['seller', 'all'] } },
-        { targetAudience: { $exists: false } },
-        { targetAudience: null },
-      ],
-    }).sort({ coins: 1 });
+  async getCoinSellerPackages(countryId?: string) {
+    const coinService = Container.get(CoinService);
+    return coinService.getPackages(countryId, 'seller');
   }
 
   async updateWhatsapp(

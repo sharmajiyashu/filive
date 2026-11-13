@@ -8,6 +8,7 @@ const router = Router();
 
 export default (adminRouter: Router) => {
   adminRouter.use('/coinseller-ranking', adminAuthMiddleware, router);
+  adminRouter.use('/admin/coinseller-ranking', adminAuthMiddleware, router);
 
   const getService = () => Container.get(CoinsellerRankingService);
 

@@ -26,6 +26,7 @@ export default (router: Router) => {
   const userService = Container.get(UserService);
 
   router.use('/users', userRouter);
+  router.use('/admin/users', userRouter);
 
   userRouter.get('/management/list', async (req: any, res: Response) => {
     try {

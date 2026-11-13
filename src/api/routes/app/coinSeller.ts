@@ -401,7 +401,8 @@ export default (router: Router) => {
 
   sellerRouter.get('/packages', async (req: any, res: Response) => {
     try {
-      const result = await coinSellerService.getCoinSellerPackages();
+      const countryId = (req.query.countryId || req.user?.country || req.user?.countryId)?.toString();
+      const result = await coinSellerService.getCoinSellerPackages(countryId);
       return ResponseWrapper.success(res, result, 'Coin seller packages fetched successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

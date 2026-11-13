@@ -197,7 +197,7 @@ export class StoryService {
       let userObj = storyObj.userId as any;
       let formattedUser = userObj;
       if (userObj && typeof userObj === 'object') {
-        const isOnline = userObj.lastLoginAt ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
+        const isOnline = Boolean(userObj.isOnline);
         formattedUser = await attachUserCountryAndAge({
           ...userObj,
           isOnline,
@@ -263,9 +263,7 @@ export class StoryService {
 
   private async formatCommentUser(userObj: any, isFollowing: boolean) {
     if (!userObj || typeof userObj !== 'object') return userObj;
-    const isOnline = userObj.lastLoginAt
-      ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
-      : false;
+    const isOnline = Boolean(userObj.isOnline);
     return attachUserCountryAndAge({
       ...userObj,
       isOnline,

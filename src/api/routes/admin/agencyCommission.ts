@@ -9,6 +9,7 @@ export default (router: Router) => {
   const commissionService = Container.get(AdminAgencyCommissionService);
 
   router.use('/agency-commission', adminAuthMiddleware, commissionRouter);
+  router.use('/admin/agency-commission', adminAuthMiddleware, commissionRouter);
 
   // 1. Dashboard Overview
   commissionRouter.get('/dashboard', async (_req: any, res: Response) => {

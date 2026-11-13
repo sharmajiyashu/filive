@@ -190,9 +190,9 @@ export class HostDashboardService {
       io = null;
     }
 
-    const hostId = user?._id?.toString();
+    const hostId = user?._id?.toString() || user?.id?.toString();
     const socketOnline = Boolean(io && hostId && (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0);
-    return socketOnline;
+    return socketOnline || Boolean(user?.isOnline);
   }
 
   private async findHostUserIdsBySearch(search?: string): Promise<mongoose.Types.ObjectId[] | null> {
@@ -340,6 +340,7 @@ export class HostDashboardService {
       CoinHistory.find({
         userId: userObjectId,
         amount: { $gt: 0 },
+        wallet: { $nin: ['coinSellerCoins', 'coins'] },
         type: {
           $in: [
             'gift_received',
@@ -347,12 +348,10 @@ export class HostDashboardService {
             'call_income',
             'referral_reward',
             'agency_commission',
-            'transfer',
-            'other',
           ],
         },
         createdAt: { $gte: startDate, $lte: endDate },
-      }).select('amount type contextType channelName description callId'),
+      }).select('amount type contextType channelName description callId wallet'),
       Room.find({
         hostId: userObjectId,
         startedAt: { $lte: endDate },
@@ -494,11 +493,35 @@ export class HostDashboardService {
     const hostUserIds = hosts
       .map((host) => (host.userId as any)?._id)
       .filter(Boolean);
-    const liveDurations = await this.getLiveDurationsByHost(
-      hostUserIds,
-      dateRange.startDate,
-      dateRange.endDate
-    );
+    const [liveDurations, earningsAgg] = await Promise.all([
+      this.getLiveDurationsByHost(
+        hostUserIds,
+        dateRange.startDate,
+        dateRange.endDate
+      ),
+      CoinHistory.aggregate([
+        {
+          $match: {
+            userId: { $in: hostUserIds },
+            amount: { $gt: 0 },
+            wallet: { $nin: ['coinSellerCoins', 'coins'] },
+            type: {
+              $in: ['gift_received', 'charm_received', 'call_income', 'referral_reward', 'agency_commission'],
+            },
+            createdAt: { $gte: dateRange.startDate, $lte: dateRange.endDate },
+          },
+        },
+        {
+          $group: {
+            _id: '$userId',
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+    ]);
+
+    const earningsMap = new Map<string, number>();
+    earningsAgg.forEach((e: any) => earningsMap.set(e._id.toString(), e.total || 0));
 
     const userList = await Promise.all(
       hosts.map(async (host) => {
@@ -513,11 +536,18 @@ export class HostDashboardService {
             level: 0,
             live_duration: '00:00:00',
             live_duration_seconds: 0,
+            post_duration: '00:00:00',
+            total_earning: 0,
+            earning: 0,
+            is_online: false,
+            status: 'offline',
           };
         }
 
         const levels = await getUserCountryAndLevels(user, this.levelService);
         const liveSeconds = liveDurations.get(user._id.toString()) || 0;
+        const hostEarnings = earningsMap.get(user._id.toString()) || 0;
+        const isOnline = this.isUserOnline(user);
 
         return {
           host_record_id: host._id,
@@ -530,6 +560,11 @@ export class HostDashboardService {
           level: levels.charmLevel ?? levels.level ?? 0,
           live_duration: this.formatSecondsToHHMMSS(liveSeconds),
           live_duration_seconds: liveSeconds,
+          post_duration: '00:00:00',
+          total_earning: hostEarnings,
+          earning: hostEarnings,
+          is_online: isOnline,
+          status: isOnline ? 'online' : 'offline',
         };
       })
     );

@@ -1092,6 +1092,7 @@ export class UserService {
         userId: user._id,
         amount: initialCoins,
         type: 'other',
+        wallet: 'coinSellerCoins',
         description: 'Initial coins added by Admin',
       });
     }
@@ -1121,6 +1122,7 @@ export class UserService {
       userId: user._id,
       amount: amount,
       type: 'other',
+      wallet: 'coinSellerCoins',
       description: description || (amount >= 0 ? 'Added by Admin' : 'Deducted by Admin'),
     });
 
@@ -1310,6 +1312,7 @@ export class UserService {
 
     return {
       traders: tradersWithStats,
+      users: tradersWithStats,
       summary: {
         totalTraders,
         activeTraders,

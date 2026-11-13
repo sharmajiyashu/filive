@@ -1948,9 +1948,7 @@ export class LiveStreamService {
         const wealthCoins = Number(host.wealthCoins ?? host.coins ?? 0);
         const charmCoins = Number(host.charmCoins ?? 0);
         const richLevelNum = Math.max(1, Math.floor(Math.sqrt(wealthCoins / 1000)) || 1);
-        const isOnline = host.lastLoginAt
-          ? new Date(host.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
-          : false;
+        const isOnline = Boolean(host.isOnline);
 
         host.id = host._id || null;
         host.userId = host.userId ?? null;
@@ -2047,9 +2045,7 @@ export class LiveStreamService {
       const charmCoins = host.charmCoins || 0;
       const richLevelInfo = await this.levelService.getLevelInfoForCoins(wealthCoins, 'rich');
       const charmLevelInfo = await this.levelService.getLevelInfoForCoins(charmCoins, 'charm');
-      const isOnline = host.lastLoginAt
-        ? new Date(host.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
-        : false;
+      const isOnline = Boolean(host.isOnline);
 
       const richLevelNum = typeof richLevelInfo?.currentLevel?.levelNumber === 'number' ? richLevelInfo.currentLevel.levelNumber : 0;
       const charmLevelNum = typeof charmLevelInfo?.currentLevel?.levelNumber === 'number' ? charmLevelInfo.currentLevel.levelNumber : 0;
