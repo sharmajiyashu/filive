@@ -202,8 +202,14 @@ export default (router: Router) => {
   userRouter.put('/:id/adjust-coins', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
-      const { amount, description } = req.body;
-      const user = await userService.adjustUserCoins(userId, Number(amount), description);
+      const { amount, description, wallet } = req.body;
+      const targetWallet = wallet || req.query.wallet;
+      let user;
+      if (targetWallet === 'coinSellerCoins' || targetWallet === 'coinseller' || targetWallet === 'trader') {
+        user = await userService.adjustCoinsellerCoins(userId, Number(amount), description);
+      } else {
+        user = await userService.adjustUserCoins(userId, Number(amount), description);
+      }
       return ResponseWrapper.success(res, user, 'User coins adjusted successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

@@ -280,7 +280,8 @@ export class CoinSellerService {
             { amount: { $lt: 0 } }
           ]
         },
-        { description: /coinseller|coin seller|initial coins added by admin/i }
+        { description: /coinseller|coin seller|initial coins added by admin|added by admin|deducted by admin/i },
+        { paymentGateway: 'Admin', wallet: 'coinSellerCoins' }
       ]
     };
 
@@ -375,27 +376,16 @@ export class CoinSellerService {
           isPremium: relatedUser.isPremium,
           location: relatedUser.location,
           country: relatedUser.country
-        } : (transactionType === 'Recharge' ? {
-          id: null,
-          userId: h.paymentGateway || 'Recharge',
-          name: h.paymentGateway ? `${h.paymentGateway} Payment` : 'Wallet Recharge',
-          profileImage: null
-        } : (transactionType === 'Exchange' ? {
-          id: null,
-          userId: 'Exchange',
-          name: 'Beans Converted',
-          profileImage: null
-        } : (isCredit ? {
-          id: null,
-          userId: 'Admin',
-          name: 'Admin Credit',
-          profileImage: null
         } : {
           id: null,
-          userId: 'Admin',
-          name: 'Admin Debit',
+          userId: null,
+          name: transactionType === 'Recharge'
+            ? (h.paymentGateway ? `${h.paymentGateway} Payment` : 'Wallet Recharge')
+            : (transactionType === 'Exchange'
+              ? 'Beans Converted'
+              : (isCredit ? 'Admin Credit' : 'Admin Deduction')),
           profileImage: null
-        })))
+        }
       };
     });
 
