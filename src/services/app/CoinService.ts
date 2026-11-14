@@ -918,6 +918,207 @@ export class CoinService {
     }
   }
 
+  /**
+   * Verify Google Play In-App Purchase and credit coins
+   */
+  async verifyGooglePlayPurchase(
+    userId: string,
+    packageId: string,
+    purchaseToken: string,
+    orderId: string,
+    productId?: string,
+    audienceRaw?: string
+  ) {
+    const txId = (orderId || purchaseToken || `gplay_${Date.now()}`).trim();
+
+    const existing = await CoinHistory.findOne({ transactionId: txId });
+    if (existing) {
+      throw new Error('This Google Play purchase has already been processed');
+    }
+
+    let pkg = null;
+    if (packageId && mongoose.Types.ObjectId.isValid(packageId)) {
+      pkg = await CoinPackage.findById(packageId);
+    }
+    if (!pkg && productId) {
+      pkg = await CoinPackage.findOne({ playStoreProductId: productId });
+    }
+    if (!pkg) {
+      throw new Error('Coin package not found for Google Play purchase');
+    }
+
+    const audience = audienceRaw ? this.normalizeAudience(audienceRaw) : (pkg.targetAudience === 'seller' ? 'seller' : 'user');
+    await this.paymentMethodService.assertPackageAllowedForAudience(pkg.targetAudience, audience);
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
+
+      const historyRecord = await CoinHistory.create(
+        [
+          {
+            userId,
+            packageId: pkg._id,
+            amount: pkg.coins,
+            type: 'recharge',
+            wallet: credit.wallet,
+            paymentGateway: 'GooglePlay',
+            description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Google Play In-App Purchase (${audience})`,
+            transactionId: txId,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
+      const newBal = credit.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
+
+      try {
+        const { ChatService } = require('./ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          userId,
+          'Recharge Successful',
+          `🎉 Recharge Successful! You have recharged ${pkg.coins} coins via Google Play. Updated Balance: ${newBal} Coins.`,
+          {
+            isRecharge: true,
+            amount: pkg.coins,
+            fromUserId: 0,
+            fromUserName: 'Google Play',
+            newBalance: newBal,
+            wallet: credit.wallet,
+            isCoinseller: credit.wallet === 'coinSellerCoins',
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[CoinService: verifyGooglePlayPurchase] Failed to send system message: ${err?.message}`);
+      }
+
+      return {
+        success: true,
+        message: 'Google Play purchase verified and coins added successfully',
+        transactionId: txId,
+        orderId: orderId || txId,
+        addedCoins: pkg.coins,
+        audience,
+        wallet: credit.wallet,
+        currentCoins: updatedUser?.coins || 0,
+        currentCoinSellerCoins: updatedUser?.coinSellerCoins || 0,
+        history: historyRecord[0],
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  /**
+   * Verify Apple Pay / In-App Purchase and credit coins
+   */
+  async verifyApplePayPurchase(
+    userId: string,
+    packageId: string,
+    receiptData: string,
+    transactionId: string,
+    productId?: string,
+    audienceRaw?: string
+  ) {
+    const txId = (transactionId || `apple_${Date.now()}`).trim();
+
+    const existing = await CoinHistory.findOne({ transactionId: txId });
+    if (existing) {
+      throw new Error('This Apple Pay purchase has already been processed');
+    }
+
+    let pkg = null;
+    if (packageId && mongoose.Types.ObjectId.isValid(packageId)) {
+      pkg = await CoinPackage.findById(packageId);
+    }
+    if (!pkg && productId) {
+      pkg = await CoinPackage.findOne({
+        $or: [{ appStoreProductId: productId }, { playStoreProductId: productId }],
+      });
+    }
+    if (!pkg) {
+      throw new Error('Coin package not found for Apple Pay purchase');
+    }
+
+    const audience = audienceRaw ? this.normalizeAudience(audienceRaw) : (pkg.targetAudience === 'seller' ? 'seller' : 'user');
+    await this.paymentMethodService.assertPackageAllowedForAudience(pkg.targetAudience, audience);
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
+
+      const historyRecord = await CoinHistory.create(
+        [
+          {
+            userId,
+            packageId: pkg._id,
+            amount: pkg.coins,
+            type: 'recharge',
+            wallet: credit.wallet,
+            paymentGateway: 'ApplePay',
+            description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Apple Pay In-App Purchase (${audience})`,
+            transactionId: txId,
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+
+      const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
+      const newBal = credit.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
+
+      try {
+        const { ChatService } = require('./ChatService');
+        const chatService: any = Container.get(ChatService);
+        await chatService.sendSystemMessage(
+          userId,
+          'Recharge Successful',
+          `🎉 Recharge Successful! You have recharged ${pkg.coins} coins via Apple Pay. Updated Balance: ${newBal} Coins.`,
+          {
+            isRecharge: true,
+            amount: pkg.coins,
+            fromUserId: 0,
+            fromUserName: 'Apple Pay',
+            newBalance: newBal,
+            wallet: credit.wallet,
+            isCoinseller: credit.wallet === 'coinSellerCoins',
+          }
+        );
+      } catch (err: any) {
+        AppLogger.warn(`[CoinService: verifyApplePayPurchase] Failed to send system message: ${err?.message}`);
+      }
+
+      return {
+        success: true,
+        message: 'Apple Pay purchase verified and coins added successfully',
+        transactionId: txId,
+        addedCoins: pkg.coins,
+        audience,
+        wallet: credit.wallet,
+        currentCoins: updatedUser?.coins || 0,
+        currentCoinSellerCoins: updatedUser?.coinSellerCoins || 0,
+        history: historyRecord[0],
+      };
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
   async cashOutBeans(userId: string, amountBeans: number, paymentMethodDetails: string) {
     if (amountBeans <= 0) throw new Error('Cash out amount must be greater than zero');
     const user = await User.findById(userId);

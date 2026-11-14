@@ -124,6 +124,17 @@ export async function seedSettings() {
       { key: 'payment_gateway_razorpay_key_id', value: 'rzp_live_TOLcZZUrGcgCad', description: 'Razorpay Live Key ID' },
       { key: 'payment_gateway_razorpay_key_secret', value: 'l2iC9Y61NpDsaec0FROTkqsr', description: 'Razorpay Live Secret Key' },
 
+      // Google Play In-App Gateway Seed
+      { key: 'payment_gateway_googleplay_enabled', value: true, description: 'Google Play IAP gateway toggle status' },
+      { key: 'payment_gateway_googleplay_package_name', value: 'com.filive.app', description: 'Google Play App Package Name' },
+      { key: 'payment_gateway_googleplay_license_key', value: '', description: 'Google Play Public License Key' },
+
+      // Apple Pay / Store In-App Gateway Seed
+      { key: 'payment_gateway_applepay_enabled', value: true, description: 'Apple Pay IAP gateway toggle status' },
+      { key: 'payment_gateway_applepay_bundle_id', value: 'com.filive.app', description: 'Apple App Bundle Identifier' },
+      { key: 'payment_gateway_applepay_merchant_id', value: '', description: 'Apple Pay Merchant Identifier' },
+      { key: 'payment_gateway_applepay_shared_secret', value: '', description: 'Apple App Store Shared Secret' },
+
       // Auto Translation Seed
       { key: 'google_translate_api_key', value: process.env.GOOGLE_TRANSLATE_API_KEY || 'AIzaSyAeYK_YooZqvGW9Nk3zqJwfGO5QABxaWpo', description: 'Google Cloud Translation API Key' },
       { key: 'auto_translate_chat_enabled', value: true, description: 'Auto translate non-English chat messages to English' },

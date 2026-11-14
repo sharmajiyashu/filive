@@ -34,6 +34,15 @@ export default (router: Router) => {
       const audienceRaw = (req.query.audience || 'user').toString().toLowerCase();
       const audience = ['seller', 'coinseller', 'coin_seller', 'coin-seller', 'trader'].includes(audienceRaw) ? 'seller' : 'user';
 
+      const devicePlatform = (
+        req.headers['x-device-platform'] ||
+        req.query.devicePlatform ||
+        req.query.platform ||
+        ''
+      )
+        .toString()
+        .toLowerCase();
+
       const countryFromQuery = (req.query.countryCode || req.headers['x-country-code']) as
         | string
         | undefined;
@@ -45,7 +54,8 @@ export default (router: Router) => {
       const methods = await paymentMethodService.getAvailablePaymentMethods(
         countryCode,
         audience,
-        'app'
+        'app',
+        devicePlatform
       );
 
       return ResponseWrapper.success(

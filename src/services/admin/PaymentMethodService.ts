@@ -33,6 +33,24 @@ const DEFAULT_METHODS = [
     showInApp: false,
     showInWeb: false,
   },
+  {
+    gateway: 'googleplay' as const,
+    displayName: 'Google Play (Android In-App)',
+    countries: ['ALL', '*'],
+    targetAudience: 'all' as const,
+    isActive: true,
+    showInApp: true,
+    showInWeb: false,
+  },
+  {
+    gateway: 'applepay' as const,
+    displayName: 'Apple Pay (iOS In-App)',
+    countries: ['ALL', '*'],
+    targetAudience: 'all' as const,
+    isActive: true,
+    showInApp: true,
+    showInWeb: false,
+  },
 ];
 
 @Service()
@@ -69,9 +87,9 @@ export class PaymentMethodService {
       showInWeb?: boolean | string;
     }
   ) {
-    const allowed: PaymentGatewayKey[] = ['razorpay', 'cashfree', 'pandapay'];
+    const allowed: PaymentGatewayKey[] = ['razorpay', 'cashfree', 'pandapay', 'googleplay', 'applepay'];
     if (!allowed.includes(gateway as PaymentGatewayKey)) {
-      throw new Error('Invalid payment gateway. Allowed: razorpay, cashfree, pandapay');
+      throw new Error('Invalid payment gateway. Allowed: razorpay, cashfree, pandapay, googleplay, applepay');
     }
 
     AppLogger.info(`[PaymentMethodService: updatePaymentMethod] Updating ${gateway}`);

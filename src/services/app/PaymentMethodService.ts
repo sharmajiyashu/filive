@@ -11,6 +11,8 @@ const GATEWAY_SETTING_KEYS: Record<PaymentGatewayKey, string> = {
   razorpay: 'payment_gateway_razorpay_enabled',
   cashfree: 'payment_gateway_cashfree_enabled',
   pandapay: 'payment_gateway_pandapay_enabled',
+  googleplay: 'payment_gateway_googleplay_enabled',
+  applepay: 'payment_gateway_applepay_enabled',
 };
 
 @Service()
@@ -61,6 +63,24 @@ export class PaymentMethodService {
         showInApp: false,
         showInWeb: false,
       },
+      {
+        gateway: 'googleplay' as const,
+        displayName: 'Google Play (In-App Purchase)',
+        countries: ['ALL', '*'],
+        targetAudience: 'all' as const,
+        isActive: true,
+        showInApp: true,
+        showInWeb: false,
+      },
+      {
+        gateway: 'applepay' as const,
+        displayName: 'Apple Pay (In-App Purchase)',
+        countries: ['ALL', '*'],
+        targetAudience: 'all' as const,
+        isActive: true,
+        showInApp: true,
+        showInWeb: false,
+      },
     ];
     for (const method of defaults) {
       const existing = await PaymentMethod.findOne({ gateway: method.gateway });
@@ -82,15 +102,17 @@ export class PaymentMethodService {
   }
 
   /**
-   * Active payment methods, filtered by country + audience + platform (app/web) + AppSetting master switch.
+   * Active payment methods, filtered by country + audience + platform (app/web) + devicePlatform (android/ios) + AppSetting master switch.
    */
   public async getAvailablePaymentMethods(
     countryCode?: string,
     audience: 'user' | 'seller' | 'website' = 'user',
-    platform: 'app' | 'web' = 'app'
+    platform: 'app' | 'web' = 'app',
+    devicePlatform?: string
   ) {
     await this.ensureDefaults();
     const code = countryCode?.trim().toUpperCase();
+    const devPlat = devicePlatform?.trim().toLowerCase();
     const query: any = {
       isActive: true,
       targetAudience: { $in: ['all', audience, 'website'] },
@@ -120,9 +142,28 @@ export class PaymentMethodService {
     const available = [];
 
     for (const method of methods) {
+      const gw = (method.gateway || '').toLowerCase();
+
+      // Native IAP gateways are not supported on web
+      if (platform === 'web' && (gw === 'googleplay' || gw === 'applepay')) {
+        continue;
+      }
+
+      // Device-specific filtering:
+      // Android devices must NEVER see Apple Pay
+      if (devPlat === 'android' && gw === 'applepay') {
+        continue;
+      }
+      // Apple (iOS) devices must NEVER see Google Play
+      if ((devPlat === 'ios' || devPlat === 'iphone' || devPlat === 'ipad') && gw === 'googleplay') {
+        continue;
+      }
+
       const settingKey = GATEWAY_SETTING_KEYS[method.gateway as PaymentGatewayKey];
-      const enabled = await this.appSettingService.getSettingValue(settingKey);
-      if (enabled === false) continue;
+      if (settingKey) {
+        const enabled = await this.appSettingService.getSettingValue(settingKey);
+        if (enabled === false) continue;
+      }
 
       available.push({
         gateway: method.gateway,

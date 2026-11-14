@@ -366,6 +366,64 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/coins/googleplay/verify:
+   *   post:
+   *     summary: Verify Google Play In-App Purchase and add coins
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   */
+  coinRouter.post('/googleplay/verify', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId, purchaseToken, orderId, productId, audience } = req.body;
+      if (!packageId && !productId) {
+        return ResponseWrapper.error(res, new Error('packageId or productId is required'), 400);
+      }
+      const result = await coinService.verifyGooglePlayPurchase(
+        req.user.id,
+        packageId,
+        purchaseToken,
+        orderId,
+        productId,
+        audience
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Google Play purchase verified successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/coins/applepay/verify:
+   *   post:
+   *     summary: Verify Apple Pay / In-App Purchase and add coins
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   */
+  coinRouter.post('/applepay/verify', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const { packageId, receiptData, transactionId, productId, audience } = req.body;
+      if (!packageId && !productId) {
+        return ResponseWrapper.error(res, new Error('packageId or productId is required'), 400);
+      }
+      const result = await coinService.verifyApplePayPurchase(
+        req.user.id,
+        packageId,
+        receiptData,
+        transactionId,
+        productId,
+        audience
+      );
+      return ResponseWrapper.success(res, result, result.message || 'Apple Pay purchase verified successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/coins/cash-out:
    *   post:
    *     summary: Cash out Beans

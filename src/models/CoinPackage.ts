@@ -8,6 +8,7 @@ export interface ICoinPackage extends Document {
   description?: string;
   image?: string;
   playStoreProductId?: string;
+  appStoreProductId?: string;
   targetAudience: 'all' | 'user' | 'seller' | 'website';
   isFeatured: boolean;
   isRecommended: boolean;
@@ -25,6 +26,7 @@ const CoinPackageSchema: Schema = new Schema(
     description: { type: String },
     image: { type: String },
     playStoreProductId: { type: String },
+    appStoreProductId: { type: String },
     targetAudience: { type: String, enum: ['all', 'user', 'seller', 'website'], default: 'all' },
     isFeatured: { type: Boolean, default: false },
     isRecommended: { type: Boolean, default: false },
