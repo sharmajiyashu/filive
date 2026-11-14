@@ -270,6 +270,8 @@ export class CoinSellerService {
       userId: sellerObjectId,
       $or: [
         { wallet: 'coinSellerCoins' },
+        { description: /\(seller\)/i },
+        { description: /\(trader\)/i },
         {
           type: 'transfer',
           paymentGateway: 'CoinSeller',
@@ -307,6 +309,7 @@ export class CoinSellerService {
           select: 'userId name email profileImage bio isPremium country location',
           populate: { path: 'profileImage' }
         })
+        .populate('packageId')
         .skip(skip)
         .limit(limit),
       CoinHistory.countDocuments(query)
@@ -320,8 +323,16 @@ export class CoinSellerService {
 
       if (isCredit) {
         if (!relatedUser) {
-          transactionType = 'Deposit';
-          subtitle = h.description || 'From Admin';
+          if (h.type === 'recharge' || /recharge/i.test(h.description || '')) {
+            transactionType = 'Recharge';
+            subtitle = h.paymentGateway ? `Via ${h.paymentGateway}` : 'Coin Stock Recharge';
+          } else if (h.type === 'beans_to_coins' || h.type === 'exchange') {
+            transactionType = 'Exchange';
+            subtitle = 'Beans to Coins';
+          } else {
+            transactionType = 'Deposit';
+            subtitle = h.description || 'From Admin';
+          }
         } else {
           transactionType = 'Received';
           subtitle = `From ${relatedUser.name || 'Coin Seller'}`;
@@ -333,11 +344,17 @@ export class CoinSellerService {
         } else if (h.transferTarget === 'self') {
           transactionType = 'Self Recharge';
           subtitle = 'To Personal Wallet';
+        } else if (h.paymentGateway === 'Admin' || /deducted by admin|admin/i.test(h.description || '')) {
+          transactionType = 'Deduction';
+          subtitle = h.description || 'Deducted by Admin';
         } else {
           transactionType = 'Transfer';
           subtitle = 'To User';
         }
       }
+
+      const pkg = h.packageId as any;
+      const usdPrice = pkg?.price ? `$${pkg.price}` : '';
 
       return {
         transactionId: h._id,
@@ -348,6 +365,7 @@ export class CoinSellerService {
         subtitle,
         description: h.description,
         soldAt: h.createdAt,
+        usd: usdPrice,
         user: relatedUser ? {
           id: relatedUser._id,  
           userId: relatedUser.userId,
@@ -357,12 +375,27 @@ export class CoinSellerService {
           isPremium: relatedUser.isPremium,
           location: relatedUser.location,
           country: relatedUser.country
+        } : (transactionType === 'Recharge' ? {
+          id: null,
+          userId: h.paymentGateway || 'Recharge',
+          name: h.paymentGateway ? `${h.paymentGateway} Payment` : 'Wallet Recharge',
+          profileImage: null
+        } : (transactionType === 'Exchange' ? {
+          id: null,
+          userId: 'Exchange',
+          name: 'Beans Converted',
+          profileImage: null
         } : (isCredit ? {
           id: null,
           userId: 'Admin',
-          name: 'Admin Deposit',
+          name: 'Admin Credit',
           profileImage: null
-        } : null)
+        } : {
+          id: null,
+          userId: 'Admin',
+          name: 'Admin Debit',
+          profileImage: null
+        })))
       };
     });
 

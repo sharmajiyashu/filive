@@ -1093,6 +1093,7 @@ export class UserService {
         amount: initialCoins,
         type: 'other',
         wallet: 'coinSellerCoins',
+        paymentGateway: 'Admin',
         description: 'Initial coins added by Admin',
       });
     }
@@ -1123,6 +1124,7 @@ export class UserService {
       amount: amount,
       type: 'other',
       wallet: 'coinSellerCoins',
+      paymentGateway: 'Admin',
       description: description || (amount >= 0 ? 'Added by Admin' : 'Deducted by Admin'),
     });
 

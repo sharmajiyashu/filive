@@ -534,7 +534,7 @@ export default (router: Router) => {
       const userId = req.params.id;
       const { type, amount, description } = req.body;
 
-      if (!['coins', 'beans'].includes(type)) {
+      if (!['coins', 'beans', 'coinSellerCoins', 'coinseller'].includes(type)) {
         throw new Error('Invalid balance type specified. Must be coins or beans.');
       }
       if (typeof amount !== 'number') {
@@ -542,7 +542,9 @@ export default (router: Router) => {
       }
 
       let user;
-      if (type === 'coins') {
+      if (type === 'coinSellerCoins' || type === 'coinseller' || req.body.wallet === 'coinSellerCoins' || req.body.wallet === 'seller') {
+        user = await userService.adjustCoinsellerCoins(userId, amount, description);
+      } else if (type === 'coins') {
         user = await userService.adjustUserCoins(userId, amount, description);
       } else {
         user = await userService.adjustUserBeans(userId, amount, description);

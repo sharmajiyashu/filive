@@ -213,10 +213,15 @@ export class CoinService {
   async getHistory(userId: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
-    // Normal Coin History strictly excludes beans wallet, coinSellerCoins wallet, and beans-only earnings
+    // Normal Coin History strictly excludes beans wallet, coinSellerCoins wallet, and seller recharges
     const query = {
       userId,
       wallet: { $nin: ['beans', 'coinSellerCoins'] },
+      $and: [
+        { description: { $not: /\(seller\)/i } },
+        { description: { $not: /\(trader\)/i } },
+        { description: { $not: /coin seller/i } },
+      ],
       type: { $nin: ['agency_commission', 'cash_out', 'charm_received', 'call_income', 'coins_to_beans'] }
     };
 
@@ -480,7 +485,7 @@ export class CoinService {
   private normalizeAudience(audience?: string): RechargeAudience {
     if (!audience) return 'user';
     const normalized = String(audience).trim().toLowerCase();
-    if (['seller', 'coinseller', 'coin_seller', 'coin-seller'].includes(normalized)) {
+    if (['seller', 'coinseller', 'coin_seller', 'coin-seller', 'trader'].includes(normalized)) {
       return 'seller';
     }
     if (['website', 'web'].includes(normalized)) {
@@ -613,6 +618,7 @@ export class CoinService {
         packageId: pkg._id,
         amount: pkg.coins,
         type: 'recharge',
+        wallet: credit.wallet,
         description: `Recharged with ${pkg.name} (${audience})`,
         transactionId,
         paymentGateway: 'Manual',
@@ -858,6 +864,7 @@ export class CoinService {
             packageId: pkg._id,
             amount: pkg.coins,
             type: 'recharge',
+            wallet: credit.wallet,
             paymentGateway: 'Razorpay',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`,
             transactionId: razorpayPaymentId,
@@ -1096,6 +1103,7 @@ export class CoinService {
           packageId: pkg._id,
           amount: pkg.coins,
           type: 'recharge',
+          wallet: credit.wallet,
           paymentGateway: 'PandaPay',
           description: `Recharged with ${pkg.name} ($${pkg.price} USD) via PandaPay (${audience})`,
           transactionId: orderSn,
@@ -1349,6 +1357,7 @@ export class CoinService {
             packageId: pkg._id,
             amount: pkg.coins,
             type: 'recharge',
+            wallet: credit.wallet,
             paymentGateway: 'Cashfree',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Cashfree (${audience})`,
             transactionId: orderId,

@@ -32,7 +32,7 @@ export default (router: Router) => {
   coinRouter.get('/packages', appAuthMiddleware, async (req: any, res: Response) => {
     try {
       let countryId = (req.query.countryId || req.query.countryCode || req.headers['x-country-code']) as string | undefined;
-      const audience = (req.query.audience || 'user').toString().toLowerCase() === 'seller'
+      const audience = ['seller', 'coinseller', 'coin_seller', 'coin-seller', 'trader'].includes((req.query.audience || 'user').toString().toLowerCase())
         ? 'seller'
         : 'user';
 

@@ -423,9 +423,9 @@ export class HostFeedService {
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
         const isOnline = Boolean(socketOnline);
-        const isBusy = busySet.has(hostId);
-        const isLive = liveSet.has(hostId);
-        const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));
+        const isLive = isOnline && liveSet.has(hostId);
+        const isBusy = isOnline && busySet.has(hostId);
+        const status = !isOnline ? 'offline' : (isLive ? 'live' : (isBusy ? 'busy' : 'online'));
 
         const voiceCallPrice = Number(h.voiceCallPrice || h.audioCallChargePerMinute || 0);
         const videoCallPrice = Number(h.videoCallPrice || h.videoCallChargePerMinute || 0);
@@ -536,9 +536,9 @@ export class HostFeedService {
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
         const isOnline = Boolean(socketOnline);
-        const isBusy = busySet.has(hostId);
-        const isLive = liveSet.has(hostId);
-        const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));
+        const isLive = isOnline && liveSet.has(hostId);
+        const isBusy = isOnline && busySet.has(hostId);
+        const status = !isOnline ? 'offline' : (isLive ? 'live' : (isBusy ? 'busy' : 'online'));
 
         if (callerId) {
           this.logImpressionAsync(h._id, callerId, 'popular', skip + index + 1, h.countryCode);
@@ -677,9 +677,9 @@ export class HostFeedService {
         const socketOnline = io ? (io.sockets?.adapter?.rooms?.get(`user_${hostId}`)?.size || 0) > 0 : false;
         const recentLogin = h.lastLoginAt ? new Date(h.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000 : false;
         const isOnline = Boolean(socketOnline);
-        const isBusy = busySet.has(hostId);
-        const isLive = liveSet.has(hostId);
-        const status = isBusy ? 'busy' : (isLive ? 'live' : (isOnline ? 'online' : 'offline'));
+        const isLive = isOnline && liveSet.has(hostId);
+        const isBusy = isOnline && busySet.has(hostId);
+        const status = !isOnline ? 'offline' : (isLive ? 'live' : (isBusy ? 'busy' : 'online'));
 
         if (callerId) {
           this.logImpressionAsync(h._id, callerId, 'new', skip + index + 1, h.countryCode);

@@ -32,7 +32,7 @@ export default (router: Router) => {
   paymentMethodRouter.get('/', appAuthMiddleware, async (req: any, res: Response) => {
     try {
       const audienceRaw = (req.query.audience || 'user').toString().toLowerCase();
-      const audience = audienceRaw === 'seller' ? 'seller' : 'user';
+      const audience = ['seller', 'coinseller', 'coin_seller', 'coin-seller', 'trader'].includes(audienceRaw) ? 'seller' : 'user';
 
       const countryFromQuery = (req.query.countryCode || req.headers['x-country-code']) as
         | string

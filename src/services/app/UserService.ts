@@ -200,10 +200,10 @@ export class UserService {
       const uObj = u.toObject ? u.toObject() : u;
       const uid = uObj._id?.toString();
       const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uid}`)?.size > 0;
-      const isOnline = hasSocket;
-      const isBusy = busyUserSet.has(uid);
-      const isLive = liveUserSet.has(uid);
-      const status = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
+      const isOnline = Boolean(hasSocket);
+      const isLive = isOnline && liveUserSet.has(uid);
+      const isBusy = isOnline && busyUserSet.has(uid);
+      const status = !isOnline ? 'offline' : (isLive ? 'live' : (isBusy ? 'busy' : 'online'));
       const refCode = uObj.referralCode || uObj.referCode || (uObj.userId ? `REF${uObj.userId}` : undefined);
       const voiceCallPrice = Number(uObj.voiceCallPrice || uObj.audioCallChargePerMinute || 0);
       const videoCallPrice = Number(uObj.videoCallPrice || uObj.videoCallChargePerMinute || 0);
@@ -562,8 +562,8 @@ export class UserService {
         { receiverId: user._id, status: 'initiated', createdAt: { $gte: ringTimeout } },
       ]
     }).select('_id');
-    const isBusy = !!activeCall;
-    const userStatus = isBusy ? 'busy' : (isOnline ? 'online' : 'offline');
+    const isBusy = isOnline && !!activeCall;
+    const userStatus = !isOnline ? 'offline' : (isBusy ? 'busy' : 'online');
 
     const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
