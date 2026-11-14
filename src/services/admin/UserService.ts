@@ -1354,56 +1354,80 @@ export class UserService {
 
     const userObjectId = user._id;
 
-    // Aggregate stats from CoinHistory
-    const [spentAgg, receivedAgg, giftsAgg, withdrawAgg, rechargeAgg] = await Promise.all([
+    // Strict filter for Coin Trader transactions (ONLY Coin Trader stock/deals, NEVER beans or normal user transactions!)
+    const coinTraderFilter: any = {
+      userId: userObjectId,
+      wallet: { $ne: 'beans' },
+      type: {
+        $nin: [
+          'gift_received',
+          'gift_sent',
+          'call_income',
+          'call_spent',
+          'cash_out',
+          'charm_received',
+          'coins_to_beans',
+          'family_creation',
+          'agency_commission',
+          'referral_reward',
+        ],
+      },
+      $or: [
+        { wallet: 'coinSellerCoins' },
+        { paymentGateway: 'CoinSeller' },
+        { transferTarget: { $in: ['coinseller', 'user'] } },
+        { description: { $regex: /coinseller|coin seller|trader|stock/i } },
+      ],
+    };
+
+    // Aggregate stats strictly from Coin Trader activity
+    const [spentAgg, receivedAgg, rechargeAgg, dealsCount, uniqueBuyers] = await Promise.all([
       CoinHistory.aggregate([
-        { $match: { userId: userObjectId, type: 'transfer', amount: { $lt: 0 } } },
-        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+        { $match: { ...coinTraderFilter, amount: { $lt: 0 } } },
+        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } },
       ]),
       CoinHistory.aggregate([
-        { $match: { userId: userObjectId, type: 'transfer', amount: { $gt: 0 } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
+        { $match: { ...coinTraderFilter, amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
       CoinHistory.aggregate([
-        { $match: { userId: userObjectId, type: 'gift_received' } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
+        { $match: { ...coinTraderFilter, type: 'recharge', amount: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
       ]),
-      CoinHistory.aggregate([
-        { $match: { userId: userObjectId, type: 'cash_out' } },
-        { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
-      ]),
-      CoinHistory.aggregate([
-        { $match: { userId: userObjectId, type: 'recharge' } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]),
+      CoinHistory.countDocuments({ ...coinTraderFilter, amount: { $lt: 0 } }),
+      CoinHistory.distinct('relatedUserId', {
+        ...coinTraderFilter,
+        amount: { $lt: 0 },
+        relatedUserId: { $exists: true, $ne: null, $nin: [userObjectId] },
+      }),
     ]);
 
     const spentCoins = spentAgg[0]?.total || 0;
     const receivedCoins = receivedAgg[0]?.total || 0;
-    const receivedGifts = giftsAgg[0]?.total || 0;
-    const withdrawnCoins = withdrawAgg[0]?.total || 0;
-    const topUpCoins = rechargeAgg[0]?.total || user.coins || 0;
+    const topUpCoins = rechargeAgg[0]?.total || 0;
+    const totalDeals = dealsCount || 0;
+    const totalBuyers = uniqueBuyers?.filter(Boolean).length || 0;
 
     // Get Country and Levels
     const levelService = Container.get(LevelService);
     const { country, level, levelInfo } = await getUserCountryAndLevels(user, levelService);
 
-    // Paginated Coin History for this user
+    // Paginated Coin History for this trader (strictly coin trader transactions!)
     const historySkip = (page - 1) * limit;
-    const historyTotal = await CoinHistory.countDocuments({ userId: userObjectId });
-    const transactions = await CoinHistory.find({ userId: userObjectId })
+    const historyTotal = await CoinHistory.countDocuments(coinTraderFilter);
+    const transactions = await CoinHistory.find(coinTraderFilter)
       .populate({ path: 'relatedUserId', select: 'name email userId profileImage', populate: { path: 'profileImage' } })
       .sort({ createdAt: -1 })
       .skip(historySkip)
       .limit(limit);
 
     const incomeAgg = await CoinHistory.aggregate([
-      { $match: { userId: userObjectId, amount: { $gt: 0 } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
+      { $match: { ...coinTraderFilter, amount: { $gt: 0 } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
     ]);
     const outgoingAgg = await CoinHistory.aggregate([
-      { $match: { userId: userObjectId, amount: { $lt: 0 } } },
-      { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
+      { $match: { ...coinTraderFilter, amount: { $lt: 0 } } },
+      { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } },
     ]);
 
     const totalIncome = incomeAgg[0]?.total || 0;
@@ -1425,6 +1449,7 @@ export class UserService {
         isVerified: user.isVerified,
         isCoinseller: user.isCoinseller,
         isCoinsellerActive: user.isCoinsellerActive !== false,
+        coinSellerCoins: user.coinSellerCoins || 0,
         securityDeposit: user.securityDeposit || 0,
         createdAt: user.createdAt,
         country: country || null,
@@ -1443,8 +1468,8 @@ export class UserService {
         topUpCoins,
         spentCoins,
         receivedCoins,
-        receivedGifts,
-        withdrawnCoins,
+        totalDeals,
+        totalBuyers,
         securityDeposit: user.securityDeposit || 0,
       },
       level: {
@@ -1499,7 +1524,27 @@ export class UserService {
 
     const query: any = {
       userId: { $in: traderIds },
-      type: { $in: ['other', 'transfer', 'recharge'] },
+      wallet: { $ne: 'beans' },
+      type: {
+        $nin: [
+          'gift_received',
+          'gift_sent',
+          'call_income',
+          'call_spent',
+          'cash_out',
+          'charm_received',
+          'coins_to_beans',
+          'family_creation',
+          'agency_commission',
+          'referral_reward',
+        ],
+      },
+      $or: [
+        { wallet: 'coinSellerCoins' },
+        { paymentGateway: 'CoinSeller' },
+        { transferTarget: { $in: ['coinseller', 'user'] } },
+        { description: { $regex: /coinseller|coin seller|trader|stock/i } },
+      ],
     };
 
     if (params.startDate || params.endDate) {

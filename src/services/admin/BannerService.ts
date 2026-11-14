@@ -139,10 +139,26 @@ export class BannerService {
     const query: Record<string, unknown> = { isActive: true };
     if (isBannerType(type)) query.type = type;
 
-    const banners = await Banner.find(query)
+    const rawBanners = await Banner.find(query)
       .populate('image')
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean();
+
+    const banners = (rawBanners || [])
+      .map((b: any) => {
+        let imageUrl = '';
+        if (b.image && typeof b.image === 'object' && b.image.url) {
+          imageUrl = b.image.url;
+        } else if (typeof b.image === 'string' && b.image.startsWith('http')) {
+          imageUrl = b.image;
+        }
+        return {
+          ...b,
+          imageUrl: imageUrl || (b.image?.url ?? ''),
+          image: b.image && typeof b.image === 'object' ? b.image : { url: imageUrl },
+        };
+      })
+      .filter((b: any) => b.imageUrl || (b.image && b.image.url));
 
     if (banners && banners.length > 0) {
       return banners;
@@ -160,6 +176,7 @@ export class BannerService {
             _id: `home_setting_${idx}`,
             type: 'home',
             image: { url },
+            imageUrl: url,
             redirectUrl: '',
             route: '',
             isActive: true,
@@ -175,6 +192,23 @@ export class BannerService {
             _id: `party_setting_${idx}`,
             type: 'party',
             image: { url },
+            imageUrl: url,
+            redirectUrl: '',
+            route: '',
+            isActive: true,
+            sortOrder: idx + 1,
+          }));
+        }
+      } else if (type === 'splash') {
+        const doc = await AppSetting.findOne({ key: 'splash_banners' }).lean();
+        const single = await AppSetting.findOne({ key: 'splash_banner_image_url' }).lean();
+        const list = Array.isArray(doc?.value) ? doc!.value : (single?.value ? [single.value] : []);
+        if (list.length > 0) {
+          return list.map((url: string, idx: number) => ({
+            _id: `splash_setting_${idx}`,
+            type: 'splash',
+            image: { url },
+            imageUrl: url,
             redirectUrl: '',
             route: '',
             isActive: true,

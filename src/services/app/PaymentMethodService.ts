@@ -86,17 +86,6 @@ export class PaymentMethodService {
       const existing = await PaymentMethod.findOne({ gateway: method.gateway });
       if (!existing) {
         await PaymentMethod.create(method);
-      } else {
-        await PaymentMethod.updateOne(
-          { gateway: method.gateway },
-          {
-            $addToSet: { countries: { $each: ['ALL', 'IN', '*'] } },
-            $set: {
-              showInApp: existing.showInApp ?? method.showInApp,
-              showInWeb: existing.showInWeb ?? method.showInWeb,
-            },
-          }
-        );
       }
     }
   }
@@ -125,19 +114,11 @@ export class PaymentMethodService {
     }
 
     if (code) {
+      // Must match specific country code, or global 'ALL' / '*'
       query.countries = { $in: [code, 'ALL', '*'] };
     }
 
-    let methods = await PaymentMethod.find(query).sort({ gateway: 1 });
-
-    // Fallback if no methods specifically configured for this country code:
-    // Platforms should show available active payment gateways (Razorpay/Cashfree)
-    if (methods.length === 0) {
-      methods = await PaymentMethod.find({
-        isActive: true,
-        ...(platform === 'web' ? { showInWeb: { $ne: false } } : { showInApp: { $ne: false } }),
-      }).sort({ gateway: 1 });
-    }
+    const methods = await PaymentMethod.find(query).sort({ gateway: 1 });
 
     const available = [];
 

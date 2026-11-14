@@ -290,9 +290,13 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         userJson.profileImage = userJson.profileImage ?? null;
       }
 
+      const commentMsgId = new mongoose.Types.ObjectId().toString();
       const payload = {
         success: true,
         type: 'new_comment',
+        messageId: commentMsgId,
+        _id: commentMsgId,
+        id: commentMsgId,
         channelName,
         roomId: liveStream?.roomId ?? null,
         room_id: liveStream?.roomId ?? null,

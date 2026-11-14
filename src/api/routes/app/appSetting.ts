@@ -50,6 +50,41 @@ export default (router: Router) => {
         return acc;
       }, {});
 
+      // Sync active banners from Banner collection into settingsMap
+      try {
+        const Banner = (await import('../../../models/Banner')).default;
+        const activeBanners = await Banner.find({ isActive: true })
+          .populate('image')
+          .sort({ sortOrder: 1, createdAt: -1 })
+          .lean();
+
+        const homeList = activeBanners
+          .filter((b: any) => b.type === 'home' && b.image && (b.image.url || typeof b.image === 'string'))
+          .map((b: any) => (typeof b.image === 'string' ? b.image : b.image.url));
+        if (homeList.length > 0) {
+          settingsMap.home_banners = homeList;
+          settingsMap.home_banner_image_url = homeList[0];
+        }
+
+        const partyList = activeBanners
+          .filter((b: any) => b.type === 'party' && b.image && (b.image.url || typeof b.image === 'string'))
+          .map((b: any) => (typeof b.image === 'string' ? b.image : b.image.url));
+        if (partyList.length > 0) {
+          settingsMap.party_room_banners = partyList;
+          settingsMap.party_room_banner_image_url = partyList[0];
+        }
+
+        const splashList = activeBanners
+          .filter((b: any) => b.type === 'splash' && b.image && (b.image.url || typeof b.image === 'string'))
+          .map((b: any) => (typeof b.image === 'string' ? b.image : b.image.url));
+        if (splashList.length > 0) {
+          settingsMap.splash_banners = splashList;
+          settingsMap.splash_banner_image_url = splashList[0];
+        }
+      } catch (bannerErr) {
+        console.warn('[appSetting] Error populating active banners:', bannerErr);
+      }
+
       const result = {
         settings: settingsMap,
         countries,

@@ -232,12 +232,34 @@ export class ReportService {
       complaintGroupKey = `post:${data.postId || data.targetId}`;
     } else if ((data.reportType === 'party_room' || data.reportType === 'live_room') && (data.roomId || liveHostId || data.targetId)) {
       complaintGroupKey = `room:${data.roomId || liveHostId || data.targetId}`;
-    } else if ((data.reportType === 'message' || data.reportType === 'chat') && data.messageId) {
-      complaintGroupKey = `message:${data.messageId}`;
-    } else if (data.reportType === 'chat' && resolvedReportedUserId) {
-      complaintGroupKey = `chat:${resolvedReportedUserId}`;
+    } else if (data.reportType === 'message' || data.reportType === 'chat') {
+      if (data.messageId) {
+        complaintGroupKey = `message:${data.messageId}`;
+      } else if (data.messageText && (data.roomId || resolvedReportedUserId)) {
+        complaintGroupKey = `message:${data.roomId || resolvedReportedUserId}:${data.messageText.trim().substring(0, 40)}`;
+      } else if (resolvedReportedUserId) {
+        complaintGroupKey = `chat:${resolvedReportedUserId}`;
+      }
     } else if (resolvedReportedUserId) {
       complaintGroupKey = `user:${resolvedReportedUserId}`;
+    }
+
+    // Prevent duplicate reports from the same user for the same target
+    if (complaintGroupKey) {
+      const existingReport = await Report.findOne({
+        reporterId: new mongoose.Types.ObjectId(reporterId),
+        complaintGroupKey,
+        status: { $ne: 'rejected' },
+      });
+      if (existingReport) {
+        if (data.reportType === 'message') {
+          throw new Error('You have already reported this message. Our moderation team is reviewing it.');
+        } else if (data.reportType === 'party_room' || data.reportType === 'live_room') {
+          throw new Error('You have already reported this room. Our moderation team is currently reviewing it.');
+        } else {
+          throw new Error('You have already submitted a report for this content. It is currently under review.');
+        }
+      }
     }
 
     const report = await Report.create({
