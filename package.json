@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "seed": "ts-node ./src/seeders/runSeeders.ts",
+    "seed:legal": "ts-node ./src/seeders/seedLegalOnly.ts",
     "seed:vip": "ts-node ./src/seeders/seedVipOnly.ts",
     "seed:profile": "ts-node ./src/seeders/profileOptionsSeeder.ts",
     "test": "echo \"Error: no test specified\" && exit 1",

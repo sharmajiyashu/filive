@@ -1,5 +1,12 @@
 import AppSetting from '../models/AppSetting';
 import AppLogger from '../api/loaders/logger';
+import {
+  DEFAULT_PRIVACY_POLICY_TEXT,
+  DEFAULT_USER_AGREEMENT_TEXT,
+  DEFAULT_REFUND_POLICY_TEXT,
+  DEFAULT_CHILD_SAFETY_POLICY_TEXT,
+  DEFAULT_LEGAL_EFFECTIVE_DATE,
+} from '../constants/legalDocuments';
 
 export async function seedSettings() {
   try {
@@ -138,6 +145,27 @@ export async function seedSettings() {
       // Auto Translation Seed
       { key: 'google_translate_api_key', value: process.env.GOOGLE_TRANSLATE_API_KEY || 'AIzaSyAeYK_YooZqvGW9Nk3zqJwfGO5QABxaWpo', description: 'Google Cloud Translation API Key' },
       { key: 'auto_translate_chat_enabled', value: true, description: 'Auto translate non-English chat messages to English' },
+
+      // Legal & Compliance Policies Seed
+      { key: 'privacy_policy_content', value: DEFAULT_PRIVACY_POLICY_TEXT, description: 'Dynamic Privacy Policy full legal text' },
+      { key: 'privacy_policy_updated_at', value: DEFAULT_LEGAL_EFFECTIVE_DATE, description: 'Privacy Policy effective date' },
+      { key: 'privacy_policy_url', value: 'https://filive.in/privacy-policy', description: 'Privacy Policy official URL' },
+
+      { key: 'user_agreement_content', value: DEFAULT_USER_AGREEMENT_TEXT, description: 'Dynamic User Agreement full legal text' },
+      { key: 'user_agreement_updated_at', value: DEFAULT_LEGAL_EFFECTIVE_DATE, description: 'User Agreement effective date' },
+      { key: 'terms_conditions_url', value: 'https://filive.in/user-agreement', description: 'User Agreement / Terms official URL' },
+
+      { key: 'refund_policy_content', value: DEFAULT_REFUND_POLICY_TEXT, description: 'Dynamic Refund Policy full legal text' },
+      { key: 'refund_policy_updated_at', value: DEFAULT_LEGAL_EFFECTIVE_DATE, description: 'Refund Policy effective date' },
+      { key: 'refund_policy_url', value: 'https://filive.in/refund-policy', description: 'Refund Policy official URL' },
+
+      { key: 'child_safety_policy_content', value: DEFAULT_CHILD_SAFETY_POLICY_TEXT, description: 'Dynamic Child Safety Policy full legal text' },
+      { key: 'child_safety_policy_updated_at', value: DEFAULT_LEGAL_EFFECTIVE_DATE, description: 'Child Safety Policy effective date' },
+      { key: 'child_safety_policy_url', value: 'https://filive.in/child-safety', description: 'Child Safety Policy official URL' },
+
+      { key: 'contact_us_email', value: 'support@filive.in', description: 'Official support and grievance contact email' },
+      { key: 'official_website_url', value: 'https://filive.in', description: 'Official web address' },
+      { key: 'contact_us_address', value: 'Filive Office, Flat No. 18, Filive Office Road, Near Main Market, Godda, Jharkhand – 814133, India.', description: 'Official registered physical address' },
     ];
 
     for (const setting of settings) {
