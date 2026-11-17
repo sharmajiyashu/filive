@@ -1,5 +1,12 @@
 import { Service } from 'typedi';
 import AppSetting from '../../models/AppSetting';
+import {
+  DEFAULT_PRIVACY_POLICY_TEXT,
+  DEFAULT_USER_AGREEMENT_TEXT,
+  DEFAULT_REFUND_POLICY_TEXT,
+  DEFAULT_CHILD_SAFETY_POLICY_TEXT,
+  DEFAULT_LEGAL_EFFECTIVE_DATE,
+} from '../../constants/legalDocuments';
 
 @Service()
 export class AppSettingService {
@@ -55,12 +62,22 @@ export class AppSettingService {
     about_us_content: 'Welcome to FiLive – your premier live streaming, voice party, and social entertainment platform. Connect with talented creators, make real-time friends, participate in thrilling live rooms, and share your memorable moments across the globe.',
     about_us_version: 'V_1.1.18.2025698',
     company_name: 'FiLive Entertainment Private Limited',
-    official_website_url: 'https://filive-website.vercel.app',
-    terms_conditions_url: 'https://filive.app/terms',
-    privacy_policy_url: 'https://filive.app/privacy',
-    contact_us_email: 'support@filive.app',
+    official_website_url: 'https://filive.in',
+    terms_conditions_url: 'https://filive.in/user-agreement',
+    privacy_policy_url: 'https://filive.in/privacy-policy',
+    contact_us_email: 'support@filive.in',
     contact_us_phone: '+91 98765 43210',
-    contact_us_address: 'FiLive Global Tech Park, Bangalore, India',
+    contact_us_address: 'Filive Office, Flat No. 18, Filive Office Road, Near Main Market, Godda, Jharkhand – 814133, India.',
+    privacy_policy_content: DEFAULT_PRIVACY_POLICY_TEXT,
+    privacy_policy_updated_at: DEFAULT_LEGAL_EFFECTIVE_DATE,
+    user_agreement_content: DEFAULT_USER_AGREEMENT_TEXT,
+    user_agreement_updated_at: DEFAULT_LEGAL_EFFECTIVE_DATE,
+    refund_policy_url: 'https://filive.in/refund-policy',
+    refund_policy_content: DEFAULT_REFUND_POLICY_TEXT,
+    refund_policy_updated_at: DEFAULT_LEGAL_EFFECTIVE_DATE,
+    child_safety_policy_url: 'https://filive.in/child-safety',
+    child_safety_policy_content: DEFAULT_CHILD_SAFETY_POLICY_TEXT,
+    child_safety_policy_updated_at: DEFAULT_LEGAL_EFFECTIVE_DATE,
     // Website & Enquiry Settings
     website_enquiry_email: 'filive@gmail.com',
     website_permission_emails: ['filive@gmail.com'],

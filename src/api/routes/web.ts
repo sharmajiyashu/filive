@@ -388,4 +388,42 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   });
+
+  /**
+   * GET /v1/api/web/legal
+   * Get dynamic legal documents (Privacy Policy, User Agreement) for public website
+   */
+  router.get('/legal', async (req: Request, res: Response) => {
+    try {
+      const appSettingService = Container.get(AppSettingService);
+      const settings = await appSettingService.getSettings();
+      return ResponseWrapper.success(
+        res,
+        {
+          privacy_policy_content: settings.privacy_policy_content || '',
+          privacy_policy_updated_at: settings.privacy_policy_updated_at || '17 November 2026',
+          privacy_policy_url: settings.privacy_policy_url || 'https://filive.in/privacy-policy',
+          user_agreement_content: settings.user_agreement_content || '',
+          user_agreement_updated_at: settings.user_agreement_updated_at || '17 November 2026',
+          user_agreement_url: settings.terms_conditions_url || 'https://filive.in/user-agreement',
+          refund_policy_content: settings.refund_policy_content || '',
+          refund_policy_updated_at: settings.refund_policy_updated_at || '17 November 2026',
+          refund_policy_url: settings.refund_policy_url || 'https://filive.in/refund-policy',
+          child_safety_policy_content: settings.child_safety_policy_content || '',
+          child_safety_policy_updated_at: settings.child_safety_policy_updated_at || '17 November 2026',
+          child_safety_policy_url: settings.child_safety_policy_url || 'https://filive.in/child-safety',
+          about_us_title: settings.about_us_title || 'About FiLive',
+          about_us_content: settings.about_us_content || '',
+          company_name: settings.company_name || 'FiLive Entertainment Private Limited',
+          official_website_url: settings.official_website_url || 'https://filive.in',
+          contact_us_email: settings.contact_us_email || 'support@filive.in',
+          contact_us_phone: settings.contact_us_phone || '',
+          contact_us_address: settings.contact_us_address || '',
+        },
+        'Website legal policies fetched successfully'
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
 };

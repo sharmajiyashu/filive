@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
+import Container from 'typedi';
 import AppSetting from '../../../models/AppSetting';
+import { AppSettingService } from '../../../services/common/AppSettingService';
 import Country from '../../../models/Country';
 import Language from '../../../models/Language';
 import Career from '../../../models/Career';
@@ -24,8 +26,9 @@ export default (router: Router) => {
    */
   settingsRouter.get('/', async (req: Request, res: Response) => {
     try {
-      let [settings, countries, languages, careers, hobbies, giftTypes] = await Promise.all([
-        AppSetting.find(),
+      const appSettingService = Container.get(AppSettingService);
+      let [settingsMap, countries, languages, careers, hobbies, giftTypes] = await Promise.all([
+        appSettingService.getSettings(),
         Country.find({ isActive: true }).sort({ name: 1 }),
         Language.find({ isActive: true }).sort({ name: 1 }),
         Career.find({ isActive: true }).populate('image').sort({ name: 1 }),
@@ -44,11 +47,6 @@ export default (router: Router) => {
         }
         giftTypes = await GiftType.find({ isActive: true }).sort({ name: 1 });
       }
-
-      const settingsMap = settings.reduce((acc: any, curr) => {
-        acc[curr.key] = curr.value;
-        return acc;
-      }, {});
 
       // Sync active banners from Banner collection into settingsMap
       try {
@@ -123,6 +121,50 @@ export default (router: Router) => {
       ];
       const tiers = setting?.value || defaultTiers;
       return ResponseWrapper.success(res, tiers, 'Call price tiers fetched successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /app/settings/legal:
+   *   get:
+   *     summary: Get legal policies (Privacy Policy, User Agreement)
+   *     tags: [Settings]
+   *     responses:
+   *       200:
+   *         description: Legal content retrieved successfully
+   */
+  settingsRouter.get('/legal', async (req: Request, res: Response) => {
+    try {
+      const appSettingService = Container.get(AppSettingService);
+      const settings = await appSettingService.getSettings();
+      return ResponseWrapper.success(
+        res,
+        {
+          privacy_policy_content: settings.privacy_policy_content || '',
+          privacy_policy_updated_at: settings.privacy_policy_updated_at || '17 November 2026',
+          privacy_policy_url: settings.privacy_policy_url || 'https://filive.in/privacy-policy',
+          user_agreement_content: settings.user_agreement_content || '',
+          user_agreement_updated_at: settings.user_agreement_updated_at || '17 November 2026',
+          user_agreement_url: settings.terms_conditions_url || 'https://filive.in/user-agreement',
+          refund_policy_content: settings.refund_policy_content || '',
+          refund_policy_updated_at: settings.refund_policy_updated_at || '17 November 2026',
+          refund_policy_url: settings.refund_policy_url || 'https://filive.in/refund-policy',
+          child_safety_policy_content: settings.child_safety_policy_content || '',
+          child_safety_policy_updated_at: settings.child_safety_policy_updated_at || '17 November 2026',
+          child_safety_policy_url: settings.child_safety_policy_url || 'https://filive.in/child-safety',
+          about_us_title: settings.about_us_title || 'About FiLive',
+          about_us_content: settings.about_us_content || '',
+          company_name: settings.company_name || 'FiLive Entertainment Private Limited',
+          official_website_url: settings.official_website_url || 'https://filive.in',
+          contact_us_email: settings.contact_us_email || 'support@filive.in',
+          contact_us_phone: settings.contact_us_phone || '',
+          contact_us_address: settings.contact_us_address || '',
+        },
+        'Legal information retrieved successfully'
+      );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
