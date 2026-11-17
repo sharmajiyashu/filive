@@ -432,9 +432,10 @@ export class CoinsellerRankingService {
 
     // 2. Fetch Sellers
     const sellers = await User.find(baseQuery)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinsellerCategory coinsellerJoinedAt coinsellerRankingExcluded coinsellerRankingExcludeReason isOnline createdAt')
+      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinsellerCategory coinsellerJoinedAt coinsellerRankingExcluded coinsellerRankingExcludeReason isOnline createdAt activeFrame')
       .populate('profileImage')
       .populate('countryId')
+      .populate({ path: 'activeFrame', populate: { path: 'media' } })
       .lean();
 
     let ioServer: any = null;

@@ -114,8 +114,8 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       clearCallTimeout(callId.toString().trim());
 
       const call = await callService.acceptCall(userId, callId);
-      const callerId = call.callerId._id.toString();
-      const receiverId = call.receiverId._id.toString();
+      const callerId = ((call.callerId as any)?._id || call.callerId).toString();
+      const receiverId = ((call.receiverId as any)?._id || call.receiverId).toString();
       const callerPayload = { ...(await callService.buildCallScreenPayload(call, callerId)), success: true, type: 'call_accepted' };
       const hostPayload = { ...(await callService.buildCallScreenPayload(call, receiverId)), success: true, type: 'call_accepted' };
 

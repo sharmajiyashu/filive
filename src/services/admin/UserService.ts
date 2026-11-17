@@ -231,7 +231,7 @@ export class UserService {
       if (params.category === 'vip') {
         query.isPremium = true;
       } else if (params.category === 'verified') {
-        query.isVerified = true;
+        query.videoVerificationStatus = 'approved';
       } else if (params.category === 'coinseller') {
         query.isCoinseller = true;
       } else if (params.category === 'normal') {
@@ -365,7 +365,7 @@ export class UserService {
     ] = await Promise.all([
       User.countDocuments({ ...statsDateQuery }),
       User.countDocuments({ ...statsDateQuery, isBlocked: { $ne: true }, instantBlock: { $ne: true }, deviceBan: { $ne: true }, isDeleted: { $ne: true } }),
-      User.countDocuments({ ...statsDateQuery, isVerified: true, isDeleted: { $ne: true } }),
+      User.countDocuments({ ...statsDateQuery, videoVerificationStatus: 'approved', isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, $or: [{ isVip: true }, { isPremium: true }, { vipExpiresAt: { $gt: new Date() } }, { vipPlanId: { $ne: null } }], isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, isCoinseller: true, isDeleted: { $ne: true } }),
       User.countDocuments({ ...statsDateQuery, gender: { $regex: /^male$/i }, isDeleted: { $ne: true } }),
@@ -1440,7 +1440,7 @@ export class UserService {
         name: user.name || 'Trader',
         email: user.email || '',
         mobile: user.mobile || '',
-        whatsapp: user.whatsapp || user.mobile || '',
+        whatsapp: user.whatsapp || '',
         gender: user.gender || 'Male',
         dob: user.dob,
         age: ageFromDob(user.dob),

@@ -10,6 +10,7 @@ import { MediaService } from '../common/MediaService';
 import { CloudinaryService } from '../common/CloudinaryService';
 import { MediaType } from '../../constants/enum';
 import { getUserCountryAndLevels, resolveCountryObject, toPlainObject } from '../../utils/userLookup';
+import { formatStoreItem } from '../../utils/activeStorePopulate';
 import Country from '../../models/Country';
 import { CoinsellerRankingService } from './CoinsellerRankingService';
 import { CoinService } from './CoinService';
@@ -405,10 +406,11 @@ export class CoinSellerService {
     const sellerObjectId = new mongoose.Types.ObjectId(sellerId);
 
     const seller = await User.findById(sellerId)
-      .select('userId name coins coinSellerCoins beans mobile whatsapp country countryId profileImage coinSellerPaymentMethods securityDeposit')
+      .select('userId name coins coinSellerCoins beans mobile whatsapp country countryId profileImage coinSellerPaymentMethods securityDeposit activeFrame')
       .populate('profileImage')
       .populate('countryId')
-      .populate('coinSellerPaymentMethods.qrCode');
+      .populate('coinSellerPaymentMethods.qrCode')
+      .populate({ path: 'activeFrame', populate: { path: 'media' } });
     if (!seller) throw new Error('Seller not found');
 
     const sinceDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -514,6 +516,7 @@ export class CoinSellerService {
       whatsapp: seller.whatsapp,
       countryCode: (seller.countryId as any)?.code || seller.country || null,
       profileImage: seller.profileImage,
+      activeFrame: formatStoreItem(seller.activeFrame),
       paymentMethods: seller.coinSellerPaymentMethods ? {
         upiId: seller.coinSellerPaymentMethods.upiId || '',
         qrCode: toPlainObject(seller.coinSellerPaymentMethods.qrCode) || null,
@@ -602,53 +605,89 @@ export class CoinSellerService {
         $inc: { beans: -beansAmount }
       }, { session });
 
-      // 2. Credit coins and wealthCoins (and coinSellerCoins if coinseller)
+      // 2. Create history record for sender's beans deduction
+      await CoinHistory.create([{
+        userId: sender._id,
+        ...(isTransfer ? { relatedUserId: recipient._id } : {}),
+        amount: -beansAmount,
+        type: 'beans_to_coins',
+        wallet: 'beans',
+        transferTarget: isTransfer ? (recipient.isCoinseller ? 'coinseller' : 'user') : 'self',
+        paymentGateway: 'CoinSeller',
+        description: isTransfer
+          ? `Converted ${beansAmount} beans to ${coinsToCredit} ${recipient.isCoinseller ? 'seller coins' : 'coins'} and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
+          : `Exchanged ${beansAmount} beans to ${coinsToCredit} ${sender.isCoinseller ? 'seller coins' : 'coins'}`
+      }], { session });
+
+      // 3. Credit coins based on whether recipient (or sender for self) is a Coin Seller
+      // RULE: If coinseller -> credit coinSellerCoins ONLY (not normal coins).
+      //       If not coinseller -> credit normal coins and wealthCoins.
+      const targetIsCoinseller = isTransfer ? Boolean(recipient.isCoinseller) : Boolean(sender.isCoinseller);
+
       if (isTransfer) {
-        const recipientUpdate: any = {
-          $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
-        };
-        if (recipient.isCoinseller) {
-          recipientUpdate.$inc.coinSellerCoins = coinsToCredit;
+        if (targetIsCoinseller) {
+          await User.findByIdAndUpdate(recipient._id, {
+            $inc: { coinSellerCoins: coinsToCredit }
+          }, { session });
+
+          await CoinHistory.create([{
+            userId: recipient._id,
+            relatedUserId: sender._id,
+            amount: coinsToCredit,
+            type: 'beans_to_coins',
+            wallet: 'coinSellerCoins',
+            transferTarget: 'coinseller',
+            paymentGateway: 'CoinSeller',
+            description: `Received ${coinsToCredit} seller coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
+          }], { session });
+        } else {
+          await User.findByIdAndUpdate(recipient._id, {
+            $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
+          }, { session });
+
+          await CoinHistory.create([{
+            userId: recipient._id,
+            relatedUserId: sender._id,
+            amount: coinsToCredit,
+            type: 'beans_to_coins',
+            wallet: 'coins',
+            transferTarget: 'user',
+            paymentGateway: 'CoinSeller',
+            description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
+          }], { session });
         }
-        await User.findByIdAndUpdate(recipient._id, recipientUpdate, { session });
-
-        // 3. Create history records
-        await CoinHistory.create([{
-          userId: sender._id,
-          relatedUserId: recipient._id,
-          amount: -beansAmount,
-          type: 'beans_to_coins',
-          wallet: 'beans',
-          transferTarget: 'user',
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
-        }], { session });
-
-        await CoinHistory.create([{
-          userId: recipient._id,
-          relatedUserId: sender._id,
-          amount: coinsToCredit,
-          type: 'beans_to_coins',
-          wallet: 'coins',
-          transferTarget: 'user',
-          description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
-        }], { session });
       } else {
-        const senderUpdate: any = {
-          $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
-        };
-        if (sender.isCoinseller) {
-          senderUpdate.$inc.coinSellerCoins = coinsToCredit;
-        }
-        await User.findByIdAndUpdate(sender._id, senderUpdate, { session });
+        if (targetIsCoinseller) {
+          // Self-exchange by Coin Seller -> goes directly into coinSellerCoins wallet
+          await User.findByIdAndUpdate(sender._id, {
+            $inc: { coinSellerCoins: coinsToCredit }
+          }, { session });
 
-        await CoinHistory.create([{
-          userId: sender._id,
-          amount: coinsToCredit,
-          type: 'beans_to_coins',
-          wallet: 'coins',
-          transferTarget: 'self',
-          description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
-        }], { session });
+          await CoinHistory.create([{
+            userId: sender._id,
+            amount: coinsToCredit,
+            type: 'beans_to_coins',
+            wallet: 'coinSellerCoins',
+            transferTarget: 'self',
+            paymentGateway: 'CoinSeller',
+            description: `Exchanged ${beansAmount} beans to ${coinsToCredit} seller coins`
+          }], { session });
+        } else {
+          // Self-exchange by Normal User -> goes to personal coins wallet
+          await User.findByIdAndUpdate(sender._id, {
+            $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
+          }, { session });
+
+          await CoinHistory.create([{
+            userId: sender._id,
+            amount: coinsToCredit,
+            type: 'beans_to_coins',
+            wallet: 'coins',
+            transferTarget: 'self',
+            paymentGateway: 'CoinSeller',
+            description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
+          }], { session });
+        }
       }
 
       await session.commitTransaction();
@@ -656,31 +695,41 @@ export class CoinSellerService {
       // Send system message notifications
       try {
         if (isTransfer) {
+          const creditedWalletName = targetIsCoinseller ? 'Coin Seller Balance' : 'Coins Balance';
+          const newBal = targetIsCoinseller
+            ? (recipient.coinSellerCoins || 0) + coinsToCredit
+            : (recipient.coins || 0) + coinsToCredit;
+
           await this.chatService.sendSystemMessage(
             recipient._id.toString(),
             'Coins Received',
-            `🎉 You have received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId}). Updated Coins Balance: ${(recipient.coins || 0) + coinsToCredit} Coins.`,
+            `🎉 You have received ${coinsToCredit} ${targetIsCoinseller ? 'seller coins' : 'coins'} converted from beans by ${sender.name || 'User'} (ID: ${sender.userId}). Updated ${creditedWalletName}: ${newBal} Coins.`,
             {
               isRecharge: true,
               amount: coinsToCredit,
               fromUserId: sender.userId,
               fromUserName: sender.name,
-              newBalance: (recipient.coins || 0) + coinsToCredit,
-              wallet: 'coins',
+              newBalance: newBal,
+              wallet: targetIsCoinseller ? 'coinSellerCoins' : 'coins',
             }
           );
         } else {
+          const creditedWalletName = targetIsCoinseller ? 'Coin Seller Balance' : 'Coins Balance';
+          const newBal = targetIsCoinseller
+            ? (sender.coinSellerCoins || 0) + coinsToCredit
+            : (sender.coins || 0) + coinsToCredit;
+
           await this.chatService.sendSystemMessage(
             sender._id.toString(),
             'Beans Converted to Coins',
-            `🎉 Successfully converted ${beansAmount} beans to ${coinsToCredit} coins! Updated Coins Balance: ${(sender.coins || 0) + coinsToCredit} Coins.`,
+            `🎉 Successfully converted ${beansAmount} beans to ${coinsToCredit} ${targetIsCoinseller ? 'seller coins' : 'coins'}! Updated ${creditedWalletName}: ${newBal} Coins.`,
             {
               isRecharge: true,
               amount: coinsToCredit,
               fromUserId: sender.userId,
               fromUserName: sender.name,
-              newBalance: (sender.coins || 0) + coinsToCredit,
-              wallet: 'coins',
+              newBalance: newBal,
+              wallet: targetIsCoinseller ? 'coinSellerCoins' : 'coins',
             }
           );
         }
@@ -691,11 +740,12 @@ export class CoinSellerService {
       return {
         success: true,
         message: isTransfer
-          ? `Beans converted to coins and transferred to User (ID: ${recipient.userId}) successfully`
-          : 'Beans converted to coins successfully',
+          ? `Beans converted to coins and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId}) successfully`
+          : `Beans exchanged to ${targetIsCoinseller ? 'seller coins' : 'coins'} successfully`,
         beansDeducted: beansAmount,
         coinsCredited: coinsToCredit,
-        wallet: 'coins',
+        wallet: targetIsCoinseller ? 'coinSellerCoins' : 'coins',
+        isCoinseller: targetIsCoinseller,
         recipient: {
           id: recipient._id,
           userId: recipient.userId,
@@ -761,7 +811,8 @@ export class CoinSellerService {
   async checkUser(userId: number) {
     const user = await User.findOne({ userId })
       .populate('profileImage')
-      .populate('countryId');
+      .populate('countryId')
+      .populate({ path: 'activeFrame', populate: { path: 'media' } });
     if (!user) {
       throw new Error('Recipient user with specified ID not found');
     }
@@ -775,6 +826,7 @@ export class CoinSellerService {
       name: user.name,
       email: user.email,
       profileImage: toPlainObject(user.profileImage),
+      activeFrame: formatStoreItem(user.activeFrame),
       isPremium: user.isPremium,
       location: user.location,
       countryId,
@@ -821,7 +873,7 @@ export class CoinSellerService {
           dealsFormatted = (coinsSold / 1_000).toFixed(1) + 'K';
         }
 
-        const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+        const rawWhatsapp = String(seller.whatsapp || '').trim();
         const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
         const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
 
@@ -840,8 +892,9 @@ export class CoinSellerService {
           userId: seller.userId,
           name: seller.name || 'Seller',
           profileImage: toPlainObject(seller.profileImage) || null,
+          activeFrame: formatStoreItem(seller.activeFrame),
           mobile: seller.mobile || '',
-          whatsapp: seller.whatsapp || seller.mobile || '',
+          whatsapp: seller.whatsapp || '',
           whatsappUrl,
           chatId,
           country: seller.country || countryObj?.name || countryObj?.code || 'IND',
@@ -958,10 +1011,11 @@ export class CoinSellerService {
     }
 
     const allSellers = await User.find(query)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt')
+      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt activeFrame')
       .populate('profileImage')
       .populate('countryId')
       .populate('coinSellerPaymentMethods.qrCode')
+      .populate({ path: 'activeFrame', populate: { path: 'media' } })
       .lean();
 
     const rankedSellers = await Promise.all(
@@ -1024,7 +1078,7 @@ export class CoinSellerService {
           dealsFormatted = (periodDeals / 1_000).toFixed(1) + 'K';
         }
 
-        const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+        const rawWhatsapp = String(seller.whatsapp || '').trim();
         const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
         const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
 
@@ -1052,8 +1106,9 @@ export class CoinSellerService {
           userId: seller.userId,
           name: seller.name || 'Seller',
           profileImage: toPlainObject(seller.profileImage) || null,
+          activeFrame: formatStoreItem(seller.activeFrame),
           mobile: seller.mobile || '',
-          whatsapp: seller.whatsapp || seller.mobile || '',
+          whatsapp: seller.whatsapp || '',
           whatsappUrl,
           chatId,
           country: seller.country || countryObj?.name || countryObj?.code || 'IND',
@@ -1338,10 +1393,11 @@ export class CoinSellerService {
     }
 
     const seller = await User.findOne(query)
-      .select('userId name mobile whatsapp country countryId profileImage isOnline lastActiveAt isCoinseller coinsellerCategory coinSellerCoins coinSellerPaymentMethods coinsellerJoinedAt createdAt')
+      .select('userId name mobile whatsapp country countryId profileImage isOnline lastActiveAt isCoinseller coinsellerCategory coinSellerCoins coinSellerPaymentMethods coinsellerJoinedAt createdAt activeFrame')
       .populate('profileImage')
       .populate('coinSellerPaymentMethods.qrCode')
-      .populate('countryId');
+      .populate('countryId')
+      .populate({ path: 'activeFrame', populate: { path: 'media' } });
 
     if (!seller) throw new Error('Seller not found');
 
@@ -1423,7 +1479,7 @@ export class CoinSellerService {
     const isOnline = isSocketOnline || (!ioServer && seller.isOnline === true && isRecentActive);
 
     // 4. WhatsApp link
-    const rawWhatsapp = String(seller.whatsapp || seller.mobile || '').trim();
+    const rawWhatsapp = String(seller.whatsapp || '').trim();
     const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
     const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
 
@@ -1458,8 +1514,9 @@ export class CoinSellerService {
       userId: seller.userId,
       name: seller.name || 'Seller',
       profileImage: toPlainObject(seller.profileImage) || null,
+      activeFrame: formatStoreItem(seller.activeFrame),
       mobile: seller.mobile || '',
-      whatsapp: seller.whatsapp || seller.mobile || '',
+      whatsapp: seller.whatsapp || '',
       whatsappUrl,
       country: countryObj || countryCode,
       countryObject: countryObj || null,

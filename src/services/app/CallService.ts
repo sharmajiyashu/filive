@@ -509,6 +509,22 @@ export class CallService {
       throw new Error('Unauthorized to accept this call');
     }
 
+    if (call.status === 'accepted') {
+      AppLogger.info(`[CallService: acceptCall] Call ${callId} was already accepted. Returning populated session.`);
+      const existingPopulated = await Call.findById(call._id)
+        .populate({
+          path: 'callerId',
+          select: 'name userId profileImage coins',
+          populate: { path: 'profileImage' }
+        })
+        .populate({
+          path: 'receiverId',
+          select: 'name userId profileImage dob voiceCallPrice videoCallPrice audioCallChargePerMinute videoCallChargePerMinute',
+          populate: { path: 'profileImage' }
+        });
+      return existingPopulated || call;
+    }
+
     if (call.status !== 'initiated') {
       throw new Error(`Call cannot be accepted in status: ${call.status}`);
     }

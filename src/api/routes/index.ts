@@ -4,6 +4,7 @@ import admin from './admin';
 import web from './web';
 import { appAuthMiddleware } from '../middleware/appAuthMiddleware';
 import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware';
+import { adminPermissionMiddleware } from '../middleware/checkPermission';
 
 export default (): Router => {
     const router: Router = Router();
@@ -15,6 +16,7 @@ export default (): Router => {
 
     const adminRouter = Router();
     adminRouter.use(adminAuthMiddleware);
+    adminRouter.use(adminPermissionMiddleware);
     admin(adminRouter);
     router.use('/admin', adminRouter);
 

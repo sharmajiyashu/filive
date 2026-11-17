@@ -83,7 +83,18 @@ export class AuthenticationService {
 
     /** Auto-clears expired temporary blocks; throws ACCOUNT_BLOCKED or DEVICE_BANNED for active restrictions (app users only). */
     private async assertUserNotBlocked(user: IUser, incomingDeviceId?: string): Promise<IUser> {
-        if (!user || user.userRole !== 'user') {
+        if (!user) {
+            return user;
+        }
+
+        if (user.userRole === 'admin') {
+            if (user.isBlocked) {
+                throw new Error('ACCOUNT_BLOCKED: Your administrator staff account has been deactivated or disabled.');
+            }
+            return user;
+        }
+
+        if (user.userRole !== 'user') {
             return user;
         }
 
@@ -175,9 +186,10 @@ export class AuthenticationService {
         return Math.floor(min + Math.random() * (max - min + 1)).toString();
     }
 
-    async adminLogin(email: string, password: string): Promise<{ token: string; user: IUser }> {
+    async adminLogin(email: string, password: string): Promise<{ token: string; user: any }> {
+        const cleanedEmail = (email || '').trim().toLowerCase();
         const user = await User.findOne({
-            email,
+            email: cleanedEmail,
             userRole: 'admin'
         }).populate('profileImage').populate('adminRoleId');
 
@@ -190,13 +202,53 @@ export class AuthenticationService {
             throw new Error('Invalid email or password');
         }
 
+        if (user.isBlocked) {
+            throw new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled by administrator.');
+        }
+
+        if (user.adminRoleId) {
+            const role = user.adminRoleId as any;
+            if (role && role.isActive === false) {
+                throw new Error('ROLE_DISABLED: The administrative role assigned to your account is currently disabled.');
+            }
+        }
+
         const token = this.generateToken(user._id.toString(), user.userRole);
 
         // Update last login
         user.lastLoginAt = new Date();
         await user.save();
 
-        return { token, user };
+        const isSuperAdmin =
+            user.email === 'admin@example.com' ||
+            user.email === 'filive@gmail.com' ||
+            (user.adminRoleId as any)?.name === 'SUPER_ADMIN' ||
+            (!user.adminRoleId && user.userRole === 'admin');
+
+        const roleObj = user.adminRoleId && typeof user.adminRoleId === 'object' ? user.adminRoleId : null;
+
+        const userObj: any = (user as any).toObject ? (user as any).toObject() : user;
+        delete userObj.password;
+
+        const enhancedUser = {
+            ...userObj,
+            isSuperAdmin,
+            adminRole: roleObj
+                ? {
+                    _id: (roleObj as any)._id,
+                    id: (roleObj as any)._id,
+                    name: (roleObj as any).name,
+                    description: (roleObj as any).description,
+                    permissions: (roleObj as any).permissions || [],
+                    isActive: (roleObj as any).isActive !== false,
+                }
+                : null,
+            permissions: (roleObj as any)?.permissions || [],
+            isActive: !user.isBlocked,
+            status: user.isBlocked ? 'inactive' : 'active',
+        };
+
+        return { token, user: enhancedUser };
     }
 
     async userRegister(data: {

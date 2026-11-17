@@ -39,12 +39,25 @@ export default (router: Router) => {
       // If no countryId in query but user is logged in, try user's country
       if (!countryId && req.user) {
         const user = await User.findById(req.user.id);
-        if (user?.countryId) {
+        const userMobile = ((user as any)?.mobile || (user as any)?.phoneNumber || (user as any)?.phone || '').toString();
+        const userCountryStr = (user?.country || '').toString();
+        const userCountryCode = (user?.countryCode || '').toString();
+        const userNationality = ((user as any)?.nationality || '').toString();
+
+        if (
+          userMobile.startsWith('+93') ||
+          userMobile.startsWith('93') ||
+          /afghan/i.test(userCountryStr) ||
+          userCountryCode.toUpperCase() === 'AF' ||
+          /afghan/i.test(userNationality)
+        ) {
+          countryId = 'AF';
+        } else if (user?.countryId) {
           countryId = user.countryId.toString();
-        } else if (user?.country) {
-          countryId = user.country;
         } else if (user?.countryCode) {
           countryId = user.countryCode;
+        } else if (user?.country) {
+          countryId = user.country;
         } else if (user?.nationality) {
           countryId = user.nationality;
         }

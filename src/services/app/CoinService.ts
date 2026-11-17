@@ -71,20 +71,52 @@ export class CoinService {
     let country: any = null;
     if (countryIdOrCode && countryIdOrCode.trim() !== '') {
       const clean = countryIdOrCode.trim();
-      if (mongoose.Types.ObjectId.isValid(clean)) {
-        country = await Country.findById(clean);
-      }
-      if (!country) {
+      const isAfghanQuery = clean.toUpperCase() === 'AF' ||
+                            clean.toUpperCase() === 'AFG' ||
+                            clean === '93' ||
+                            clean === '+93' ||
+                            /afghan/i.test(clean);
+
+      if (isAfghanQuery) {
         country = await Country.findOne({
-          code: clean.toUpperCase(),
-          isActive: true,
+          $or: [
+            { code: 'AF' },
+            { name: { $regex: /afghanistan/i } },
+            { phoneCode: '93' },
+            { phoneCode: '+93' },
+          ],
         });
-      }
-      if (!country) {
-        country = await Country.findOne({
-          name: { $regex: new RegExp(`^${clean}$`, 'i') },
-          isActive: true,
-        });
+        if (!country) {
+          country = {
+            name: 'Afghanistan',
+            code: 'AF',
+            currencyCode: 'AFN',
+            currencySymbol: '؋',
+            exchangeRate: 72,
+            flag: 'https://flagcdn.com/w160/af.png',
+            isActive: true,
+          };
+        }
+      } else {
+        if (mongoose.Types.ObjectId.isValid(clean)) {
+          country = await Country.findById(clean);
+        }
+        if (!country) {
+          country = await Country.findOne({
+            code: clean.toUpperCase(),
+          });
+        }
+        if (!country) {
+          country = await Country.findOne({
+            name: { $regex: new RegExp(`^${clean}$`, 'i') },
+          });
+        }
+        if (!country) {
+          const dial = clean.replace(/^\+/, '');
+          country = await Country.findOne({
+            $or: [{ phoneCode: dial }, { phoneCode: `+${dial}` }],
+          });
+        }
       }
     }
 
@@ -100,7 +132,11 @@ export class CoinService {
       const usdPrice = Number(pkg.price);
       let exchangeRate = 1;
 
-      if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
+      const isAfghanistan = country?.code === 'AF' || country?.currencyCode === 'AFN' || /afghan/i.test(country?.name || '');
+
+      if (isAfghanistan) {
+        exchangeRate = Number(country?.exchangeRate) > 0 ? Number(country.exchangeRate) : 72;
+      } else if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
         exchangeRate = usdToInrRate;
       } else if (country.currencyCode === 'USD' || country.code === 'US') {
         exchangeRate = 1;
@@ -111,51 +147,89 @@ export class CoinService {
       const localPrice = calculateLocalPrice(usdPrice, exchangeRate);
       const discountPercent = Math.min(Math.round(((pkg.coins - (usdPrice * 100)) / (pkg.coins || 1)) * 100), 75);
 
+      const localCurrencyCode = isAfghanistan ? 'AFN' : (country ? country.currencyCode : 'INR');
+      const localCurrencySymbol = isAfghanistan ? '؋' : (country ? (country.currencySymbol || '$') : '₹');
+      const countryName = isAfghanistan ? 'Afghanistan' : (country?.name || 'India');
+      const countryFlag = isAfghanistan ? (country?.flag || 'https://flagcdn.com/w160/af.png') : (country?.flag || 'https://flagcdn.com/w160/in.png');
+      const countryCode = isAfghanistan ? 'AF' : (country?.code || 'IN');
+
       return {
         ...pkg.toObject(),
         price: usdPrice,
         currencyCode: 'USD',
         currencySymbol: '$',
         localPrice,
-        localCurrencyCode: country ? country.currencyCode : 'INR',
-        localCurrencySymbol: country ? country.currencySymbol : '₹',
+        localCurrencyCode,
+        localCurrencySymbol,
         exchangeRate,
-        countryName: country?.name || 'India',
-        countryFlag: country?.flag || 'https://flagcdn.com/w160/in.png',
-        countryCode: country?.code || 'IN',
+        countryName,
+        countryFlag,
+        countryCode,
         discountPercent: discountPercent > 0 ? discountPercent : 0,
       };
     });
   }
 
   async getWallet(userId: string) {
-    const user = await User.findById(userId).select('coins beans coinSellerCoins isCoinseller country countryId countryCode');
+    const user = await User.findById(userId).select('coins beans coinSellerCoins isCoinseller country countryId countryCode mobile nationality');
     if (!user) throw new Error('User not found');
 
+    const userMobile = ((user as any).mobile || (user as any).phoneNumber || '').toString();
+    const userCountryStr = (user.country || '').toString();
+    const userCountryCode = (user.countryCode || '').toString();
+    const userNationality = ((user as any).nationality || '').toString();
+
+    const isAf = userMobile.startsWith('+93') ||
+                 userMobile.startsWith('93') ||
+                 userCountryCode.toUpperCase() === 'AF' ||
+                 /afghan/i.test(userCountryStr) ||
+                 /afghan/i.test(userNationality);
+
     let country: any = null;
-    if (user.countryId) {
-      country = await Country.findById(user.countryId);
-    }
-    if (!country && user.countryCode) {
-      country = await Country.findOne({ code: user.countryCode.toUpperCase() });
-    }
-    if (!country && user.country) {
+    if (isAf) {
       country = await Country.findOne({
-        $or: [{ code: user.country.toUpperCase() }, { name: new RegExp(`^${user.country}$`, 'i') }],
+        $or: [
+          { code: 'AF' },
+          { name: { $regex: /afghanistan/i } },
+          { phoneCode: '93' },
+          { phoneCode: '+93' },
+        ],
       });
+      if (!country) {
+        country = {
+          name: 'Afghanistan',
+          code: 'AF',
+          currencyCode: 'AFN',
+          currencySymbol: '؋',
+          exchangeRate: 72,
+          flag: 'https://flagcdn.com/w160/af.png',
+        };
+      }
+    } else {
+      if (user.countryId) {
+        country = await Country.findById(user.countryId);
+      }
+      if (!country && user.countryCode) {
+        country = await Country.findOne({ code: user.countryCode.toUpperCase() });
+      }
+      if (!country && user.country) {
+        country = await Country.findOne({
+          $or: [{ code: user.country.toUpperCase() }, { name: new RegExp(`^${user.country}$`, 'i') }],
+        });
+      }
     }
 
-    const currencyCode = country?.currencyCode || 'INR';
-    const currencySymbol = country?.currencySymbol || '₹';
+    const currencyCode = isAf ? 'AFN' : (country?.currencyCode || 'INR');
+    const currencySymbol = isAf ? '؋' : (country?.currencySymbol || '₹');
 
     return {
       coins: user.coins || 0,
       beans: user.beans || 0,
       coinSellerCoins: user.coinSellerCoins || 0,
       isCoinseller: user.isCoinseller || false,
-      country: country?.name || user.country || 'India',
-      countryCode: country?.code || user.countryCode || 'IN',
-      countryFlag: country?.flag || 'https://flagcdn.com/w160/in.png',
+      country: isAf ? 'Afghanistan' : (country?.name || user.country || 'India'),
+      countryCode: isAf ? 'AF' : (country?.code || user.countryCode || 'IN'),
+      countryFlag: isAf ? (country?.flag || 'https://flagcdn.com/w160/af.png') : (country?.flag || 'https://flagcdn.com/w160/in.png'),
       currencyCode,
       currencySymbol,
     };
@@ -389,6 +463,10 @@ export class CoinService {
   }
 
   private resolveTransactionType(row: any): string {
+    if (row.transferTarget === 'self') {
+      if (row.type === 'beans_to_coins') return 'bean_to_coin_exchange';
+      return 'self_transfer';
+    }
     if (row.type === 'agency_commission') return 'agency_commission';
     if (row.type === 'charm_received') return 'gift_income';
     if (row.type === 'cash_out') return 'cash_out';
@@ -409,7 +487,7 @@ export class CoinService {
     }
     if (transactionType === 'gift_income') return 'gift';
     if (transactionType === 'cash_out') return 'cash_out';
-    if (transactionType === 'bean_to_coin_exchange') return 'exchange';
+    if (transactionType === 'bean_to_coin_exchange' || transactionType === 'self_transfer') return 'exchange';
     if (transactionType === 'user_transfer') return 'user_transfer';
     if (transactionType === 'coinseller_transfer') return 'coinseller_transfer';
     if (transactionType === 'agency_commission') return 'agency_commission';
@@ -422,12 +500,12 @@ export class CoinService {
     transactionType: string,
     callType: 'voice' | 'video' | null
   ): string {
+    if (transactionType === 'bean_to_coin_exchange' || transactionType === 'self_transfer') return 'Bean to Coin Exchange';
     if (relatedUser?.name) return relatedUser.name;
     if (gift?.name) return gift.name;
     if (transactionType === 'call_income') return callType === 'video' ? 'Video Call' : 'Voice Call';
     if (transactionType === 'gift_income') return 'Gift Income';
     if (transactionType === 'cash_out') return 'Cash Out';
-    if (transactionType === 'bean_to_coin_exchange') return 'Bean to Coin Exchange';
     if (transactionType === 'user_transfer') return 'User Transfer';
     if (transactionType === 'coinseller_transfer') return 'CoinSeller Transfer';
     if (transactionType === 'agency_commission') return 'Agency Commission';
@@ -435,6 +513,17 @@ export class CoinService {
   }
 
   private resolveGiftPayload(row: any, giftByName: Map<string, any>) {
+    if (
+      row.transferTarget === 'self' ||
+      row.type === 'beans_to_coins' ||
+      row.type === 'transfer' ||
+      row.type === 'cash_out' ||
+      row.type === 'agency_commission' ||
+      row.type === 'call_income'
+    ) {
+      return null;
+    }
+
     const populatedGift = row.giftId && row.giftId._id ? row.giftId : null;
     const parsed = !populatedGift && row.type === 'charm_received'
       ? this.parseGiftFromDescription(row.description)

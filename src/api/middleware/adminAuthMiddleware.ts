@@ -34,12 +34,22 @@ export const adminAuthMiddleware = async (req: Request, res: Response, next: Nex
             return next(new UnauthorizedError(new Error('Invalid token')));
         }
 
-        // if (user.isActive !== true) {
-        //     return next(new UnauthorizedError(new Error('User is inactive')));
-        // }
-
         if (user.userRole !== 'admin') {
             return next(new UnauthorizedError(new Error('User is not an admin')));
+        }
+
+        if (user.isBlocked === true) {
+            return next(new UnauthorizedError(new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled by administrator.')));
+        }
+
+        if (user.adminRoleId) {
+            const AdminRole = (await import('../../models/AdminRole')).default;
+            const role = typeof user.adminRoleId === 'object' && (user.adminRoleId as any)._id
+                ? user.adminRoleId
+                : await AdminRole.findById(user.adminRoleId).select('isActive').lean();
+            if (role && (role as any).isActive === false) {
+                return next(new UnauthorizedError(new Error('ROLE_DISABLED: Your assigned administrative role has been deactivated.')));
+            }
         }
 
         req.user = {
