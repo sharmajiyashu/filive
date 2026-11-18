@@ -12,10 +12,10 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier src/**/*.ts && eslint src/**/*.ts --fix",
-    "clean": "rimraf dist",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc",
     "dev": "set NODE_OPTIONS=--openssl-legacy-provider && nodemon --watch src/**/*.ts --exec ts-node --files src/index.ts",
-    "start": "node dist/index.js",
+    "start": "npm run build && node --openssl-legacy-provider --disable-warning=DEP0169 dist/index.js",
     "start:build": "npm run build && node dist/index.js",
     "prepare": "husky install",
     "pre-commit": "lint-staged",
@@ -24,7 +24,14 @@
     "test:watch": "jest --watch",
     "db:seed": "set NODE_OPTIONS=--openssl-legacy-provider && npm run build && node dist/seeders/runSeeders.js",
     "dev:docker": "nodemon --watch src --ext ts,js,json --exec 'ts-node --files src/index.ts'",
-    "prod:docker": "docker compose -f compose.yaml build --no-cache && docker compose -f compose.yaml up -d"
+    "prod:docker": "docker compose -f compose.yaml build --no-cache && docker compose -f compose.yaml up -d",
+    "start:pm2": "node --openssl-legacy-provider --disable-warning=DEP0169 dist/index.js",
+    "pm2:start": "npm run build && pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop filive_backend || pm2 stop filive",
+    "pm2:restart": "npm run build && (pm2 restart filive_backend || pm2 restart filive || pm2 start ecosystem.config.js)",
+    "pm2:reload": "npm run build && pm2 reload ecosystem.config.js",
+    "pm2:logs": "pm2 logs filive_backend",
+    "pm2:delete": "pm2 delete filive_backend || pm2 delete filive"
   },
   "repository": {
     "type": "git",
