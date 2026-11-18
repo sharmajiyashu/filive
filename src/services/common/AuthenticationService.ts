@@ -88,8 +88,9 @@ export class AuthenticationService {
         }
 
         if (user.userRole === 'admin') {
-            if (user.isBlocked) {
-                throw new Error('ACCOUNT_BLOCKED: Your administrator staff account has been deactivated or disabled.');
+            const isDeactivated = user.isBlocked === true || (user as any).isActive === false || (user as any).status === 'inactive' || (user as any).status === 'disabled' || (user as any).status === 'suspended';
+            if (isDeactivated) {
+                throw new Error('ACCOUNT_DISABLED: Your administrator staff account has been deactivated or disabled.');
             }
             return user;
         }
@@ -202,7 +203,8 @@ export class AuthenticationService {
             throw new Error('Invalid email or password');
         }
 
-        if (user.isBlocked) {
+        const isDeactivated = user.isBlocked === true || (user as any).isActive === false || (user as any).status === 'inactive' || (user as any).status === 'disabled' || (user as any).status === 'suspended';
+        if (isDeactivated) {
             throw new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled by administrator.');
         }
 

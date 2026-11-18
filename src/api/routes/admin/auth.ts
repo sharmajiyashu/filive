@@ -68,15 +68,15 @@ export default (router: Router) => {
                 return ResponseWrapper.error(res, new Error('User not found'), 404);
             }
 
-            if (user.isBlocked) {
+            const isDeactivated = user.isBlocked === true || (user as any).isActive === false || (user as any).status === 'inactive' || (user as any).status === 'disabled' || (user as any).status === 'suspended';
+            if (isDeactivated) {
                 return ResponseWrapper.error(res, new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled'), 401);
             }
 
             const isSuperAdmin =
                 user.email === 'admin@example.com' ||
                 user.email === 'filive@gmail.com' ||
-                (user.adminRoleId as any)?.name === 'SUPER_ADMIN' ||
-                (!user.adminRoleId && user.userRole === 'admin');
+                (user.adminRoleId as any)?.name === 'SUPER_ADMIN';
 
             const roleObj = user.adminRoleId && typeof user.adminRoleId === 'object' ? user.adminRoleId : null;
 
@@ -105,8 +105,8 @@ export default (router: Router) => {
                     }
                     : null,
                 permissions: (roleObj as any)?.permissions || [],
-                isActive: !user.isBlocked,
-                status: user.isBlocked ? 'inactive' : 'active',
+                isActive: !isDeactivated,
+                status: isDeactivated ? 'inactive' : 'active',
             };
 
             return ResponseWrapper.success(res, result, 'Current admin profile fetched successfully');

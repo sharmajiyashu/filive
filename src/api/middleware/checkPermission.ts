@@ -18,8 +18,9 @@ const ROUTE_MODULE_PREFIXES: Array<{ prefix: string; moduleName: string }> = [
   { prefix: '/support', moduleName: 'Support Chat' },
   { prefix: '/report', moduleName: 'Reports Management' },
 
-  // Beans & Payout
+  // Beans, Coins & Payout
   { prefix: '/bean', moduleName: 'Beans Management' },
+  { prefix: '/coins', moduleName: 'Coins Management' },
   { prefix: '/payout', moduleName: 'Payout Management' },
 
   // Stores & Catalog
@@ -51,18 +52,23 @@ const ROUTE_MODULE_PREFIXES: Array<{ prefix: string; moduleName: string }> = [
   // Recharge & VIP
   { prefix: '/coinpackage', moduleName: 'Recharge & Coin Packages' },
   { prefix: '/coin-package', moduleName: 'Recharge & Coin Packages' },
-  { prefix: '/coin', moduleName: 'Recharge & Coin Packages' },
+  { prefix: '/user-recharge-plan', moduleName: 'Recharge & Coin Packages' },
+  { prefix: '/seller-recharge-plan', moduleName: 'Recharge & Coin Packages' },
   { prefix: '/vip', moduleName: 'VIP Plans' },
 
   // Website
   { prefix: '/website', moduleName: 'Website Management' },
   { prefix: '/teamapplication', moduleName: 'Website Management' },
+  { prefix: '/team-application', moduleName: 'Website Management' },
   { prefix: '/contactmessage', moduleName: 'Website Management' },
+  { prefix: '/contact-message', moduleName: 'Website Management' },
 
   // Roles & Staff Administration
   { prefix: '/role', moduleName: 'Roles & Permissions' },
   { prefix: '/adminuser', moduleName: 'Admin Users & Staff' },
   { prefix: '/admin-user', moduleName: 'Admin Users & Staff' },
+  { prefix: '/adminusers', moduleName: 'Admin Users & Staff' },
+  { prefix: '/admin-users', moduleName: 'Admin Users & Staff' },
 
   // Settings & Gateways
   { prefix: '/app-setting', moduleName: 'App Settings & Gateways' },
@@ -98,7 +104,8 @@ export async function adminPermissionMiddleware(req: Request, _res: Response, ne
     }
 
     // Disabled staff check
-    if (user.isBlocked) {
+    const isDeactivated = user.isBlocked === true || (user as any).isActive === false || (user as any).status === 'inactive' || (user as any).status === 'disabled' || (user as any).status === 'suspended';
+    if (isDeactivated) {
       return next(
         new UnauthorizedError(new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled'))
       );
@@ -108,8 +115,7 @@ export async function adminPermissionMiddleware(req: Request, _res: Response, ne
     const isSuperAdmin =
       user.email === 'admin@example.com' ||
       user.email === 'filive@gmail.com' ||
-      (user.adminRoleId as any)?.name === 'SUPER_ADMIN' ||
-      (!user.adminRoleId && user.userRole === 'admin');
+      (user.adminRoleId as any)?.name === 'SUPER_ADMIN';
 
     if (isSuperAdmin) {
       return next();

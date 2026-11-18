@@ -1,3 +1,5 @@
+import Container from 'typedi';
+import { Server } from 'socket.io';
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import User from '../../../models/User';
@@ -37,8 +39,8 @@ export default (router: Router) => {
             description: roleObj.description,
           }
         : null,
-      isActive: !user.isBlocked,
-      status: user.isBlocked ? 'inactive' : 'active',
+      isActive: !(user.isBlocked === true || user.isActive === false || user.status === 'inactive' || user.status === 'disabled' || user.status === 'suspended'),
+      status: (user.isBlocked === true || user.isActive === false || user.status === 'inactive' || user.status === 'disabled' || user.status === 'suspended') ? 'inactive' : 'active',
       profileImage: user.profileImage,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
@@ -158,7 +160,9 @@ export default (router: Router) => {
         whatsapp: mobile ? mobile.trim() : undefined,
         password: hashedPassword,
         adminRoleId: targetRoleId || undefined,
-        isBlocked: isActive === false,
+        isBlocked: isActive === false || status === 'inactive' || status === 'disabled',
+        isActive: !(isActive === false || status === 'inactive' || status === 'disabled'),
+        status: (isActive === false || status === 'inactive' || status === 'disabled') ? 'inactive' : 'active',
       });
 
       const populatedUser = await User.findById(user._id).populate('adminRoleId').lean();
@@ -234,14 +238,38 @@ export default (router: Router) => {
       }
 
       if (isActive !== undefined) {
-        updateData.isBlocked = !isActive;
+        const active = typeof isActive === 'boolean' ? isActive : String(isActive).toLowerCase() === 'true' || String(isActive) === '1';
+        updateData.isBlocked = !active;
+        updateData.isActive = active;
+        updateData.status = active ? 'active' : 'inactive';
       } else if (status !== undefined) {
-        updateData.isBlocked = status === 'inactive' || status === 'suspended';
+        const s = String(status).toLowerCase();
+        const active = s === 'active' || s === 'enabled' || s === '1' || s === 'true';
+        updateData.isBlocked = !active;
+        updateData.isActive = active;
+        updateData.status = active ? 'active' : 'inactive';
       }
 
       const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true })
         .populate('adminRoleId')
         .lean();
+
+      // If user was disabled or blocked, notify active sessions via socket to trigger instant auto-logout
+      if (updateData.isBlocked === true) {
+        try {
+          const io = Container.get<Server>('socket');
+          if (io) {
+            io.to(`user_${userId}`).emit('account_disabled', {
+              message: 'ACCOUNT_DISABLED: Your administrator staff account has been deactivated or disabled by administrator.',
+              reason: 'Your account has been deactivated by administrator',
+            });
+            io.to(`user_${userId}`).emit('admin_account_disabled', {
+              message: 'ACCOUNT_DISABLED: Your administrator staff account has been deactivated or disabled by administrator.',
+              reason: 'Your account has been deactivated by administrator',
+            });
+          }
+        } catch (_) {}
+      }
 
       return ResponseWrapper.success(res, formatAdminUser(updatedUser), 'Admin user updated successfully');
     } catch (error: any) {
@@ -280,6 +308,16 @@ export default (router: Router) => {
       if (user.email === 'admin@example.com' || user.email === 'filive@gmail.com') {
         return ResponseWrapper.error(res, new Error('Primary system administrator accounts cannot be deleted'), 403);
       }
+
+      try {
+        const io = Container.get<Server>('socket');
+        if (io) {
+          io.to(`user_${userId}`).emit('account_disabled', {
+            message: 'ACCOUNT_DISABLED: Your administrator staff account has been deleted by administrator.',
+            reason: 'Account deleted',
+          });
+        }
+      } catch (_) {}
 
       await User.findByIdAndDelete(userId);
       return ResponseWrapper.success(res, { message: 'Admin user deleted successfully' }, 'Admin user deleted successfully');

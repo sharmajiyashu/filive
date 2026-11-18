@@ -15,6 +15,8 @@ export interface IUser extends Document {
   adminRoleId?: mongoose.Types.ObjectId;
   profileImage?: mongoose.Types.ObjectId;
   isBlocked: boolean;
+  isActive?: boolean;
+  status?: string;
   location?: {
     lat?: number;
     lng?: number;
@@ -159,6 +161,8 @@ const UserSchema: Schema = new Schema(
     adminRoleId: { type: Schema.Types.ObjectId, ref: 'AdminRole' },
     profileImage: { type: Schema.Types.ObjectId, ref: 'Media' },
     isBlocked: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
+    status: { type: String, default: 'active' },
     location: {
       lat: { type: Number },
       lng: { type: Number },

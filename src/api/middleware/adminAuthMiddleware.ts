@@ -38,7 +38,8 @@ export const adminAuthMiddleware = async (req: Request, res: Response, next: Nex
             return next(new UnauthorizedError(new Error('User is not an admin')));
         }
 
-        if (user.isBlocked === true) {
+        const isDeactivated = user.isBlocked === true || (user as any).isActive === false || (user as any).status === 'inactive' || (user as any).status === 'disabled' || (user as any).status === 'suspended';
+        if (isDeactivated) {
             return next(new UnauthorizedError(new Error('ACCOUNT_DISABLED: Your staff account has been deactivated or disabled by administrator.')));
         }
 

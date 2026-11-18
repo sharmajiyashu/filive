@@ -1,3 +1,5 @@
+import Container from 'typedi';
+import { Server } from 'socket.io';
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import AdminRole from '../../../models/AdminRole';
@@ -214,6 +216,20 @@ export default (router: Router) => {
       }
 
       const updatedRole = await AdminRole.findByIdAndUpdate(roleId, updateData, { new: true });
+
+      if (updateData.isActive === false) {
+        try {
+          const io = Container.get<Server>('socket');
+          const affectedUsers = await User.find({ adminRoleId: roleId }).select('_id').lean();
+          if (io && affectedUsers.length > 0) {
+            affectedUsers.forEach((u) => {
+              io.to(`user_${u._id}`).emit('account_disabled', {
+                message: 'ROLE_DISABLED: Your assigned administrative role has been deactivated.',
+              });
+            });
+          }
+        } catch (_) {}
+      }
 
       return ResponseWrapper.success(
         res,

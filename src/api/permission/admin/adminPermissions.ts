@@ -89,6 +89,15 @@ export const allAdminPermissions: PermissionModule[] = [
     },
   },
   {
+    moduleName: 'Coins Management',
+    enabled: true,
+    features: {
+      'coins:view': { enabled: true, description: 'View overall platform coins circulation and user wallet balances' },
+      'coins:history': { enabled: true, description: 'View coins transaction ledger and recharge history' },
+      'coins:adjust': { enabled: true, description: 'Credit or debit coins manually from user wallets' },
+    },
+  },
+  {
     moduleName: 'Payout Management',
     enabled: true,
     features: {
