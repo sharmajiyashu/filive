@@ -162,6 +162,7 @@ export async function seedSettings() {
       { key: 'child_safety_policy_content', value: DEFAULT_CHILD_SAFETY_POLICY_TEXT, description: 'Dynamic Child Safety Policy full legal text' },
       { key: 'child_safety_policy_updated_at', value: DEFAULT_LEGAL_EFFECTIVE_DATE, description: 'Child Safety Policy effective date' },
       { key: 'child_safety_policy_url', value: 'https://filive.in/child-safety', description: 'Child Safety Policy official URL' },
+      { key: 'delete_account_url', value: 'https://filive.in/delete-account', description: 'Google Play Data Safety Account Deletion URL' },
 
       { key: 'contact_us_email', value: 'support@filive.in', description: 'Official support and grievance contact email' },
       { key: 'official_website_url', value: 'https://filive.in', description: 'Official web address' },

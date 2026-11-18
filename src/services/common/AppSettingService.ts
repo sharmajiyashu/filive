@@ -78,6 +78,7 @@ export class AppSettingService {
     child_safety_policy_url: 'https://filive.in/child-safety',
     child_safety_policy_content: DEFAULT_CHILD_SAFETY_POLICY_TEXT,
     child_safety_policy_updated_at: DEFAULT_LEGAL_EFFECTIVE_DATE,
+    delete_account_url: 'https://filive.in/delete-account',
     // Website & Enquiry Settings
     website_enquiry_email: 'filive@gmail.com',
     website_permission_emails: ['filive@gmail.com'],

@@ -155,6 +155,7 @@ export default (router: Router) => {
           child_safety_policy_content: settings.child_safety_policy_content || '',
           child_safety_policy_updated_at: settings.child_safety_policy_updated_at || '17 November 2026',
           child_safety_policy_url: settings.child_safety_policy_url || 'https://filive.in/child-safety',
+          delete_account_url: settings.delete_account_url || 'https://filive.in/delete-account',
           about_us_title: settings.about_us_title || 'About FiLive',
           about_us_content: settings.about_us_content || '',
           company_name: settings.company_name || 'FiLive Entertainment Private Limited',
