@@ -8,6 +8,8 @@ import TeamApplication from '../../models/TeamApplication';
 import ContactMessage from '../../models/ContactMessage';
 import { CoinService } from '../../services/app/CoinService';
 import { PaymentMethodService } from '../../services/app/PaymentMethodService';
+import { UserService } from '../../services/app/UserService';
+import { AuthenticationService } from '../../services/common/AuthenticationService';
 import { EmailService } from '../../services/common/emailService';
 import { AppSettingService } from '../../services/common/AppSettingService';
 import { ResponseWrapper } from '../responseWrapper';
@@ -383,6 +385,165 @@ export default (router: Router) => {
         res,
         contact,
         'Thank you! Your message has been sent successfully. Our team will get back to you shortly.'
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * POST /v1/api/web/account/send-delete-otp
+   * Send 4-digit OTP to user's registered mobile for web account deletion verification
+   */
+  router.post('/account/send-delete-otp', async (req: Request, res: Response) => {
+    try {
+      const { userId, mobile } = req.body || {};
+      const identifier = String(userId || mobile || '').trim();
+      if (!identifier) {
+        return ResponseWrapper.error(res, new Error('User ID or registered mobile is required'), 400);
+      }
+
+      const user = await findUserByFlexibleInput(identifier);
+      if (!user) {
+        return ResponseWrapper.error(res, new Error('No FiLive account found with this ID or Phone number'), 404);
+      }
+
+      if (user.isDeleted) {
+        return ResponseWrapper.error(
+          res,
+          new Error('This account is already scheduled for deletion. You can recover it by logging into the app within 30 days.'),
+          400
+        );
+      }
+
+      if (!user.mobile) {
+        return ResponseWrapper.error(
+          res,
+          new Error('No mobile number is registered with this account. Please use Direct Web Deletion Confirmation below.'),
+          400
+        );
+      }
+
+      const authService = Container.get(AuthenticationService);
+      const otpRes = await authService.userSendOTP(user.mobile);
+
+      const rawMobile = user.mobile;
+      const maskedMobile =
+        rawMobile.length > 5
+          ? rawMobile.slice(0, 3) + '****' + rawMobile.slice(-3)
+          : '***' + rawMobile.slice(-2);
+
+      return ResponseWrapper.success(
+        res,
+        {
+          userId: user.userId,
+          maskedMobile,
+          otpSent: true,
+          debugOtp: process.env.NODE_ENV !== 'production' ? otpRes.otp : undefined,
+        },
+        `Verification code sent to registered mobile (${maskedMobile})`
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * POST /v1/api/web/account/delete-request
+   * Direct or OTP-verified account deletion request from the website
+   */
+  router.post('/account/delete-request', async (req: Request, res: Response) => {
+    try {
+      const { userId, mobile, otp, reason, feedback, confirmDeletion } = req.body || {};
+      const identifier = String(userId || mobile || '').trim();
+
+      if (!identifier) {
+        return ResponseWrapper.error(res, new Error('FiLive User ID or registered mobile is required'), 400);
+      }
+
+      if (!confirmDeletion) {
+        return ResponseWrapper.error(res, new Error('Please check the confirmation box to authorize account deletion'), 400);
+      }
+
+      const user = await findUserByFlexibleInput(identifier);
+      if (!user) {
+        return ResponseWrapper.error(res, new Error('No FiLive account found with this ID or Mobile number'), 404);
+      }
+
+      if (user.isDeleted) {
+        return ResponseWrapper.success(
+          res,
+          {
+            userId: user.userId,
+            name: user.name,
+            scheduledPermanentDeletionAt: user.scheduledPermanentDeletionAt,
+            daysRemaining: 30,
+            alreadyDeleted: true,
+          },
+          'This account is already scheduled for permanent deletion.'
+        );
+      }
+
+      // If OTP is provided, verify it
+      if (otp && user.mobile) {
+        const trimmedOtp = String(otp).trim();
+        const isValid = user.otp === trimmedOtp && user.otpExpires && new Date(user.otpExpires) > new Date();
+        if (!isValid) {
+          return ResponseWrapper.error(res, new Error('Invalid or expired verification OTP code'), 400);
+        }
+      }
+
+      // Perform deletion using UserService
+      const userService = Container.get(UserService);
+      const deletionResult = await userService.deleteAccount(
+        user._id.toString(),
+        reason || 'Deleted via Website Portal',
+        feedback || 'Website self-service deletion'
+      );
+
+      // Create audit log in ContactMessage collection
+      try {
+        await ContactMessage.create({
+          name: user.name || `User #${user.userId}`,
+          email: user.email || 'noreply@filive.in',
+          subject: `[Web Account Deletion] User #${user.userId}`,
+          message: `Account deletion executed via website. Reason: ${reason || 'Not specified'}. Feedback: ${feedback || 'None'}. Scheduled permanent date: ${deletionResult.scheduledPermanentDeletionAt}`,
+          status: 'processed',
+        });
+      } catch (logErr) {
+        console.warn('Failed to record deletion audit in ContactMessage:', logErr);
+      }
+
+      // Send notification email
+      try {
+        const appSettingService = Container.get(AppSettingService);
+        const emailService = Container.get(EmailService);
+        const settings = await appSettingService.getSettings();
+        if (settings.website_contact_notifications_enabled !== false) {
+          const destinationEmail = settings.website_enquiry_email || 'filive@gmail.com';
+          await emailService.sendWebEnquiryEmail({
+            to: destinationEmail,
+            type: 'contact',
+            name: user.name || `User ${user.userId}`,
+            email: user.email || destinationEmail,
+            subject: `Account Deletion Request Executed: User #${user.userId}`,
+            message: `User #${user.userId} (${user.name || 'N/A'}, Phone: ${user.mobile || 'N/A'}) has requested account deletion on filive.in.\nReason: ${reason || 'N/A'}\nScheduled Deletion Date: ${deletionResult.scheduledPermanentDeletionAt}`,
+          });
+        }
+      } catch (mailErr) {
+        console.warn('Failed to dispatch deletion alert email:', mailErr);
+      }
+
+      return ResponseWrapper.success(
+        res,
+        {
+          userId: user.userId,
+          name: user.name,
+          scheduledPermanentDeletionAt: deletionResult.scheduledPermanentDeletionAt,
+          daysRemaining: deletionResult.daysRemaining || 30,
+          success: true,
+        },
+        'Your FiLive account has been successfully scheduled for deletion. You have a 30-day grace period to recover your account.'
       );
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
