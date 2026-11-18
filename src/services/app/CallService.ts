@@ -245,9 +245,24 @@ export class CallService {
   public async initiateCall(callerId: string, receiverId: string, callType: 'voice' | 'video') {
     AppLogger.info(`[CallService: initiateCall] callerId=${callerId}, receiverId=${receiverId}, callType=${callType}`);
 
-    if (!mongoose.Types.ObjectId.isValid(callerId) || !mongoose.Types.ObjectId.isValid(receiverId)) {
+    // Resolve caller & receiver IDs if passed as numeric unique userId or alternate string id
+    let resolvedCallerId = callerId ? callerId.toString().trim() : '';
+    if (!mongoose.Types.ObjectId.isValid(resolvedCallerId)) {
+      const u = await User.findOne({ userId: resolvedCallerId });
+      if (u) resolvedCallerId = u._id.toString();
+    }
+    let resolvedReceiverId = receiverId ? receiverId.toString().trim() : '';
+    if (!mongoose.Types.ObjectId.isValid(resolvedReceiverId)) {
+      const u = await User.findOne({ $or: [{ userId: resolvedReceiverId }, { id: resolvedReceiverId }] });
+      if (u) resolvedReceiverId = u._id.toString();
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(resolvedCallerId) || !mongoose.Types.ObjectId.isValid(resolvedReceiverId)) {
       throw new Error('Invalid caller or receiver ID');
     }
+
+    callerId = resolvedCallerId;
+    receiverId = resolvedReceiverId;
 
     if (callerId === receiverId) {
       throw new Error('You cannot call yourself');
