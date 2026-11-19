@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const sendOtpSchema = z.object({
     extension: z.string().optional().default('91').transform(s => (s || '91').toString().replace(/[\s\-\+]/g, '')),
     mobile: z.string().transform(s => s.toString().replace(/[\s\-\+]/g, '')).refine(s => /^\d{7,15}$/.test(s), "Mobile number must be 7 to 15 digits"),
+    channel: z.enum(['auto', 'whatsapp', 'sms']).optional().default('auto'),
     countryId: z.string().optional(),
     countryCode: z.string().optional(),
     referredBy: z.string().optional(),

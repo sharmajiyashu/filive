@@ -51,7 +51,7 @@ export default (router: Router) => {
         validate(sendOtpSchema, 'body'),
         async (req: Request, res: Response) => {
             try {
-                const { extension, mobile, countryId, countryCode, referredBy } = req.body;
+                const { extension, mobile, countryId, countryCode, referredBy, channel } = req.body;
                 const { deviceId, deviceModel } = getDeviceSignals(req);
                 const fullMobile = `${extension}${mobile}`;
                 const result = await authService.userSendOTP(fullMobile, countryId, referredBy, {
@@ -60,8 +60,26 @@ export default (router: Router) => {
                     ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
                     deviceId,
                     deviceModel,
+                    channel: channel || 'auto',
                 });
-                return ResponseWrapper.success(res, result, 'OTP sent successfully');
+                return ResponseWrapper.success(res, result, result.message || 'OTP sent successfully');
+            } catch (error: any) {
+                return ResponseWrapper.error(res, error);
+            }
+        });
+
+    router.post('/auth/resend-otp',
+        async (req: Request, res: Response) => {
+            try {
+                const { extension, mobile, email, channel } = req.body;
+                const fullMobile = mobile ? `${extension || ''}${mobile}` : undefined;
+                const result = await authService.resendOtp({
+                    email,
+                    mobile: fullMobile,
+                    extension,
+                    channel: channel || 'auto'
+                });
+                return ResponseWrapper.success(res, result, result.message || 'OTP resent successfully');
             } catch (error: any) {
                 return ResponseWrapper.error(res, error);
             }

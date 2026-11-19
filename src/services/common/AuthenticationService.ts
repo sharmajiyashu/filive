@@ -14,6 +14,7 @@ import { addMinutes } from "date-fns";
 import AppLogger from '../../api/loaders/logger';
 import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referral';
 import { resolveCountryFromSignals, isoFromDialCode } from '../../utils/phoneCountry';
+import OtpDeliveryService, { OtpChannel } from './OtpDeliveryService';
 
 
 @Service()
@@ -464,8 +465,16 @@ export class AuthenticationService {
         mobile: string,
         countryId?: string,
         referredBy?: string,
-        extras?: { countryCode?: string; extension?: string; ipCountry?: string; deviceId?: string; deviceModel?: string; appType?: 'filive' | 'fivo' }
-    ): Promise<{ otp: string }> {
+        extras?: {
+            countryCode?: string;
+            extension?: string;
+            ipCountry?: string;
+            deviceId?: string;
+            deviceModel?: string;
+            appType?: 'filive' | 'fivo';
+            channel?: OtpChannel;
+        }
+    ): Promise<{ otp: string; channel: string; fallbackUsed: boolean; message: string }> {
         if (extras?.deviceId) {
             await this.assertDeviceNotBanned(extras.deviceId);
         }
@@ -563,10 +572,20 @@ export class AuthenticationService {
             await user.save();
         }
 
-        // Mock: In production, send this via SMS service provider
-        AppLogger.info(`Sending OTP ${otp} to mobile ${mobile}`);
+        // Dispatch OTP via dual WhatsApp + SMS system with automatic fallback
+        const deliveryResult = await OtpDeliveryService.deliverOtp({
+            mobile,
+            otp,
+            extension: extras?.extension || '91',
+            preferredChannel: extras?.channel || 'auto'
+        });
 
-        return { otp }; // Return for testing/dev purposes if needed
+        return {
+            otp,
+            channel: deliveryResult.channel,
+            fallbackUsed: deliveryResult.fallbackUsed,
+            message: deliveryResult.message
+        };
     }
 
     async userVerifyOTP(
@@ -739,7 +758,7 @@ export class AuthenticationService {
         }
     }
 
-    async resendOtp(data: { email?: string; mobile?: string }): Promise<void> {
+    async resendOtp(data: { email?: string; mobile?: string; extension?: string; channel?: OtpChannel }): Promise<{ otp: string; channel: string; fallbackUsed: boolean; message: string }> {
         if (!data.email && !data.mobile) {
             throw new Error('Email or mobile is required');
         }
@@ -751,7 +770,7 @@ export class AuthenticationService {
             throw new Error('User not found');
         }
 
-        const otp = this.generateOTP();
+        const otp = this.generateOTP(4);
         const otpExpires = addMinutes(new Date(), CONSTANTS.OTP_EXPIRY_MINUTES);
 
         user.otp = otp;
@@ -768,9 +787,21 @@ export class AuthenticationService {
             } catch (error) {
                 AppLogger.error(`Failed to resend OTP email to ${data.email}: ${error}`);
             }
+            return { otp, channel: 'email', fallbackUsed: false, message: 'OTP resent to email' };
         } else {
-            // Mock: Send SMS
-            AppLogger.info(`Resending mobile OTP ${otp} to ${data.mobile}`);
+            const deliveryResult = await OtpDeliveryService.deliverOtp({
+                mobile: data.mobile!,
+                otp,
+                extension: data.extension || '91',
+                preferredChannel: data.channel || 'auto'
+            });
+
+            return {
+                otp,
+                channel: deliveryResult.channel,
+                fallbackUsed: deliveryResult.fallbackUsed,
+                message: deliveryResult.message
+            };
         }
     }
 
