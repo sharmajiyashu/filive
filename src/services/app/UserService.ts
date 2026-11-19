@@ -500,25 +500,15 @@ export class UserService {
     const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
     const isOnline = hasSocket;
 
-    // Party room is always accessible and live
-    const resolvedPartyRoom = activeParty || {
-      _id: user._id.toString(),
-      id: user._id.toString(),
-      roomId: user.userId || 1000,
-      channelName: `party_room_${user.userId || user._id}`,
-      title: user.name ? `${user.name}'s Party Room` : 'Party Room',
-      status: isOnline ? 'live' : 'ended',
-      roomType: 'party_room',
-      partyRoomOption: 'chat',
-      token: '',
-      announcement: '',
-      image: (user.profileImage as any)?.url || '',
-      viewerCount: 0,
-      seatCount: 8,
-      hostId: user._id.toString(),
-      isMine: currentUserId ? currentUserId.toString() === user._id.toString() : false,
-      isFollowingRoom: currentUserId ? currentUserId.toString() !== user._id.toString() : false,
-    };
+    // Check if the host is genuinely live in party room
+    let resolvedPartyRoom: any = null;
+    if (activeParty && (activeParty.status === 'live' || (activeParty as any).isLive === true)) {
+      resolvedPartyRoom = {
+        ...activeParty,
+        status: 'live',
+        isLive: true,
+      };
+    }
 
     // Fetch user's family membership details
     let familyMemberDoc = await FamilyMember.findOne({ userId: user._id })

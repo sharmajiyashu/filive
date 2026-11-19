@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import { CoinSellerService } from '../../../services/app/CoinSellerService';
+import { LevelService } from '../../../services/app/LevelService';
+import User from '../../../models/User';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
 import upload from '../../middleware/upload';
@@ -253,6 +255,26 @@ export default (router: Router) => {
       const country = req.query.country?.toString();
       const search = req.query.search?.toString();
       const category = (req.query.category?.toString() || 'recharge_service') as any;
+
+      // Policy & Level gating check: User must have completed level 2 (wealthLevel >= 2)
+      if (currentUserId) {
+        const caller = await User.findById(currentUserId).select('wealthCoins coins level wealthLevel').lean();
+        if (caller) {
+          const callerWealth = (caller as any).wealthCoins !== undefined ? (caller as any).wealthCoins : ((caller as any).coins || 0);
+          const levelService = Container.get(LevelService);
+          const callerLevelInfo = await levelService.getLevelInfoForCoins(callerWealth, 'rich');
+          const callerLevel = callerLevelInfo?.currentLevel?.levelNumber ?? ((caller as any).wealthLevel || (caller as any).level || 1);
+          if (callerLevel < 2) {
+            return ResponseWrapper.success(res, {
+              sellers: [],
+              pagination: { total: 0, page: 1, limit, totalPages: 0 },
+              isLocked: true,
+              unlockLevel: 2,
+              message: 'Recharge Service is unlocked for Level 2 and above',
+            }, 'Recharge Service unlocks at Level 2');
+          }
+        }
+      }
 
       const result = await coinSellerService.getPublicCoinSellersList({
         currentUserId,

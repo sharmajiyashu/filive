@@ -156,18 +156,70 @@ export async function attachUserCountryAndAge<T extends Record<string, any>>(
     const richLevelNum = typeof formattedRich?.level === 'number' ? formattedRich.level : 0;
     const charmLevelNum = typeof formattedCharm?.level === 'number' ? formattedCharm.level : 0;
 
+    const wealthObj = typeof payload.wealthLevel === 'object' && payload.wealthLevel !== null
+      ? {
+          ...payload.wealthLevel,
+          levelNumber: payload.wealthLevel.levelNumber ?? richLevelNum,
+          name: payload.wealthLevel.name || formattedRich?.name || (richLevelNum > 0 ? `Wealth Lv.${richLevelNum}` : 'Wealth Lv.0'),
+          color: payload.wealthLevel.color || formattedRich?.color || '#CD7F32',
+          minCoins: payload.wealthLevel.minCoins ?? formattedRich?.minCoins ?? 0,
+          maxCoins: payload.wealthLevel.maxCoins ?? formattedRich?.maxCoins ?? 0,
+          progressPercentage: payload.wealthLevel.progressPercentage ?? formattedRich?.progressPercentage ?? 0,
+          imageUrl: payload.wealthLevel.imageUrl || formattedRich?.imageUrl || null,
+        }
+      : {
+          levelNumber: richLevelNum,
+          name: formattedRich?.name || (richLevelNum > 0 ? `Wealth Lv.${richLevelNum}` : 'Wealth Lv.0'),
+          color: formattedRich?.color || '#CD7F32',
+          minCoins: formattedRich?.minCoins ?? 0,
+          maxCoins: formattedRich?.maxCoins ?? 0,
+          progressPercentage: formattedRich?.progressPercentage ?? 0,
+          imageUrl: formattedRich?.imageUrl || null,
+        };
+
+    const charmObj = typeof payload.charmLevel === 'object' && payload.charmLevel !== null
+      ? {
+          ...payload.charmLevel,
+          levelNumber: payload.charmLevel.levelNumber ?? charmLevelNum,
+          name: payload.charmLevel.name || formattedCharm?.name || (charmLevelNum > 0 ? `Charm Lv.${charmLevelNum}` : 'Charm Lv.0'),
+          color: payload.charmLevel.color || formattedCharm?.color || '#FF1F65',
+          minCoins: payload.charmLevel.minCoins ?? formattedCharm?.minCoins ?? 0,
+          maxCoins: payload.charmLevel.maxCoins ?? formattedCharm?.maxCoins ?? 0,
+          progressPercentage: payload.charmLevel.progressPercentage ?? formattedCharm?.progressPercentage ?? 0,
+          imageUrl: payload.charmLevel.imageUrl || formattedCharm?.imageUrl || null,
+        }
+      : {
+          levelNumber: charmLevelNum,
+          name: formattedCharm?.name || (charmLevelNum > 0 ? `Charm Lv.${charmLevelNum}` : 'Charm Lv.0'),
+          color: formattedCharm?.color || '#FF1F65',
+          minCoins: formattedCharm?.minCoins ?? 0,
+          maxCoins: formattedCharm?.maxCoins ?? 0,
+          progressPercentage: formattedCharm?.progressPercentage ?? 0,
+          imageUrl: formattedCharm?.imageUrl || null,
+        };
+
     payload.level = richLevelNum;
     payload.levelNumber = richLevelNum;
-    payload.wealthLevel = richLevelNum;
-    payload.charmLevel = charmLevelNum;
+    payload.richLevel = richLevelNum;
+    payload.wealthLevel = wealthObj;
+    payload.charmLevel = charmObj;
+    payload.wealthLevelNumber = richLevelNum;
+    payload.charmLevelNumber = charmLevelNum;
     payload.richLevelInfo = formattedRich;
     payload.charmLevelInfo = formattedCharm;
     payload.levelInfo = formattedRich;
   } catch (err) {
     payload.level = payload.level ?? 0;
     payload.levelNumber = payload.levelNumber ?? 0;
-    payload.wealthLevel = payload.wealthLevel ?? 0;
-    payload.charmLevel = payload.charmLevel ?? 0;
+    payload.richLevel = payload.richLevel ?? 0;
+    payload.wealthLevelNumber = payload.wealthLevelNumber ?? 0;
+    payload.charmLevelNumber = payload.charmLevelNumber ?? 0;
+    payload.wealthLevel = typeof payload.wealthLevel === 'object' && payload.wealthLevel !== null
+      ? payload.wealthLevel
+      : { levelNumber: payload.wealthLevel ?? 0, name: 'Wealth Lv.0', color: '#CD7F32' };
+    payload.charmLevel = typeof payload.charmLevel === 'object' && payload.charmLevel !== null
+      ? payload.charmLevel
+      : { levelNumber: payload.charmLevel ?? 0, name: 'Charm Lv.0', color: '#FF1F65' };
   }
 
   return payload;
