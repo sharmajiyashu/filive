@@ -33,11 +33,11 @@ export default (router: Router) => {
       roleId: roleObj?._id || user.adminRoleId,
       role: roleObj
         ? {
-            id: roleObj._id,
-            _id: roleObj._id,
-            name: roleObj.name,
-            description: roleObj.description,
-          }
+          id: roleObj._id,
+          _id: roleObj._id,
+          name: roleObj.name,
+          description: roleObj.description,
+        }
         : null,
       isActive: !(user.isBlocked === true || user.isActive === false || user.status === 'inactive' || user.status === 'disabled' || user.status === 'suspended'),
       status: (user.isBlocked === true || user.isActive === false || user.status === 'inactive' || user.status === 'disabled' || user.status === 'suspended') ? 'inactive' : 'active',
@@ -124,7 +124,7 @@ export default (router: Router) => {
    */
   const createAdminUserHandler = async (req: Request, res: Response) => {
     try {
-      const { firstName, lastName, name, email, mobile, phoneExt, password, roleId, adminRoleId, isActive } =
+      const { firstName, lastName, name, email, mobile, phoneExt, password, roleId, adminRoleId, isActive, status } =
         req.body;
 
       if (!email || !email.trim()) {
@@ -141,28 +141,39 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, new Error(`User with email "${cleanedEmail}" already exists`), 400);
       }
 
-      const targetRoleId = roleId || adminRoleId;
+      let targetRoleId = roleId || adminRoleId;
       if (targetRoleId) {
         const role = await AdminRole.findById(targetRoleId);
         if (!role) {
           return ResponseWrapper.error(res, new Error('Specified admin role was not found'), 404);
         }
+      } else {
+        const defaultRole = await AdminRole.findOne({ name: 'SUPER_ADMIN' }) || await AdminRole.findOne({ isActive: true });
+        if (defaultRole) {
+          targetRoleId = defaultRole._id;
+        }
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      const fullName = (name || `${firstName || ''} ${lastName || ''}`).trim() || cleanedEmail.split('@')[0];
+      const fullName = (name || ((firstName || '') + ' ' + (lastName || '')).trim()).trim() || cleanedEmail.split('@')[0];
+      const isBlockedVal = isActive === false || status === 'inactive' || status === 'disabled' || status === 'suspended';
+      const isActiveVal = !isBlockedVal;
+      const statusVal = isBlockedVal ? 'inactive' : 'active';
 
       const user = await User.create({
         userRole: 'admin',
         name: fullName,
+        firstName: firstName ? firstName.trim() : (fullName.split(' ')[0] || ''),
+        lastName: lastName ? lastName.trim() : (fullName.split(' ').slice(1).join(' ') || ''),
         email: cleanedEmail,
         mobile: mobile ? mobile.trim() : undefined,
+        phoneExt: phoneExt ? phoneExt.trim() : undefined,
         whatsapp: mobile ? mobile.trim() : undefined,
         password: hashedPassword,
         adminRoleId: targetRoleId || undefined,
-        isBlocked: isActive === false || status === 'inactive' || status === 'disabled',
-        isActive: !(isActive === false || status === 'inactive' || status === 'disabled'),
-        status: (isActive === false || status === 'inactive' || status === 'disabled') ? 'inactive' : 'active',
+        isBlocked: isBlockedVal,
+        isActive: isActiveVal,
+        status: statusVal,
       });
 
       const populatedUser = await User.findById(user._id).populate('adminRoleId').lean();
@@ -268,7 +279,7 @@ export default (router: Router) => {
               reason: 'Your account has been deactivated by administrator',
             });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       return ResponseWrapper.success(res, formatAdminUser(updatedUser), 'Admin user updated successfully');
@@ -317,7 +328,7 @@ export default (router: Router) => {
             reason: 'Account deleted',
           });
         }
-      } catch (_) {}
+      } catch (_) { }
 
       await User.findByIdAndDelete(userId);
       return ResponseWrapper.success(res, { message: 'Admin user deleted successfully' }, 'Admin user deleted successfully');

@@ -310,7 +310,8 @@ export default (router: Router) => {
    */
   coinRouter.post('/razorpay/create-order', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { packageId, audience } = req.body;
+      const packageId = req.body.packageId || req.body.package_id || req.body.id;
+      const audience = req.body.audience;
       if (!packageId) {
         return ResponseWrapper.error(res, new Error('packageId is required'), 400);
       }
@@ -355,7 +356,12 @@ export default (router: Router) => {
    */
   coinRouter.post('/razorpay/verify-payment', appAuthMiddleware, async (req: any, res: Response) => {
     try {
-      const { packageId, razorpayOrderId, razorpayPaymentId, razorpaySignature, audience } = req.body;
+      const packageId = req.body.packageId || req.body.package_id || req.body.id;
+      const razorpayOrderId = req.body.razorpayOrderId || req.body.razorpay_order_id || req.body.orderId || req.body.order_id;
+      const razorpayPaymentId = req.body.razorpayPaymentId || req.body.razorpay_payment_id || req.body.paymentId || req.body.payment_id;
+      const razorpaySignature = req.body.razorpaySignature || req.body.razorpay_signature || req.body.signature;
+      const audience = req.body.audience;
+
       if (!packageId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
         return ResponseWrapper.error(
           res,

@@ -8,17 +8,17 @@ export default async (): Promise<typeof cloudinary> => {
         !config.cloudinary.apiKey ||
         !config.cloudinary.apiSecret
     ) {
-        throw new Error(
-            'CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET are not set in config'
+        AppLogger.warn(
+            '⚠️ CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, or CLOUDINARY_API_SECRET not set in config. Local disk fallback will be used.'
         );
     }
 
     cloudinary.config({
-        cloud_name: config.cloudinary.cloudName,
-        api_key: config.cloudinary.apiKey,
-        api_secret: config.cloudinary.apiSecret
+        cloud_name: config.cloudinary.cloudName || 'disabled',
+        api_key: config.cloudinary.apiKey || '',
+        api_secret: config.cloudinary.apiSecret || ''
     });
 
-    AppLogger.info(`✌️ Cloudinary Client Loaded`);
+    AppLogger.info(`✌️ Cloudinary Client Configured`);
     return cloudinary;
 };

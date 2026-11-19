@@ -4,9 +4,12 @@ export interface IUser extends Document {
   userId?: number;
   beans?: number;
   name?: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   password?: string;
   mobile?: string;
+  phoneExt?: string;
   whatsapp?: string;
   userRole: 'user' | 'admin';
   bio?: string;
@@ -150,9 +153,12 @@ const UserSchema: Schema = new Schema(
   {
     userId: { type: Number, unique: true, sparse: true },
     name: { type: String },
+    firstName: { type: String },
+    lastName: { type: String },
     email: { type: String, unique: true, sparse: true },
     password: { type: String },
     mobile: { type: String, unique: true, sparse: true },
+    phoneExt: { type: String },
     whatsapp: { type: String },
     userRole: { type: String, enum: ['user', 'admin'], default: 'user' },
     bio: { type: String },

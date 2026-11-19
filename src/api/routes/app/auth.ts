@@ -54,14 +54,14 @@ export default (router: Router) => {
                 const { extension, mobile, countryId, countryCode, referredBy } = req.body;
                 const { deviceId, deviceModel } = getDeviceSignals(req);
                 const fullMobile = `${extension}${mobile}`;
-                await authService.userSendOTP(fullMobile, countryId, referredBy, {
+                const result = await authService.userSendOTP(fullMobile, countryId, referredBy, {
                     countryCode,
                     extension,
                     ipCountry: countryCodeFromIpHeaders(req.headers) || undefined,
                     deviceId,
                     deviceModel,
                 });
-                return ResponseWrapper.success(res, null, 'OTP sent successfully');
+                return ResponseWrapper.success(res, result, 'OTP sent successfully');
             } catch (error: any) {
                 return ResponseWrapper.error(res, error);
             }

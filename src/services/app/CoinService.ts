@@ -137,7 +137,7 @@ export class CoinService {
       if (isAfghanistan) {
         exchangeRate = Number(country?.exchangeRate) > 0 ? Number(country.exchangeRate) : 72;
       } else if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
-        exchangeRate = usdToInrRate;
+        exchangeRate = usdPrice >= 50 ? 1 : usdToInrRate;
       } else if (country.currencyCode === 'USD' || country.code === 'US') {
         exchangeRate = 1;
       } else {
@@ -827,7 +827,10 @@ export class CoinService {
     const usdToInrRate = Number(
       (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
     );
-    const inrAmount = Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    // If package price is already INR (e.g. 99, 449, 499, 999, etc.) or currency is INR
+    const inrAmount = ((pkg as any).currency === 'INR' || Number(pkg.price) >= 50)
+      ? Number(pkg.price)
+      : Number((Number(pkg.price) * usdToInrRate).toFixed(2));
     const amountInPaise = Math.round(inrAmount * 100);
 
     if (amountInPaise <= 0) {
@@ -1478,7 +1481,9 @@ export class CoinService {
     const usdToInrRate = Number(
       (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
     );
-    const inrAmount = Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    const inrAmount = ((pkg as any).currency === 'INR' || Number(pkg.price) >= 50)
+      ? Number(pkg.price)
+      : Number((Number(pkg.price) * usdToInrRate).toFixed(2));
     const orderAmount = inrAmount;
 
     const orderMeta: Record<string, string> = {

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const sendOtpSchema = z.object({
-    extension: z.string().transform(s => s.replace(/^\+/, '')).refine(s => /^\d{1,4}$/.test(s), "Invalid extension (e.g. 91)"),
-    mobile: z.string().min(7, "Mobile number must be at least 7 digits").max(15, "Mobile number cannot exceed 15 digits").regex(/^\d+$/, "Mobile number must contain only digits"),
+    extension: z.string().optional().default('91').transform(s => (s || '91').toString().replace(/[\s\-\+]/g, '')),
+    mobile: z.string().transform(s => s.toString().replace(/[\s\-\+]/g, '')).refine(s => /^\d{7,15}$/.test(s), "Mobile number must be 7 to 15 digits"),
     countryId: z.string().optional(),
     countryCode: z.string().optional(),
     referredBy: z.string().optional(),
@@ -14,9 +14,9 @@ export const sendOtpSchema = z.object({
 });
 
 export const verifyOtpSchema = z.object({
-    extension: z.string().transform(s => s.replace(/^\+/, '')).refine(s => /^\d{1,4}$/.test(s), "Invalid extension (e.g. 91)"),
-    mobile: z.string().min(7, "Mobile number must be at least 7 digits").max(15, "Mobile number cannot exceed 15 digits").regex(/^\d+$/, "Mobile number must contain only digits"),
-    otp: z.string().length(4, "OTP must be 4 digits").regex(/^\d+$/, "OTP must contain only digits"),
+    extension: z.string().optional().default('91').transform(s => (s || '91').toString().replace(/[\s\-\+]/g, '')),
+    mobile: z.string().transform(s => s.toString().replace(/[\s\-\+]/g, '')).refine(s => /^\d{7,15}$/.test(s), "Mobile number must be 7 to 15 digits"),
+    otp: z.string().transform(s => s.toString().trim()).refine(s => /^\d{4,6}$/.test(s), "OTP must be 4 to 6 digits"),
     appType: z.string().optional(),
     registerIn: z.string().optional(),
     loginIn: z.string().optional(),

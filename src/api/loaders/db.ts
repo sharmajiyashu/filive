@@ -1,6 +1,13 @@
+import dns from 'dns';
 import mongoose from 'mongoose';
 import config from '../../config';
 import AppLogger from './logger';
+
+try {
+    dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch {
+    // Ignore DNS server override errors if unsupported
+}
 
 export default async (): Promise<typeof mongoose> => {
     if (!config.database.mongo.uri) {

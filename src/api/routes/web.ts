@@ -197,7 +197,8 @@ export default (router: Router) => {
    */
   router.post('/razorpay/create-order', async (req: Request, res: Response) => {
     try {
-      const { userId, packageId } = req.body;
+      const userId = req.body.userId || req.body.user_id;
+      const packageId = req.body.packageId || req.body.package_id || req.body.id;
       if (!userId) return ResponseWrapper.error(res, new Error('userId is required'), 400);
       if (!packageId) return ResponseWrapper.error(res, new Error('packageId is required'), 400);
 
@@ -205,7 +206,7 @@ export default (router: Router) => {
       if (!user) return ResponseWrapper.error(res, new Error('User not found with this ID'), 404);
 
       const resolvedUserId = user._id.toString();
-      const result = await coinService.createRazorpayOrder(resolvedUserId, packageId, 'user', 'web');
+      const result = await coinService.createRazorpayOrder(resolvedUserId, packageId, 'website', 'web');
       return ResponseWrapper.success(res, result, 'Razorpay order created successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -218,7 +219,12 @@ export default (router: Router) => {
    */
   router.post('/razorpay/verify-payment', async (req: Request, res: Response) => {
     try {
-      const { userId, packageId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+      const userId = req.body.userId || req.body.user_id;
+      const packageId = req.body.packageId || req.body.package_id || req.body.id;
+      const razorpayOrderId = req.body.razorpayOrderId || req.body.razorpay_order_id || req.body.orderId || req.body.order_id;
+      const razorpayPaymentId = req.body.razorpayPaymentId || req.body.razorpay_payment_id || req.body.paymentId || req.body.payment_id;
+      const razorpaySignature = req.body.razorpaySignature || req.body.razorpay_signature || req.body.signature;
+
       if (!userId || !packageId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
         return ResponseWrapper.error(
           res,
@@ -237,7 +243,7 @@ export default (router: Router) => {
         razorpayOrderId,
         razorpayPaymentId,
         razorpaySignature,
-        'user'
+        'website'
       );
       return ResponseWrapper.success(res, result, 'Payment verified and coins added successfully');
     } catch (error: any) {

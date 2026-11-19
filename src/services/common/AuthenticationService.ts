@@ -580,8 +580,18 @@ export class AuthenticationService {
             await this.assertDeviceNotBanned(deviceId);
         }
 
-        const user = await User.findOne({
+        const cleanMobile = mobile.replace(/[\s\-\+]/g, '');
+        const candidateNumbers = Array.from(new Set([
             mobile,
+            cleanMobile,
+            `+${cleanMobile}`,
+            cleanMobile.slice(-10),
+            `91${cleanMobile.slice(-10)}`,
+            `+91${cleanMobile.slice(-10)}`
+        ]));
+
+        const user = await User.findOne({
+            mobile: { $in: candidateNumbers },
             otp,
             otpExpires: { $gt: new Date() }
         }).populate('profileImage').populate('countryId');
