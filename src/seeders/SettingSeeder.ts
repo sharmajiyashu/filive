@@ -20,7 +20,7 @@ export async function seedSettings() {
       {
         key: 'call_price_tiers',
         value: [
-          { minLevel: 1, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 1–7' },
+          { minLevel: 0, maxLevel: 7, audioPrice: 1200, videoPrice: 2500, label: 'Level 0–7' },
           { minLevel: 8, maxLevel: 15, audioPrice: 1500, videoPrice: 3000, label: 'Level 8–15' },
           { minLevel: 16, maxLevel: 25, audioPrice: 2000, videoPrice: 4000, label: 'Level 16–25' },
           { minLevel: 26, maxLevel: 35, audioPrice: 2500, videoPrice: 5000, label: 'Level 26–35' },
