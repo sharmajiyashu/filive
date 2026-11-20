@@ -7,6 +7,7 @@ import cloudinaryLoader from './cloudinary';
 import firebaseLoader from './firebase';
 import { startAgencySettlementJob } from '../../jobs/agencySettlementJob';
 import { startStoreExpiryJob } from '../../jobs/storeExpiryJob';
+import { startExchangeRateJob } from '../../jobs/exchangeRateJob';
 // import smtpLoader from './smtp';
 
 export default async (expressApp: Express): Promise<void> => {
@@ -99,5 +100,6 @@ export default async (expressApp: Express): Promise<void> => {
     expressLoader(expressApp);
     startAgencySettlementJob();
     startStoreExpiryJob();
+    startExchangeRateJob();
     AppLogger.info('✌️ Express Loaded Successfully');
 };

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import Container from 'typedi';
 import { CoinSellerService } from '../../../services/app/CoinSellerService';
 import { LevelService } from '../../../services/app/LevelService';
+import { AppSettingService } from '../../../services/common/AppSettingService';
 import User from '../../../models/User';
 import { ResponseWrapper } from '../../responseWrapper';
 import { appAuthMiddleware } from '../../middleware/appAuthMiddleware';
@@ -256,22 +257,27 @@ export default (router: Router) => {
       const search = req.query.search?.toString();
       const category = (req.query.category?.toString() || 'recharge_service') as any;
 
-      // Policy & Level gating check: User must have completed level 2 (wealthLevel >= 2)
-      if (currentUserId) {
+      // Policy & Level gating check: Configured dynamically via Admin (default 2, 0 means unlocked for all)
+      const appSettingService = Container.get(AppSettingService);
+      const minLevelSetting = await appSettingService.getSettingValue('recharge_service_min_level');
+      const requiredLevel = minLevelSetting !== undefined && minLevelSetting !== null ? Number(minLevelSetting) : 2;
+
+      if (requiredLevel > 0 && currentUserId) {
         const caller = await User.findById(currentUserId).select('wealthCoins coins level wealthLevel').lean();
         if (caller) {
           const callerWealth = (caller as any).wealthCoins !== undefined ? (caller as any).wealthCoins : ((caller as any).coins || 0);
           const levelService = Container.get(LevelService);
           const callerLevelInfo = await levelService.getLevelInfoForCoins(callerWealth, 'rich');
           const callerLevel = callerLevelInfo?.currentLevel?.levelNumber ?? ((caller as any).wealthLevel || (caller as any).level || 1);
-          if (callerLevel < 2) {
+          if (callerLevel < requiredLevel) {
             return ResponseWrapper.success(res, {
               sellers: [],
               pagination: { total: 0, page: 1, limit, totalPages: 0 },
               isLocked: true,
-              unlockLevel: 2,
-              message: 'Recharge Service is unlocked for Level 2 and above',
-            }, 'Recharge Service unlocks at Level 2');
+              unlockLevel: requiredLevel,
+              requiredLevel,
+              message: `Recharge Service is unlocked for Level ${requiredLevel} and above`,
+            }, `Recharge Service unlocks at Level ${requiredLevel}`);
           }
         }
       }
@@ -423,7 +429,28 @@ export default (router: Router) => {
 
   sellerRouter.get('/packages', async (req: any, res: Response) => {
     try {
-      const countryId = (req.query.countryId || req.user?.country || req.user?.countryId)?.toString();
+      let countryId = (req.query.countryId || req.query.countryCode || req.headers['x-country-code'])?.toString();
+      if (!countryId && req.user) {
+        const user = await User.findById(req.user.id);
+        const userMobile = ((user as any)?.mobile || (user as any)?.phoneNumber || (user as any)?.phone || '').toString();
+        const userCountryStr = (user?.country || '').toString();
+        const userCountryCode = (user?.countryCode || '').toString();
+        const userNationality = ((user as any)?.nationality || '').toString();
+
+        if (user?.countryId) countryId = user.countryId.toString();
+        else if (userCountryCode) countryId = userCountryCode;
+        else if (userCountryStr) countryId = userCountryStr;
+        else if (userNationality) countryId = userNationality;
+        else if (userMobile.startsWith('+92') || userMobile.startsWith('92')) countryId = 'PK';
+        else if (userMobile.startsWith('+880') || userMobile.startsWith('880')) countryId = 'BD';
+        else if (userMobile.startsWith('+971') || userMobile.startsWith('971')) countryId = 'AE';
+        else if (userMobile.startsWith('+93') || userMobile.startsWith('93')) countryId = 'AF';
+        else if (userMobile.startsWith('+966') || userMobile.startsWith('966')) countryId = 'SA';
+        else if (userMobile.startsWith('+977') || userMobile.startsWith('977')) countryId = 'NP';
+        else if (userMobile.startsWith('+1') || userMobile.startsWith('1')) countryId = 'US';
+        else if (userMobile.startsWith('+44') || userMobile.startsWith('44')) countryId = 'GB';
+        else if (userMobile.startsWith('+91') || userMobile.startsWith('91')) countryId = 'IN';
+      }
       const result = await coinSellerService.getCoinSellerPackages(countryId);
       return ResponseWrapper.success(res, result, 'Coin seller packages fetched successfully');
     } catch (error: any) {

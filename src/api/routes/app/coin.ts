@@ -44,15 +44,7 @@ export default (router: Router) => {
         const userCountryCode = (user?.countryCode || '').toString();
         const userNationality = ((user as any)?.nationality || '').toString();
 
-        if (
-          userMobile.startsWith('+93') ||
-          userMobile.startsWith('93') ||
-          /afghan/i.test(userCountryStr) ||
-          userCountryCode.toUpperCase() === 'AF' ||
-          /afghan/i.test(userNationality)
-        ) {
-          countryId = 'AF';
-        } else if (user?.countryId) {
+        if (user?.countryId) {
           countryId = user.countryId.toString();
         } else if (user?.countryCode) {
           countryId = user.countryCode;
@@ -60,6 +52,24 @@ export default (router: Router) => {
           countryId = user.country;
         } else if (user?.nationality) {
           countryId = user.nationality;
+        } else if (userMobile.startsWith('+92') || userMobile.startsWith('92')) {
+          countryId = 'PK';
+        } else if (userMobile.startsWith('+880') || userMobile.startsWith('880')) {
+          countryId = 'BD';
+        } else if (userMobile.startsWith('+971') || userMobile.startsWith('971')) {
+          countryId = 'AE';
+        } else if (userMobile.startsWith('+93') || userMobile.startsWith('93')) {
+          countryId = 'AF';
+        } else if (userMobile.startsWith('+966') || userMobile.startsWith('966')) {
+          countryId = 'SA';
+        } else if (userMobile.startsWith('+977') || userMobile.startsWith('977')) {
+          countryId = 'NP';
+        } else if (userMobile.startsWith('+1') || userMobile.startsWith('1')) {
+          countryId = 'US';
+        } else if (userMobile.startsWith('+44') || userMobile.startsWith('44')) {
+          countryId = 'GB';
+        } else if (userMobile.startsWith('+91') || userMobile.startsWith('91')) {
+          countryId = 'IN';
         }
       }
 

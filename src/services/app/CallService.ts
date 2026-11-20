@@ -909,12 +909,14 @@ export class CallService {
    */
   public async getCallingHosts(page: number = 1, limit: number = 10, currentUserId: string, callType?: 'voice' | 'video', country?: string) {
     let query: any = {
-      userRole: 'user',
+      userRole: { $ne: 'admin' },
       gender: { $regex: /^female$/i },
       videoVerificationStatus: 'approved',
+      isBlocked: { $ne: true },
+      isDeleted: { $ne: true },
     };
 
-    if (callType === 'voice') {
+    if (callType === 'voice' || (callType as any) === 'audio') {
       query.enableVoiceCall = true;
     } else if (callType === 'video') {
       query.enableVideoCall = true;
@@ -1039,10 +1041,19 @@ export class CallService {
 
     return {
       data: formattedHosts,
+      hosts: formattedHosts,
+      users: formattedHosts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasMore: page * limit < total,
+      },
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit) || 1,
     };
   }
 

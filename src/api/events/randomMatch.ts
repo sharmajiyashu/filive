@@ -119,6 +119,46 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     }
   );
 
+  socket.on('accept_random_call', async (data: { callId?: string; sessionId?: string }, callback?: any) => {
+    try {
+      const callId = (data?.callId || data?.sessionId || '').toString().trim();
+      AppLogger.info(`[Socket Event: accept_random_call] userId=${userId}, callId=${callId}`);
+      if (!callId) {
+        emitSocketError(socket, 'accept_random_call', 'callId or sessionId is required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      const result = await randomMatchService.acceptRandomCall(userId, callId, io);
+      if (!result.success) {
+        emitSocketError(socket, 'accept_random_call', result.message || 'Call already accepted by another host', 'Match Failed', 'ALREADY_ACCEPTED', callback);
+        return;
+      }
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'accept_random_call', data: result.data });
+      }
+    } catch (err: any) {
+      AppLogger.error(`[Socket Event: accept_random_call] Error for user ${userId}: ${err.message}`);
+      emitSocketError(socket, 'accept_random_call', err, 'Failed to accept random call', undefined, callback);
+    }
+  });
+
+  socket.on('reject_random_call', async (data: { callId?: string; sessionId?: string }, callback?: any) => {
+    try {
+      const callId = (data?.callId || data?.sessionId || '').toString().trim();
+      AppLogger.info(`[Socket Event: reject_random_call] userId=${userId}, callId=${callId}`);
+      if (!callId) {
+        emitSocketError(socket, 'reject_random_call', 'callId or sessionId is required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+      await randomMatchService.rejectRandomCall(userId, callId, io);
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'reject_random_call' });
+      }
+    } catch (err: any) {
+      AppLogger.error(`[Socket Event: reject_random_call] Error for user ${userId}: ${err.message}`);
+      emitSocketError(socket, 'reject_random_call', err, 'Failed to reject random call', undefined, callback);
+    }
+  });
+
   socket.on('disconnect', () => {
     try {
       randomMatchService.handleDisconnect(userId);

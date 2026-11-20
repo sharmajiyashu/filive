@@ -128,7 +128,7 @@ export default (router: Router) => {
         result = await hostFeedService.getNewFeed({ callerId: userId, page, limit, callType: 'both', countryCode: country });
       } else if (tab === 'popular' || callType === 'popular') {
         result = await hostFeedService.getPopularFeed({ callerId: userId, page, limit, countryCode: country });
-      } else if (callType === 'voice' || tab === 'talk') {
+      } else if (callType === 'voice' || callType === 'audio' || tab === 'talk') {
         result = await hostFeedService.getTalkFeed({ callerId: userId, page, limit, countryCode: country });
       } else if (callType === 'video' || tab === 'meet') {
         result = await hostFeedService.getMeetFeed({ callerId: userId, page, limit, countryCode: country });

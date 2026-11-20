@@ -23,6 +23,18 @@ interface AvailableHost {
   socketId: string;
 }
 
+export interface BroadcastSession {
+  sessionId: string;
+  callerId: string;
+  callType: RandomCallType;
+  socketId: string;
+  candidateHostIds: Set<string>;
+  respondedRejectHostIds: Set<string>;
+  claimedHostId?: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
 const SEARCH_TIMEOUT_MS = 60_000;
 
 @Service()
@@ -43,6 +55,12 @@ export class RandomMatchService {
 
   /** Persist host opt-in so they can re-enter the pool after a match ends */
   private hostPreferences = new Map<string, AvailableHost>();
+
+  /** sessionId → active broadcast session */
+  private activeBroadcastSessions = new Map<string, BroadcastSession>();
+
+  /** callerId → sessionId */
+  private callerToBroadcastSession = new Map<string, string>();
 
   public isCallerQueued(userId: string): boolean {
     return this.callerIndex.has(userId);
@@ -116,6 +134,32 @@ export class RandomMatchService {
     const callType = this.callerIndex.get(callerId);
     if (callType) {
       this.removeCallerFromQueue(callerId, callType);
+    }
+
+    // Dismiss active broadcast session for this caller across all candidate hosts
+    const sessionId = this.callerToBroadcastSession.get(callerId);
+    if (sessionId) {
+      const session = this.activeBroadcastSessions.get(sessionId);
+      if (session && io) {
+        for (const hostId of session.candidateHostIds) {
+          io.to(`user_${hostId}`).emit('call_cancelled', {
+            callId: sessionId,
+            sessionId,
+            reason: 'caller_cancelled',
+            message: 'Caller cancelled search',
+            success: false,
+            type: 'call_cancelled',
+          });
+          io.to(`user_${hostId}`).emit('random_call_dismiss', {
+            callId: sessionId,
+            sessionId,
+            reason: 'caller_cancelled',
+            success: false,
+          });
+        }
+      }
+      this.activeBroadcastSessions.delete(sessionId);
+      this.callerToBroadcastSession.delete(callerId);
     }
 
     await this.callService.endUserActiveCalls(callerId, 'cancelled_random_match');
@@ -336,10 +380,60 @@ export class RandomMatchService {
     return true;
   }
 
+  public isBroadcastSession(callId: string): boolean {
+    if (!callId) return false;
+    const str = callId.toString().trim();
+    return this.activeBroadcastSessions.has(str) || str.startsWith('rnd_');
+  }
+
+  public isHostRinging(hostId: string): boolean {
+    for (const session of this.activeBroadcastSessions.values()) {
+      if (session.candidateHostIds.has(hostId) && !session.claimedHostId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public getActiveBroadcastSession(sessionId: string): BroadcastSession | undefined {
+    return this.activeBroadcastSessions.get(sessionId.toString().trim());
+  }
+
   private handleSearchTimeout(callerId: string, callType: RandomCallType, io: Server): void {
     if (this.callerIndex.get(callerId) !== callType) return;
 
     this.removeCallerFromQueue(callerId, callType, false);
+
+    const sessionId = this.callerToBroadcastSession.get(callerId);
+    if (sessionId) {
+      const session = this.activeBroadcastSessions.get(sessionId);
+      if (session) {
+        for (const hostId of session.candidateHostIds) {
+          io.to(`user_${hostId}`).emit('call_missed', {
+            callId: sessionId,
+            sessionId,
+            reason: 'timeout',
+            success: false,
+            type: 'call_missed',
+          });
+          io.to(`user_${hostId}`).emit('call_cancelled', {
+            callId: sessionId,
+            sessionId,
+            reason: 'timeout',
+            success: false,
+            type: 'call_cancelled',
+          });
+          io.to(`user_${hostId}`).emit('random_call_dismiss', {
+            callId: sessionId,
+            sessionId,
+            reason: 'timeout',
+            success: false,
+          });
+        }
+      }
+      this.activeBroadcastSessions.delete(sessionId);
+      this.callerToBroadcastSession.delete(callerId);
+    }
 
     io.to(`user_${callerId}`).emit('random_match_timeout', {
       callType,
@@ -363,63 +457,342 @@ export class RandomMatchService {
     this.callerIndex.delete(callerId);
   }
 
-  private async tryMatchCaller(caller: QueuedCaller, io: Server): Promise<boolean> {
+  /**
+   * Broadcast incoming call popup to online female hosts with Accept/Reject buttons.
+   * As soon as any host accepts, the popup automatically dismisses from all other hosts.
+   */
+  public async broadcastRandomCallToHosts(caller: QueuedCaller, io: Server): Promise<boolean> {
     if (this.callerIndex.get(caller.userId) !== caller.callType) return false;
 
-    // 1. First priority: Check explicitly available hosts
-    const hostIds = [...this.availableHosts.keys()];
-    for (let i = hostIds.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [hostIds[i], hostIds[j]] = [hostIds[j], hostIds[i]];
+    // Check if caller already has an active broadcast session
+    const existingSessionId = this.callerToBroadcastSession.get(caller.userId);
+    if (existingSessionId && this.activeBroadcastSessions.has(existingSessionId)) {
+      return true;
     }
 
-    for (const hostId of hostIds) {
-      const hostEntry = this.availableHosts.get(hostId);
-      if (!hostEntry || !hostEntry.callTypes.includes(caller.callType)) continue;
+    // 1. Gather all candidate female host IDs:
+    // a. Hosts in availableHosts pool
+    const availableIds = this.getAvailableHostIds(caller.callType);
+    // b. Active online female hosts via active socket connection
+    const onlineCandidateIds = await this.findOnlineHostCandidates(caller.userId, caller.callType, io);
+
+    // Combine distinct host IDs
+    const allCandidateIds = Array.from(new Set([...availableIds, ...onlineCandidateIds]));
+
+    // Filter eligible hosts
+    const eligibleHostIds: string[] = [];
+    for (const hostId of allCandidateIds) {
       if (hostId === caller.userId) continue;
-
+      if (this.isHostRinging(hostId)) continue;
       const eligible = await this.isHostEligibleForCaller(caller.userId, hostId, caller.callType);
-      if (!eligible) continue;
+      if (eligible) {
+        eligibleHostIds.push(hostId);
+      }
+    }
 
+    if (eligibleHostIds.length === 0) {
+      return false;
+    }
+
+    // Pick candidate hosts (up to 15 hosts)
+    const targetHosts = eligibleHostIds.sort(() => Math.random() - 0.5).slice(0, 15);
+
+    const sessionId = `rnd_${Date.now()}_${caller.userId}`;
+    const session: BroadcastSession = {
+      sessionId,
+      callerId: caller.userId,
+      callType: caller.callType,
+      socketId: caller.socketId,
+      candidateHostIds: new Set(targetHosts),
+      respondedRejectHostIds: new Set(),
+      createdAt: Date.now(),
+      expiresAt: Date.now() + SEARCH_TIMEOUT_MS,
+    };
+
+    this.activeBroadcastSessions.set(sessionId, session);
+    this.callerToBroadcastSession.set(caller.userId, sessionId);
+
+    // Fetch caller public profile
+    const callerDoc = await User.findById(caller.userId)
+      .select('name userId profileImage gender dob country countryId coins')
+      .populate('profileImage')
+      .populate('countryId');
+    const callerPublic = await this.callService.toPublicCallUser(callerDoc);
+
+    // Broadcast incoming_call to each candidate host
+    for (const hostId of targetHosts) {
       try {
-        await this.finalizeMatch(caller.userId, hostId, caller.callType, io, true);
-        return true;
+        const hostRates = await this.callService.getHostCallEarnRates(hostId);
+        const currentCallPrice = caller.callType === 'voice' ? hostRates.voiceCallPrice : hostRates.videoCallPrice;
+        const currentEarnPerMin = caller.callType === 'voice' ? hostRates.voiceEarnPerMin : hostRates.videoEarnPerMin;
+
+        const hostPayload = {
+          callId: sessionId,
+          _id: sessionId,
+          displayCallId: sessionId.slice(-8),
+          roomId: `room_${sessionId}`,
+          callType: caller.callType,
+          status: 'ringing',
+          role: 'host',
+          viewerWallet: 'beans',
+          payRatePerMin: currentCallPrice,
+          payRateLabel: `Pay ${currentCallPrice} Coins/min`,
+          voiceCallPrice: hostRates.voiceCallPrice,
+          videoCallPrice: hostRates.videoCallPrice,
+          currentCallPrice,
+          currency: 'Coins',
+          caller: callerPublic,
+          otherUser: callerPublic,
+          country: callerPublic?.country || null,
+          countryId: callerPublic?.countryId || null,
+          countryDetail: callerPublic?.countryDetail || null,
+          voiceEarnPerMin: hostRates.voiceEarnPerMin,
+          videoEarnPerMin: hostRates.videoEarnPerMin,
+          currentEarnPerMin,
+          hostEarning: {
+            voicePerMin: hostRates.voiceEarnPerMin,
+            videoPerMin: hostRates.videoEarnPerMin,
+            currentPerMin: currentEarnPerMin,
+            voiceCallPrice: hostRates.voiceCallPrice,
+            videoCallPrice: hostRates.videoCallPrice,
+            platformFeePercent: hostRates.platformFeePercent,
+            unit: 'beans',
+          },
+          isRandomMatch: true,
+          matchType: 'random',
+          success: true,
+          type: 'incoming_call',
+        };
+
+        io.to(`user_${hostId}`).emit('incoming_call', hostPayload);
+        io.to(`user_${hostId}`).emit('random_call_incoming', hostPayload);
       } catch (err: any) {
-        AppLogger.warn(
-          `[RandomMatchService: tryMatchCaller] Available host match failed caller=${caller.userId} host=${hostId}: ${err.message}`
-        );
+        AppLogger.warn(`[RandomMatchService] Failed to send invite to host ${hostId}: ${err.message}`);
       }
     }
 
-    // 2. Second priority: Match with another user waiting in the random match queue!
-    const queue = this.callerQueues[caller.callType] || [];
-    const otherWaiting = queue.filter((c) => c.userId !== caller.userId);
-    for (const other of otherWaiting) {
-      if (!this.callerIndex.has(caller.userId) || !this.callerIndex.has(other.userId)) continue;
-      const matched = await this.tryMatchTwoQueuedUsers(caller.userId, other.userId, caller.callType, io);
-      if (matched) {
-        return true;
+    AppLogger.info(
+      `[RandomMatchService: broadcastRandomCallToHosts] Broadcasted sessionId=${sessionId} to ${targetHosts.length} hosts for caller=${caller.userId} (${caller.callType})`
+    );
+
+    return true;
+  }
+
+  /**
+   * Host accepts the random call invite.
+   * Atomically claims match, dismisses popup from all other hosts, and establishes call.
+   */
+  public async acceptRandomCall(
+    hostId: string,
+    sessionId: string,
+    io: Server
+  ): Promise<{ success: boolean; message?: string; data?: any; call?: any }> {
+    AppLogger.info(`[RandomMatchService: acceptRandomCall] hostId=${hostId}, sessionId=${sessionId}`);
+
+    const session = this.activeBroadcastSessions.get(sessionId);
+    if (!session) {
+      return { success: false, message: 'This call is no longer available or has expired.' };
+    }
+
+    if (session.claimedHostId) {
+      return { success: false, message: 'Call already accepted by another host' };
+    }
+
+    if (session.callerId === hostId) {
+      return { success: false, message: 'Caller cannot accept their own call.' };
+    }
+
+    if (this.callerIndex.get(session.callerId) !== session.callType) {
+      this.activeBroadcastSessions.delete(sessionId);
+      this.callerToBroadcastSession.delete(session.callerId);
+      return { success: false, message: 'Caller has cancelled the search.' };
+    }
+
+    if (await this.callService.isUserBusy(hostId)) {
+      return { success: false, message: 'You are currently in another call.' };
+    }
+    if (await this.callService.isUserBusy(session.callerId)) {
+      return { success: false, message: 'Caller is already in another call.' };
+    }
+
+    // Atomic claim by this host
+    session.claimedHostId = hostId;
+
+    // Immediately dismiss popup from all OTHER candidate hosts
+    const otherHostIds = [...session.candidateHostIds].filter((id) => id !== hostId);
+    for (const otherId of otherHostIds) {
+      io.to(`user_${otherId}`).emit('call_cancelled', {
+        callId: sessionId,
+        sessionId,
+        reason: 'taken_by_another_host',
+        message: 'Call was accepted by another host',
+        success: false,
+        type: 'call_cancelled',
+      });
+      io.to(`user_${otherId}`).emit('random_call_dismiss', {
+        callId: sessionId,
+        sessionId,
+        reason: 'taken_by_another_host',
+        success: false,
+      });
+    }
+
+    // Establish the instant matched call
+    const isAvailableHost = this.availableHosts.has(hostId);
+    let call: any = null;
+    try {
+      call = await this.callService.createInstantMatchedCall(
+        session.callerId,
+        hostId,
+        session.callType,
+        !isAvailableHost
+      );
+    } catch (e: any) {
+      AppLogger.error(`[RandomMatchService: acceptRandomCall] Failed to create call: ${e.message}`);
+      session.claimedHostId = undefined;
+      return { success: false, message: e.message || 'Failed to start call' };
+    }
+
+    if (!call) {
+      session.claimedHostId = undefined;
+      return { success: false, message: 'Failed to create call session.' };
+    }
+
+    // Remove caller from search queue & clean up broadcast session
+    this.removeCallerFromQueue(session.callerId, session.callType);
+    if (isAvailableHost) {
+      this.availableHosts.delete(hostId);
+    }
+    this.activeBroadcastSessions.delete(sessionId);
+    this.callerToBroadcastSession.delete(session.callerId);
+
+    // Build payload for both caller and host
+    const callerPayload = await this.callService.buildCallScreenPayload(call, session.callerId);
+    const hostPayload = await this.callService.buildCallScreenPayload(call, hostId);
+
+    const common = {
+      agoraAppId: config.agora.appId,
+      matchType: 'random' as const,
+      startedAt: call.startedAt,
+    };
+
+    // Emit random_match_found to caller
+    io.to(`user_${session.callerId}`).emit('random_match_found', {
+      ...callerPayload,
+      ...common,
+      peer: callerPayload.otherUser,
+      success: true,
+      type: 'random_match_found',
+    });
+
+    // Emit call_accepted to accepting host
+    io.to(`user_${hostId}`).emit('call_accepted', {
+      ...hostPayload,
+      ...common,
+      peer: hostPayload.otherUser,
+      success: true,
+      type: 'call_accepted',
+    });
+
+    AppLogger.info(
+      `[RandomMatchService: acceptRandomCall] Matched & connected caller=${session.callerId} and host=${hostId} callId=${call._id}`
+    );
+
+    return {
+      success: true,
+      call,
+      data: hostPayload,
+    };
+  }
+
+  /**
+   * Host rejects the random call invite.
+   */
+  public async rejectRandomCall(
+    hostId: string,
+    sessionId: string,
+    io: Server
+  ): Promise<{ success: boolean }> {
+    AppLogger.info(`[RandomMatchService: rejectRandomCall] hostId=${hostId}, sessionId=${sessionId}`);
+
+    const session = this.activeBroadcastSessions.get(sessionId);
+    if (!session) {
+      return { success: true };
+    }
+
+    session.respondedRejectHostIds.add(hostId);
+    session.candidateHostIds.delete(hostId);
+
+    // If all candidate hosts rejected and call is not claimed, try to find other online hosts
+    if (session.candidateHostIds.size === 0 && !session.claimedHostId) {
+      const moreHosts = await this.findOnlineHostCandidates(session.callerId, session.callType, io);
+      const remainingCandidates = moreHosts.filter(
+        (id) => !session.respondedRejectHostIds.has(id) && !this.isHostRinging(id) && id !== session.callerId
+      );
+
+      if (remainingCandidates.length > 0) {
+        const callerDoc = await User.findById(session.callerId)
+          .select('name userId profileImage gender dob country countryId coins')
+          .populate('profileImage')
+          .populate('countryId');
+        const callerPublic = await this.callService.toPublicCallUser(callerDoc);
+
+        for (const newHostId of remainingCandidates.slice(0, 10)) {
+          const eligible = await this.isHostEligibleForCaller(session.callerId, newHostId, session.callType);
+          if (!eligible) continue;
+
+          session.candidateHostIds.add(newHostId);
+          const hostRates = await this.callService.getHostCallEarnRates(newHostId);
+          const currentCallPrice = session.callType === 'voice' ? hostRates.voiceCallPrice : hostRates.videoCallPrice;
+          const currentEarnPerMin = session.callType === 'voice' ? hostRates.voiceEarnPerMin : hostRates.videoEarnPerMin;
+
+          const hostPayload = {
+            callId: sessionId,
+            _id: sessionId,
+            displayCallId: sessionId.slice(-8),
+            roomId: `room_${sessionId}`,
+            callType: session.callType,
+            status: 'ringing',
+            role: 'host',
+            viewerWallet: 'beans',
+            payRatePerMin: currentCallPrice,
+            payRateLabel: `Pay ${currentCallPrice} Coins/min`,
+            voiceCallPrice: hostRates.voiceCallPrice,
+            videoCallPrice: hostRates.videoCallPrice,
+            currentCallPrice,
+            currency: 'Coins',
+            caller: callerPublic,
+            otherUser: callerPublic,
+            country: callerPublic?.country || null,
+            countryId: callerPublic?.countryId || null,
+            voiceEarnPerMin: hostRates.voiceEarnPerMin,
+            videoEarnPerMin: hostRates.videoEarnPerMin,
+            currentEarnPerMin,
+            hostEarning: {
+              voicePerMin: hostRates.voiceEarnPerMin,
+              videoPerMin: hostRates.videoEarnPerMin,
+              currentPerMin: currentEarnPerMin,
+              voiceCallPrice: hostRates.voiceCallPrice,
+              videoCallPrice: hostRates.videoCallPrice,
+              platformFeePercent: hostRates.platformFeePercent,
+              unit: 'beans',
+            },
+            isRandomMatch: true,
+            matchType: 'random',
+            success: true,
+            type: 'incoming_call',
+          };
+          io.to(`user_${newHostId}`).emit('incoming_call', hostPayload);
+          io.to(`user_${newHostId}`).emit('random_call_incoming', hostPayload);
+        }
       }
     }
 
-    // 3. Third priority: Find online female hosts with active socket connection in the app
-    const onlineHosts = await this.findOnlineHostCandidates(caller.userId, caller.callType, io);
-    for (const hostId of onlineHosts) {
-      if (!this.callerIndex.has(caller.userId)) return false;
-      const eligible = await this.isHostEligibleForCaller(caller.userId, hostId, caller.callType);
-      if (!eligible) continue;
+    return { success: true };
+  }
 
-      try {
-        await this.finalizeMatch(caller.userId, hostId, caller.callType, io, false);
-        return true;
-      } catch (err: any) {
-        AppLogger.warn(
-          `[RandomMatchService: tryMatchCaller] Online candidate match failed caller=${caller.userId} host=${hostId}: ${err.message}`
-        );
-      }
-    }
-
-    return false;
+  private async tryMatchCaller(caller: QueuedCaller, io: Server): Promise<boolean> {
+    return await this.broadcastRandomCallToHosts(caller, io);
   }
 
   private async tryMatchWaitingCallerForHost(
@@ -428,25 +801,11 @@ export class RandomMatchService {
     io: Server
   ): Promise<boolean> {
     const queue = this.callerQueues[callType];
-    const waitingIds = queue.map((c) => c.userId);
-
-    for (const callerId of waitingIds) {
-      if (!this.callerIndex.has(callerId)) continue;
-      if (!this.availableHosts.has(hostId)) return false;
-
-      const eligible = await this.isHostEligibleForCaller(callerId, hostId, callType);
-      if (!eligible) continue;
-
-      try {
-        await this.finalizeMatch(callerId, hostId, callType, io, true);
-        return true;
-      } catch (err: any) {
-        AppLogger.warn(
-          `[RandomMatchService: tryMatchWaitingCallerForHost] Match failed caller=${callerId} host=${hostId}: ${err.message}`
-        );
-      }
+    for (const caller of queue) {
+      if (!this.callerIndex.has(caller.userId)) continue;
+      const broadcasted = await this.broadcastRandomCallToHosts(caller, io);
+      if (broadcasted) return true;
     }
-
     return false;
   }
 

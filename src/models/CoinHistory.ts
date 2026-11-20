@@ -36,6 +36,12 @@ export interface ICoinHistory extends Document {
   giftId?: mongoose.Types.ObjectId;
   quantity?: number;
   transferTarget?: TransferTarget;
+  originalUsdPrice?: number;
+  localCurrency?: string;
+  localAmount?: number;
+  exchangeRate?: number;
+  chargedCurrency?: string;
+  chargedAmount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +67,12 @@ const CoinHistorySchema: Schema = new Schema(
     giftId: { type: Schema.Types.ObjectId, ref: 'Gift' },
     quantity: { type: Number, min: 1 },
     transferTarget: { type: String, enum: ['self', 'user', 'coinseller'] },
+    originalUsdPrice: { type: Number },
+    localCurrency: { type: String },
+    localAmount: { type: Number },
+    exchangeRate: { type: Number },
+    chargedCurrency: { type: String },
+    chargedAmount: { type: Number },
   },
   {
     timestamps: true,

@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import { AppSettingService } from '../common/AppSettingService';
 import { PaymentMethodService } from './PaymentMethodService';
 import { PaymentGatewayKey } from '../../models/PaymentMethod';
+import { ExchangeRateService } from '../common/ExchangeRateService';
 import AppLogger from '../../api/loaders/logger';
 
 type RechargeAudience = 'user' | 'seller' | 'website';
@@ -68,90 +69,23 @@ export class CoinService {
       }).sort({ price: 1, coins: 1 });
     }
 
-    let country: any = null;
-    if (countryIdOrCode && countryIdOrCode.trim() !== '') {
-      const clean = countryIdOrCode.trim();
-      const isAfghanQuery = clean.toUpperCase() === 'AF' ||
-                            clean.toUpperCase() === 'AFG' ||
-                            clean === '93' ||
-                            clean === '+93' ||
-                            /afghan/i.test(clean);
-
-      if (isAfghanQuery) {
-        country = await Country.findOne({
-          $or: [
-            { code: 'AF' },
-            { name: { $regex: /afghanistan/i } },
-            { phoneCode: '93' },
-            { phoneCode: '+93' },
-          ],
-        });
-        if (!country) {
-          country = {
-            name: 'Afghanistan',
-            code: 'AF',
-            currencyCode: 'AFN',
-            currencySymbol: '؋',
-            exchangeRate: 72,
-            flag: 'https://flagcdn.com/w160/af.png',
-            isActive: true,
-          };
-        }
-      } else {
-        if (mongoose.Types.ObjectId.isValid(clean)) {
-          country = await Country.findById(clean);
-        }
-        if (!country) {
-          country = await Country.findOne({
-            code: clean.toUpperCase(),
-          });
-        }
-        if (!country) {
-          country = await Country.findOne({
-            name: { $regex: new RegExp(`^${clean}$`, 'i') },
-          });
-        }
-        if (!country) {
-          const dial = clean.replace(/^\+/, '');
-          country = await Country.findOne({
-            $or: [{ phoneCode: dial }, { phoneCode: `+${dial}` }],
-          });
-        }
-      }
-    }
-
-    if (!country) {
-      country = await Country.findOne({ code: 'IN', isActive: true }) || await Country.findOne({ isActive: true });
-    }
-
-    const usdToInrRate = Number(
-      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
-    );
+    const exchangeService = ExchangeRateService.getInstance();
+    const resolvedCountry = await exchangeService.resolveCountry(countryIdOrCode);
 
     return packages.map(pkg => {
       const usdPrice = Number(pkg.price);
-      let exchangeRate = 1;
 
-      const isAfghanistan = country?.code === 'AF' || country?.currencyCode === 'AFN' || /afghan/i.test(country?.name || '');
+      // Convert USD base price to user's localized currency with live exchange rate and decimal rules
+      const converted = exchangeService.convertPrice(
+        usdPrice,
+        resolvedCountry.currencyCode,
+        resolvedCountry.currencySymbol,
+        resolvedCountry.exchangeRate
+      );
 
-      if (isAfghanistan) {
-        exchangeRate = Number(country?.exchangeRate) > 0 ? Number(country.exchangeRate) : 72;
-      } else if (!country || country.currencyCode === 'INR' || country.code === 'IN') {
-        exchangeRate = usdPrice >= 50 ? 1 : usdToInrRate;
-      } else if (country.currencyCode === 'USD' || country.code === 'US') {
-        exchangeRate = 1;
-      } else {
-        exchangeRate = Number(country.exchangeRate || 1);
-      }
-
-      const localPrice = calculateLocalPrice(usdPrice, exchangeRate);
+      const localPrice = converted.localPrice;
+      const exchangeRate = converted.exchangeRate;
       const discountPercent = Math.min(Math.round(((pkg.coins - (usdPrice * 100)) / (pkg.coins || 1)) * 100), 75);
-
-      const localCurrencyCode = isAfghanistan ? 'AFN' : (country ? country.currencyCode : 'INR');
-      const localCurrencySymbol = isAfghanistan ? '؋' : (country ? (country.currencySymbol || '$') : '₹');
-      const countryName = isAfghanistan ? 'Afghanistan' : (country?.name || 'India');
-      const countryFlag = isAfghanistan ? (country?.flag || 'https://flagcdn.com/w160/af.png') : (country?.flag || 'https://flagcdn.com/w160/in.png');
-      const countryCode = isAfghanistan ? 'AF' : (country?.code || 'IN');
 
       return {
         ...pkg.toObject(),
@@ -159,12 +93,12 @@ export class CoinService {
         currencyCode: 'USD',
         currencySymbol: '$',
         localPrice,
-        localCurrencyCode,
-        localCurrencySymbol,
+        localCurrencyCode: resolvedCountry.currencyCode,
+        localCurrencySymbol: resolvedCountry.currencySymbol,
         exchangeRate,
-        countryName,
-        countryFlag,
-        countryCode,
+        countryName: resolvedCountry.name,
+        countryFlag: resolvedCountry.flag,
+        countryCode: resolvedCountry.code,
         discountPercent: discountPercent > 0 ? discountPercent : 0,
       };
     });
@@ -178,60 +112,21 @@ export class CoinService {
     const userCountryStr = (user.country || '').toString();
     const userCountryCode = (user.countryCode || '').toString();
     const userNationality = ((user as any).nationality || '').toString();
+    const countryIdentifier = user.countryId?.toString() || userCountryCode || userCountryStr || userNationality || userMobile;
 
-    const isAf = userMobile.startsWith('+93') ||
-                 userMobile.startsWith('93') ||
-                 userCountryCode.toUpperCase() === 'AF' ||
-                 /afghan/i.test(userCountryStr) ||
-                 /afghan/i.test(userNationality);
-
-    let country: any = null;
-    if (isAf) {
-      country = await Country.findOne({
-        $or: [
-          { code: 'AF' },
-          { name: { $regex: /afghanistan/i } },
-          { phoneCode: '93' },
-          { phoneCode: '+93' },
-        ],
-      });
-      if (!country) {
-        country = {
-          name: 'Afghanistan',
-          code: 'AF',
-          currencyCode: 'AFN',
-          currencySymbol: '؋',
-          exchangeRate: 72,
-          flag: 'https://flagcdn.com/w160/af.png',
-        };
-      }
-    } else {
-      if (user.countryId) {
-        country = await Country.findById(user.countryId);
-      }
-      if (!country && user.countryCode) {
-        country = await Country.findOne({ code: user.countryCode.toUpperCase() });
-      }
-      if (!country && user.country) {
-        country = await Country.findOne({
-          $or: [{ code: user.country.toUpperCase() }, { name: new RegExp(`^${user.country}$`, 'i') }],
-        });
-      }
-    }
-
-    const currencyCode = isAf ? 'AFN' : (country?.currencyCode || 'INR');
-    const currencySymbol = isAf ? '؋' : (country?.currencySymbol || '₹');
+    const exchangeService = ExchangeRateService.getInstance();
+    const resolvedCountry = await exchangeService.resolveCountry(countryIdentifier);
 
     return {
       coins: user.coins || 0,
       beans: user.beans || 0,
       coinSellerCoins: user.coinSellerCoins || 0,
       isCoinseller: user.isCoinseller || false,
-      country: isAf ? 'Afghanistan' : (country?.name || user.country || 'India'),
-      countryCode: isAf ? 'AF' : (country?.code || user.countryCode || 'IN'),
-      countryFlag: isAf ? (country?.flag || 'https://flagcdn.com/w160/af.png') : (country?.flag || 'https://flagcdn.com/w160/in.png'),
-      currencyCode,
-      currencySymbol,
+      country: resolvedCountry.name,
+      countryCode: resolvedCountry.code,
+      countryFlag: resolvedCountry.flag,
+      currencyCode: resolvedCountry.currencyCode,
+      currencySymbol: resolvedCountry.currencySymbol,
     };
   }
 
@@ -824,13 +719,27 @@ export class CoinService {
     });
 
     const user = await User.findById(userId);
-    const usdToInrRate = Number(
-      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
+    const exchangeService = ExchangeRateService.getInstance();
+    const usdPrice = Number(pkg.price);
+
+    // Resolve user's country
+    const userMobile = ((user as any)?.mobile || (user as any)?.phoneNumber || '').toString();
+    const userCountryStr = (user?.country || '').toString();
+    const userCountryCode = (user?.countryCode || '').toString();
+    const countryIdentifier = user?.countryId?.toString() || userCountryCode || userCountryStr || userMobile;
+    const userCountry = await exchangeService.resolveCountry(countryIdentifier);
+
+    // Calculate local currency pricing
+    const localConverted = exchangeService.convertPrice(
+      usdPrice,
+      userCountry.currencyCode,
+      userCountry.currencySymbol,
+      userCountry.exchangeRate
     );
-    // If package price is already INR (e.g. 99, 449, 499, 999, etc.) or currency is INR
-    const inrAmount = ((pkg as any).currency === 'INR' || Number(pkg.price) >= 50)
-      ? Number(pkg.price)
-      : Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+
+    // Razorpay domestic settlements are processed in INR. Accurately convert USD base price to INR:
+    const inrRate = exchangeService.getRate('INR');
+    const inrAmount = exchangeService.roundLocalPrice(usdPrice * inrRate, 'INR');
     const amountInPaise = Math.round(inrAmount * 100);
 
     if (amountInPaise <= 0) {
@@ -846,8 +755,13 @@ export class CoinService {
         packageId: packageId.toString(),
         packageName: pkg.name,
         coins: String(pkg.coins),
-        usdPrice: String(pkg.price),
-        exchangeRate: String(usdToInrRate),
+        usdPrice: String(usdPrice),
+        originalUsdPrice: String(usdPrice),
+        exchangeRate: String(localConverted.exchangeRate),
+        localCurrency: userCountry.currencyCode,
+        localAmount: String(localConverted.localPrice),
+        chargedCurrency: 'INR',
+        chargedAmount: String(inrAmount),
         inrAmount: String(inrAmount),
         rechargeAudience: audience,
         environment: razorpayMode,
@@ -870,16 +784,22 @@ export class CoinService {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      usdAmount: pkg.price,
-      exchangeRate: usdToInrRate,
+      usdAmount: usdPrice,
+      originalUsdPrice: usdPrice,
+      exchangeRate: localConverted.exchangeRate,
+      localCurrency: userCountry.currencyCode,
+      localCurrencySymbol: userCountry.currencySymbol,
+      localAmount: localConverted.localPrice,
       inrAmount,
+      chargedCurrency: 'INR',
+      chargedAmount: inrAmount,
       audience,
       mode: razorpayMode,
       package: {
         id: pkg._id,
         name: pkg.name,
         coins: pkg.coins,
-        price: pkg.price,
+        price: usdPrice,
         currency: 'USD',
         targetAudience: pkg.targetAudience,
       },
@@ -919,12 +839,15 @@ export class CoinService {
     }
 
     let audience = audienceRaw ? this.normalizeAudience(audienceRaw) : undefined;
+    let orderNotes: any = null;
+    let orderFetched: any = null;
     try {
       if (razorpayKeyId && keySecret) {
         const razorpay = new Razorpay({ key_id: razorpayKeyId, key_secret: keySecret });
-        const order: any = await razorpay.orders.fetch(razorpayOrderId);
-        if (order?.notes?.rechargeAudience) {
-          audience = this.normalizeAudience(order.notes.rechargeAudience);
+        orderFetched = await razorpay.orders.fetch(razorpayOrderId);
+        orderNotes = orderFetched?.notes;
+        if (orderNotes?.rechargeAudience) {
+          audience = this.normalizeAudience(orderNotes.rechargeAudience);
         }
       }
     } catch {
@@ -949,6 +872,13 @@ export class CoinService {
     try {
       const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
 
+      const originalUsd = Number(orderNotes?.originalUsdPrice || orderNotes?.usdPrice || pkg.price);
+      const localCurr = orderNotes?.localCurrency || 'INR';
+      const localAmt = Number(orderNotes?.localAmount) || undefined;
+      const rate = Number(orderNotes?.exchangeRate) || undefined;
+      const chargedCurr = orderNotes?.chargedCurrency || 'INR';
+      const chargedAmt = Number(orderNotes?.chargedAmount) || (orderFetched?.amount ? orderFetched.amount / 100 : undefined);
+
       const historyRecord = await CoinHistory.create(
         [
           {
@@ -960,6 +890,12 @@ export class CoinService {
             paymentGateway: 'Razorpay',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`,
             transactionId: razorpayPaymentId,
+            originalUsdPrice: originalUsd,
+            localCurrency: localCurr,
+            localAmount: localAmt,
+            exchangeRate: rate,
+            chargedCurrency: chargedCurr,
+            chargedAmount: chargedAmt,
           },
         ],
         { session }
@@ -1059,6 +995,9 @@ export class CoinService {
             paymentGateway: 'GooglePlay',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Google Play In-App Purchase (${audience})`,
             transactionId: txId,
+            originalUsdPrice: Number(pkg.price),
+            chargedCurrency: 'USD',
+            chargedAmount: Number(pkg.price),
           },
         ],
         { session }
@@ -1161,6 +1100,9 @@ export class CoinService {
             paymentGateway: 'ApplePay',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Apple Pay In-App Purchase (${audience})`,
             transactionId: txId,
+            originalUsdPrice: Number(pkg.price),
+            chargedCurrency: 'USD',
+            chargedAmount: Number(pkg.price),
           },
         ],
         { session }
@@ -1478,12 +1420,10 @@ export class CoinService {
 
     // Order ID format: CF_{audience}_{packageId}_{timestamp}_{numericUserId}
     const orderId = `CF_${audience.slice(0, 1).toUpperCase()}_${packageId.toString().slice(-6)}_${Date.now()}_${user.userId || userId.slice(-4)}`;
-    const usdToInrRate = Number(
-      (await this.appSettingService.getSettingValue('usd_to_inr_exchange_rate')) || 95.0
-    );
-    const inrAmount = ((pkg as any).currency === 'INR' || Number(pkg.price) >= 50)
-      ? Number(pkg.price)
-      : Number((Number(pkg.price) * usdToInrRate).toFixed(2));
+    const exchangeService = ExchangeRateService.getInstance();
+    const usdPrice = Number(pkg.price);
+    const inrRate = exchangeService.getRate('INR');
+    const inrAmount = exchangeService.roundLocalPrice(usdPrice * inrRate, 'INR');
     const orderAmount = inrAmount;
 
     const orderMeta: Record<string, string> = {
@@ -1509,8 +1449,11 @@ export class CoinService {
         userId: userId.toString(),
         packageId: packageId.toString(),
         audience,
-        usdPrice: String(pkg.price),
-        exchangeRate: String(usdToInrRate),
+        usdPrice: String(usdPrice),
+        originalUsdPrice: String(usdPrice),
+        exchangeRate: String(inrRate),
+        chargedCurrency: 'INR',
+        chargedAmount: String(inrAmount),
       },
     };
 
@@ -1645,6 +1588,11 @@ export class CoinService {
     try {
       const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
 
+      const exchangeService = ExchangeRateService.getInstance();
+      const usdPrice = Number(pkg.price);
+      const inrRate = exchangeService.getRate('INR');
+      const inrAmount = exchangeService.roundLocalPrice(usdPrice * inrRate, 'INR');
+
       const historyRecord = await CoinHistory.create(
         [
           {
@@ -1656,6 +1604,12 @@ export class CoinService {
             paymentGateway: 'Cashfree',
             description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Cashfree (${audience})`,
             transactionId: orderId,
+            originalUsdPrice: usdPrice,
+            localCurrency: 'INR',
+            localAmount: inrAmount,
+            exchangeRate: inrRate,
+            chargedCurrency: 'INR',
+            chargedAmount: inrAmount,
           },
         ],
         { session }

@@ -34,6 +34,7 @@ function clearCallTimeout(callId: string) {
 export default (socket: AuthenticatedSocket, io: Server) => {
   const callService = Container.get(CallService);
   const giftService = Container.get(GiftService);
+  const randomMatchService = Container.get(RandomMatchService);
 
   if (!socket.user) {
     return;
@@ -111,7 +112,20 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      clearCallTimeout(callId.toString().trim());
+      const cleanCallId = callId.toString().trim();
+      if (randomMatchService.isBroadcastSession(cleanCallId)) {
+        const result = await randomMatchService.acceptRandomCall(userId, cleanCallId, io);
+        if (!result.success) {
+          emitSocketError(socket, 'accept_call', result.message || 'Call already accepted by another host', 'Match Failed', 'ALREADY_ACCEPTED', callback);
+          return;
+        }
+        if (typeof callback === 'function') {
+          callback({ success: true, type: 'SUCCESS', event: 'accept_call', data: result.data });
+        }
+        return;
+      }
+
+      clearCallTimeout(cleanCallId);
 
       const call = await callService.acceptCall(userId, callId);
       const callerId = ((call.callerId as any)?._id || call.callerId).toString();
@@ -143,7 +157,16 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         return;
       }
 
-      clearCallTimeout(callId.toString().trim());
+      const cleanCallId = callId.toString().trim();
+      if (randomMatchService.isBroadcastSession(cleanCallId)) {
+        await randomMatchService.rejectRandomCall(userId, cleanCallId, io);
+        if (typeof callback === 'function') {
+          callback({ success: true, type: 'SUCCESS', event: 'reject_call' });
+        }
+        return;
+      }
+
+      clearCallTimeout(cleanCallId);
 
       const call = await callService.rejectCall(userId, callId);
 

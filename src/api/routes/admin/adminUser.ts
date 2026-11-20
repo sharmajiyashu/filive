@@ -49,6 +49,20 @@ export default (router: Router) => {
   };
 
   /**
+   * Helper to check if the caller is a Super Admin
+   */
+  const isCallerSuperAdmin = async (userId?: string): Promise<boolean> => {
+    if (!userId) return false;
+    const caller = await User.findById(userId).populate('adminRoleId').lean();
+    if (!caller) return false;
+    return (
+      caller.email === 'admin@example.com' ||
+      caller.email === 'filive@gmail.com' ||
+      (caller.adminRoleId as any)?.name === 'SUPER_ADMIN'
+    );
+  };
+
+  /**
    * @swagger
    * /admin/adminUser/get:
    *   post:
@@ -141,8 +155,13 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, new Error(`User with email "${cleanedEmail}" already exists`), 400);
       }
 
+      const callerSuperAdmin = await isCallerSuperAdmin(req.user?.id);
+
       let targetRoleId = roleId || adminRoleId;
       if (targetRoleId) {
+        if (!callerSuperAdmin) {
+          return ResponseWrapper.error(res, new Error('Only Super Admin can assign staff roles'), 403);
+        }
         const role = await AdminRole.findById(targetRoleId);
         if (!role) {
           return ResponseWrapper.error(res, new Error('Specified admin role was not found'), 404);
@@ -237,6 +256,16 @@ export default (router: Router) => {
 
       const targetRoleId = roleId !== undefined ? roleId : adminRoleId;
       if (targetRoleId !== undefined) {
+        const currentRoleStr = user.adminRoleId ? String(user.adminRoleId) : '';
+        const targetRoleStr = targetRoleId ? String(targetRoleId) : '';
+
+        if (currentRoleStr !== targetRoleStr) {
+          const callerSuperAdmin = await isCallerSuperAdmin(req.user?.id);
+          if (!callerSuperAdmin) {
+            return ResponseWrapper.error(res, new Error('Only Super Admin can assign or change staff roles'), 403);
+          }
+        }
+
         if (targetRoleId && targetRoleId !== '') {
           const role = await AdminRole.findById(targetRoleId);
           if (!role) {
@@ -336,6 +365,58 @@ export default (router: Router) => {
       return ResponseWrapper.error(res, error);
     }
   };
+
+  /**
+   * @swagger
+   * /admin/adminUser/password:
+   *   put:
+   *     summary: Reset password for any sub-admin staff user from admin panel
+   *     tags: [Admin - Staff Users]
+   */
+  const resetStaffPasswordHandler = async (req: Request, res: Response) => {
+    try {
+      const targetUserId = req.params.id || req.body.userId || req.body.id || req.body._id;
+      const { newPassword, password } = req.body;
+      const passToSet = (newPassword || password || '').trim();
+
+      if (!targetUserId) {
+        return ResponseWrapper.error(res, new Error('Staff User ID is required'), 400);
+      }
+      if (!passToSet || passToSet.length < 6) {
+        return ResponseWrapper.error(res, new Error('Password of at least 6 characters is required'), 400);
+      }
+
+      const targetUser = await User.findById(targetUserId).populate('adminRoleId');
+      if (!targetUser) {
+        return ResponseWrapper.error(res, new Error('Staff user not found'), 404);
+      }
+
+      const callerSuperAdmin = await isCallerSuperAdmin(req.user?.id);
+      const isTargetSuperAdmin =
+        targetUser.email === 'admin@example.com' ||
+        targetUser.email === 'filive@gmail.com' ||
+        (targetUser.adminRoleId as any)?.name === 'SUPER_ADMIN';
+
+      if (isTargetSuperAdmin && !callerSuperAdmin) {
+        return ResponseWrapper.error(res, new Error('Only Super Admin can reset Super Admin passwords'), 403);
+      }
+
+      targetUser.password = await bcrypt.hash(passToSet, 10);
+      await targetUser.save();
+
+      return ResponseWrapper.success(
+        res,
+        { message: 'Staff user password updated successfully' },
+        'Staff user password updated successfully'
+      );
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  };
+
+  adminUserRouter.put('/password', resetStaffPasswordHandler);
+  adminUserRouter.put('/:id/password', resetStaffPasswordHandler);
+  adminUserRouter.post('/reset-password', resetStaffPasswordHandler);
 
   adminUserRouter.delete('/delete/:id', deleteAdminUserHandler);
   adminUserRouter.delete('/:id', deleteAdminUserHandler);

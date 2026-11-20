@@ -83,6 +83,12 @@ export default (router: Router) => {
         console.warn('[appSetting] Error populating active banners:', bannerErr);
       }
 
+      if (settingsMap.recharge_service_min_level === undefined || settingsMap.recharge_service_min_level === null) {
+        settingsMap.recharge_service_min_level = 2;
+      } else {
+        settingsMap.recharge_service_min_level = Number(settingsMap.recharge_service_min_level);
+      }
+
       const result = {
         settings: settingsMap,
         countries,
