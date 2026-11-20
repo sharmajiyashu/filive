@@ -354,6 +354,24 @@ export class HostFeedService {
     }
 
     // 3. Base eligibility query (safe against missing/null fields in DB)
+    const callEligibility = callType === 'voice'
+      ? {
+          $or: [
+            { enableVoiceCall: true },
+            { voiceCallPrice: { $gt: 0 } },
+            { audioCallChargePerMinute: { $gt: 0 } },
+            { enableVideoCall: true },
+          ],
+        }
+      : {
+          $or: [
+            { enableVideoCall: true },
+            { videoCallPrice: { $gt: 0 } },
+            { videoCallChargePerMinute: { $gt: 0 } },
+            { enableVoiceCall: true },
+          ],
+        };
+
     const baseQuery: any = {
       _id: { $nin: excludedIds },
       userRole: { $ne: 'admin' },
@@ -361,13 +379,8 @@ export class HostFeedService {
       videoVerificationStatus: 'approved',
       isBlocked: { $ne: true },
       isDeleted: { $ne: true },
+      ...callEligibility,
     };
-
-    if (callType === 'voice') {
-      baseQuery.enableVoiceCall = true;
-    } else {
-      baseQuery.enableVideoCall = true;
-    }
 
     // Country match constraint using comprehensive resolver
     let countryFilter: any = null;
@@ -382,8 +395,18 @@ export class HostFeedService {
     let totalMatching = await User.countDocuments(baseQuery);
     let queryToExecute = baseQuery;
 
-    // If same country yielded 0 hosts, fallback to all female verified hosts (without country restriction)
-    // so the host list is never empty!
+    // 1. If same country yielded 0 hosts with strict verification, check same country with relaxed verification first!
+    if (totalMatching === 0 && countryFilter) {
+      const relaxedCountryQuery = { ...baseQuery };
+      delete relaxedCountryQuery.videoVerificationStatus;
+      const relaxedCountryCount = await User.countDocuments(relaxedCountryQuery);
+      if (relaxedCountryCount > 0) {
+        queryToExecute = relaxedCountryQuery;
+        totalMatching = relaxedCountryCount;
+      }
+    }
+
+    // 2. If STILL 0 matching in same country, fallback to global hosts so Meet/Talk is never blank
     if (totalMatching === 0 && countryFilter) {
       const fallbackQuery = { ...baseQuery };
       delete fallbackQuery.$and;
@@ -391,10 +414,17 @@ export class HostFeedService {
       if (countWithoutCountry > 0) {
         queryToExecute = fallbackQuery;
         totalMatching = countWithoutCountry;
+      } else {
+        delete fallbackQuery.videoVerificationStatus;
+        const relaxedGlobalCount = await User.countDocuments(fallbackQuery);
+        if (relaxedGlobalCount > 0) {
+          queryToExecute = fallbackQuery;
+          totalMatching = relaxedGlobalCount;
+        }
       }
     }
 
-    // If still 0 matching (e.g. in test environment where videoVerification is pending or not set)
+    // 3. If still 0 matching globally with strict verification, relax verification
     if (totalMatching === 0) {
       const relaxedQuery = { ...queryToExecute };
       delete relaxedQuery.videoVerificationStatus;
@@ -436,12 +466,16 @@ export class HostFeedService {
 
         const voiceCallPrice = Number(h.voiceCallPrice || h.audioCallChargePerMinute || 0);
         const videoCallPrice = Number(h.videoCallPrice || h.videoCallChargePerMinute || 0);
+        const hasVoice = Boolean(h.enableVoiceCall !== false && (h.enableVoiceCall === true || voiceCallPrice > 0));
+        const hasVideo = Boolean(h.enableVideoCall !== false && (h.enableVideoCall === true || videoCallPrice > 0));
 
         // Asynchronously log impression
         this.logImpressionAsync(h._id, callerId, feedType, skip + index + 1, targetCountry);
 
         return attachUserCountryAndAge({
           ...h,
+          enableVoiceCall: hasVoice,
+          enableVideoCall: hasVideo,
           isOnline,
           isBusy,
           isLive,
