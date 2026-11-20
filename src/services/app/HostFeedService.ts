@@ -246,7 +246,8 @@ export class HostFeedService {
       Room.find({
         hostId: { $in: hostObjectIds },
         status: 'live',
-      }).select('hostId status'),
+        roomType: 'livestream', // Strictly livestream makes a host live
+      }).select('hostId status channelName'),
     ]);
 
     const busySet = new Set<string>();
@@ -257,14 +258,26 @@ export class HostFeedService {
       if (c.receiverId) busySet.add(c.receiverId.toString());
     });
 
-    activeRooms.forEach((r: any) => {
-      if (r.hostId) liveSet.add(r.hostId.toString());
-    });
-
     let io: any;
     try {
       io = Container.get('socket');
     } catch (_) {}
+
+    activeRooms.forEach((r: any) => {
+      if (r.hostId) {
+        const hId = r.hostId.toString();
+        const chName = r.channelName || '';
+        const roomSockets = io && chName ? (
+          (io.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
+          (io.sockets?.adapter?.rooms?.get(`live_${chName}`)?.size || 0) +
+          (io.sockets?.adapter?.rooms?.get(chName)?.size || 0)
+        ) : 0;
+        const userSocketSize = io?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
+        if (userSocketSize > 0 && roomSockets > 0) {
+          liveSet.add(hId);
+        }
+      }
+    });
 
     return { busySet, liveSet, io };
   }

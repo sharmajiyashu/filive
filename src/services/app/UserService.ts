@@ -166,7 +166,8 @@ export class UserService {
       Room.find({
         hostId: { $in: userObjectIds },
         status: 'live',
-      }).select('hostId status'),
+        roomType: 'livestream', // Strictly livestream makes a host live
+      }).select('hostId status channelName'),
     ]);
 
     const busyUserSet = new Set<string>();
@@ -179,19 +180,39 @@ export class UserService {
 
     activeRooms.forEach((room: any) => {
       if (room.hostId) {
-        liveUserSet.add(room.hostId.toString());
+        const hId = room.hostId.toString();
+        const chName = room.channelName || '';
+        // Host is ONLY live if their socket is genuinely connected inside the room
+        const roomSockets = ioInstance && chName ? (
+          (ioInstance.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
+          (ioInstance.sockets?.adapter?.rooms?.get(`live_${chName}`)?.size || 0) +
+          (ioInstance.sockets?.adapter?.rooms?.get(chName)?.size || 0)
+        ) : 0;
+        const userSocketSize = ioInstance?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
+        if (userSocketSize > 0 && roomSockets > 0) {
+          liveUserSet.add(hId);
+        }
       }
     });
 
     const userPartyRooms = await Room.find({
       hostId: { $in: userObjectIds },
-      roomType: 'party_room'
-    }).sort({ status: -1, createdAt: -1 });
+      roomType: 'party_room',
+      status: 'live', // Only live party rooms
+    }).sort({ updatedAt: -1, createdAt: -1 });
 
     const partyRoomByHostId = new Map<string, any>();
     userPartyRooms.forEach((r: any) => {
       const hId = r.hostId?.toString();
-      if (hId && !partyRoomByHostId.has(hId)) {
+      if (!hId || partyRoomByHostId.has(hId)) return;
+      const chName = r.channelName || '';
+      const roomSockets = ioInstance && chName ? (
+        (ioInstance.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
+        (ioInstance.sockets?.adapter?.rooms?.get(chName)?.size || 0)
+      ) : 0;
+      const userSocketSize = ioInstance?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
+      // Only attach party room if room socket is live AND host is online
+      if (userSocketSize > 0 && roomSockets > 0) {
         partyRoomByHostId.set(hId, r);
       }
     });
