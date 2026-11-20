@@ -11,6 +11,7 @@ import HostImpression from '../../models/HostImpression';
 import Container from 'typedi';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
 import { resolveCountryUserFilter, isAllCountries } from '../../utils/countryFilter';
+import { isHostInRoom } from '../../utils/roomPresence';
 import AppLogger from '../../api/loaders/logger';
 
 export interface HostRankingConfig {
@@ -267,13 +268,7 @@ export class HostFeedService {
       if (r.hostId) {
         const hId = r.hostId.toString();
         const chName = r.channelName || '';
-        const roomSockets = io && chName ? (
-          (io.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
-          (io.sockets?.adapter?.rooms?.get(`live_${chName}`)?.size || 0) +
-          (io.sockets?.adapter?.rooms?.get(chName)?.size || 0)
-        ) : 0;
-        const userSocketSize = io?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
-        if (userSocketSize > 0 && roomSockets > 0) {
+        if (isHostInRoom(hId, chName, io)) {
           liveSet.add(hId);
         }
       }
@@ -445,6 +440,28 @@ export class HostFeedService {
       if (relaxedCount > 0) {
         queryToExecute = relaxedQuery;
         totalMatching = relaxedCount;
+      }
+    }
+
+    // 4. If still 0 matching, relax gender and call price constraints completely (like Popular feed)
+    if (totalMatching === 0) {
+      const allUsersQuery: any = {
+        _id: { $nin: excludedIds },
+        userRole: { $ne: 'admin' },
+        isBlocked: { $ne: true },
+        isDeleted: { $ne: true },
+      };
+      if (countryFilter) {
+        allUsersQuery.$and = [countryFilter];
+      }
+      let allUsersCount = await User.countDocuments(allUsersQuery);
+      if (allUsersCount === 0 && countryFilter) {
+        delete allUsersQuery.$and;
+        allUsersCount = await User.countDocuments(allUsersQuery);
+      }
+      if (allUsersCount > 0) {
+        queryToExecute = allUsersQuery;
+        totalMatching = allUsersCount;
       }
     }
 

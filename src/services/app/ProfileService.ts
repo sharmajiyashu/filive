@@ -23,6 +23,7 @@ import { ensureUserReferralCode, getReferralDeepLink } from '../../utils/referra
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
 import { resolveCountryFromSignals } from '../../utils/phoneCountry';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
+import { isHostInRoom } from '../../utils/roomPresence';
 
 @Service()
 export class ProfileService {
@@ -171,12 +172,20 @@ export class ProfileService {
       ? await Room.findOne({ hostId: userObjId, status: 'live', roomType: 'livestream' }).populate('roomPhoto')
       : null;
 
+    const isLiveStreamActive = activeLive && isHostInRoom(userId, activeLive.channelName);
+    const resolvedLiveStream = isLiveStreamActive ? activeLive : null;
+
     const { LiveStreamService } = await import('./LiveStreamService');
     const liveStreamService = Container.get(LiveStreamService);
     const activeParty = await liveStreamService.getActiveRoomForHost(userId, 'party_room');
     if (activeParty) {
       activeParty.isMine = true;
     }
+
+    const isPartyActive = activeParty &&
+      (activeParty.status === 'live' || (activeParty as any).isLive === true) &&
+      isHostInRoom(userId, activeParty.channelName);
+    const resolvedPartyRoom = isPartyActive ? activeParty : null;
 
     return {
       ...profileData,
@@ -210,10 +219,10 @@ export class ProfileService {
       becomeHostMessage,
       family,
       familyRole,
-      isLive: !!activeLive,
-      liveStream: activeLive ? (typeof (activeLive as any).toObject === 'function' ? (activeLive as any).toObject() : activeLive) : null,
-      partyRoom: activeParty,
-      activePartyRoom: activeParty,
+      isLive: Boolean(isLiveStreamActive || isPartyActive),
+      liveStream: resolvedLiveStream ? (typeof (resolvedLiveStream as any).toObject === 'function' ? (resolvedLiveStream as any).toObject() : resolvedLiveStream) : null,
+      partyRoom: resolvedPartyRoom,
+      activePartyRoom: resolvedPartyRoom,
     };
   }
 

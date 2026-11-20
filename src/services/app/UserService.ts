@@ -20,6 +20,7 @@ import { LevelService } from './LevelService';
 import { withDefaultAlbum } from './profileDefaults';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
 import { resolveCountryUserFilter } from '../../utils/countryFilter';
+import { isHostInRoom } from '../../utils/roomPresence';
 
 @Service()
 export class UserService {
@@ -183,13 +184,7 @@ export class UserService {
         const hId = room.hostId.toString();
         const chName = room.channelName || '';
         // Host is ONLY live if their socket is genuinely connected inside the room
-        const roomSockets = ioInstance && chName ? (
-          (ioInstance.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
-          (ioInstance.sockets?.adapter?.rooms?.get(`live_${chName}`)?.size || 0) +
-          (ioInstance.sockets?.adapter?.rooms?.get(chName)?.size || 0)
-        ) : 0;
-        const userSocketSize = ioInstance?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
-        if (userSocketSize > 0 && roomSockets > 0) {
+        if (isHostInRoom(hId, chName, ioInstance)) {
           liveUserSet.add(hId);
         }
       }
@@ -206,13 +201,8 @@ export class UserService {
       const hId = r.hostId?.toString();
       if (!hId || partyRoomByHostId.has(hId)) return;
       const chName = r.channelName || '';
-      const roomSockets = ioInstance && chName ? (
-        (ioInstance.sockets?.adapter?.rooms?.get(`room_${chName}`)?.size || 0) +
-        (ioInstance.sockets?.adapter?.rooms?.get(chName)?.size || 0)
-      ) : 0;
-      const userSocketSize = ioInstance?.sockets?.adapter?.rooms?.get(`user_${hId}`)?.size || 0;
-      // Only attach party room if room socket is live AND host is online
-      if (userSocketSize > 0 && roomSockets > 0) {
+      // Only attach party room if host is genuinely connected inside the room socket
+      if (isHostInRoom(hId, chName, ioInstance)) {
         partyRoomByHostId.set(hId, r);
       }
     });
@@ -493,6 +483,18 @@ export class UserService {
       ? await Room.findOne({ hostId: userObjId, status: 'live', roomType: 'livestream' }).populate('roomPhoto')
       : null;
 
+    let ioInstance: any;
+    try {
+      ioInstance = Container.get('socket');
+    } catch (_) { }
+
+    const uidStr = user._id.toString();
+    const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
+    const isOnline = hasSocket;
+
+    const isLiveStreamActive = activeLive && isHostInRoom(uidStr, activeLive.channelName, ioInstance);
+    const resolvedLiveStream = isLiveStreamActive ? activeLive : null;
+
     const { LiveStreamService } = await import('./LiveStreamService');
     const liveStreamService = Container.get(LiveStreamService);
     const activeParty = await liveStreamService.getActiveRoomForHost(user._id.toString(), 'party_room');
@@ -512,23 +514,16 @@ export class UserService {
       weeklyRank = null;
     }
 
-    let ioInstance: any;
-    try {
-      ioInstance = Container.get('socket');
-    } catch (_) { }
-
-    const uidStr = user._id.toString();
-    const hasSocket = ioInstance?.sockets?.adapter?.rooms?.get(`user_${uidStr}`)?.size > 0;
-    const isOnline = hasSocket;
-
     // Check if the host is genuinely live in party room
     let resolvedPartyRoom: any = null;
     if (activeParty && (activeParty.status === 'live' || (activeParty as any).isLive === true)) {
-      resolvedPartyRoom = {
-        ...activeParty,
-        status: 'live',
-        isLive: true,
-      };
+      if (isHostInRoom(uidStr, activeParty.channelName, ioInstance)) {
+        resolvedPartyRoom = {
+          ...activeParty,
+          status: 'live',
+          isLive: true,
+        };
+      }
     }
 
     // Fetch user's family membership details
@@ -574,7 +569,8 @@ export class UserService {
       ]
     }).select('_id');
     const isBusy = isOnline && !!activeCall;
-    const userStatus = !isOnline ? 'offline' : (isBusy ? 'busy' : 'online');
+    const isLiveNow = Boolean(resolvedLiveStream || resolvedPartyRoom);
+    const userStatus = !isOnline ? 'offline' : (isLiveNow ? 'live' : (isBusy ? 'busy' : 'online'));
 
     const userObj = await attachUserCountryAndAge((formattedUser || user.toObject()));
     userObj.album = await withDefaultAlbum(userObj.album);
@@ -619,8 +615,8 @@ export class UserService {
         isChatCreated,
         chatId,
         isPinned,
-        isLive: !!activeLive,
-        liveStream: activeLive ? activeLive.toObject() : null,
+        isLive: isLiveNow,
+        liveStream: resolvedLiveStream ? (resolvedLiveStream.toObject ? resolvedLiveStream.toObject() : resolvedLiveStream) : null,
         partyRoom: resolvedPartyRoom,
         activePartyRoom: resolvedPartyRoom,
         followedLiveStreams,
@@ -646,8 +642,8 @@ export class UserService {
       enableVideoCall,
       family,
       familyRole,
-      isLive: !!activeLive,
-      liveStream: activeLive ? activeLive.toObject() : null,
+      isLive: isLiveNow,
+      liveStream: resolvedLiveStream ? (resolvedLiveStream.toObject ? resolvedLiveStream.toObject() : resolvedLiveStream) : null,
       partyRoom: resolvedPartyRoom,
       activePartyRoom: resolvedPartyRoom,
       groups: groupChats,
