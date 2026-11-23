@@ -31,7 +31,7 @@ export async function getCachedRoleSettings(): Promise<Record<string, string>> {
   try {
     const AppSetting = mongoose.model('AppSetting');
     const docs = await AppSetting.find({
-      key: { $in: ['host_role_image', 'agency_role_image', 'coin_trader_role_image', 'bd_role_image'] }
+      key: { $in: ['host_role_image', 'agency_role_image', 'coin_trader_role_image', 'bd_role_image', 'cs_role_image', 'customer_service_role_image'] }
     }).lean();
     const map: Record<string, string> = {};
     for (const d of docs) {
@@ -239,7 +239,8 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
 
   // Role Tag Fallback: If user has no active store frame equipped, fall back to configured Role Image from App Settings
   const roleSettings = await getCachedRoleSettings();
-  const bdRoleImage = roleSettings.bd_role_image || '';
+  const csRoleImage = roleSettings.cs_role_image || roleSettings.customer_service_role_image || roleSettings.bd_role_image || '';
+  const bdRoleImage = csRoleImage;
   const agencyRoleImage = roleSettings.agency_role_image || '';
   const coinTraderRoleImage = roleSettings.coin_trader_role_image || '';
   const hostRoleImage = roleSettings.host_role_image || '';
@@ -248,27 +249,27 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
   let userRoleLabel: string = '';
   let roleImageUrl: string = '';
 
-  let isBd = Boolean(rawUser.isBd);
+  let isCs = Boolean(rawUser.isCustomerService || rawUser.isCs || (rawUser as any).isBd || rawUser.userRole === 'customer_service' || rawUser.userRole === 'cs');
   let isCoinTrader = Boolean(rawUser.isCoinseller);
   let isAgency = Boolean(rawUser.ownedAgency || rawUser.agency || rawUser.isAgency);
   let isHost = Boolean(rawUser.isBecomeHost || rawUser.isAgencyHost || rawUser.userRole === 'host');
 
-  if (!isBd && !isAgency && !isHost && userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
+  if (!isCs && !isAgency && !isHost && userIdStr && mongoose.Types.ObjectId.isValid(userIdStr)) {
     try {
       const AgencyModel = mongoose.model('Agency');
       const [bdAgencyExists, creatorAgencyExists] = await Promise.all([
-        bdRoleImage ? AgencyModel.exists({ bdId: new mongoose.Types.ObjectId(userIdStr) }) : false,
+        csRoleImage ? AgencyModel.exists({ bdId: new mongoose.Types.ObjectId(userIdStr) }) : false,
         agencyRoleImage ? AgencyModel.exists({ creatorId: new mongoose.Types.ObjectId(userIdStr), isVerified: true, status: 'approved' }) : false,
       ]);
-      if (bdAgencyExists) isBd = true;
+      if (bdAgencyExists) isCs = true;
       if (creatorAgencyExists) isAgency = true;
     } catch { }
   }
 
-  if (isBd && bdRoleImage) {
-    userRoleTag = 'bd';
-    userRoleLabel = 'BD';
-    roleImageUrl = bdRoleImage;
+  if (isCs && csRoleImage) {
+    userRoleTag = 'cs';
+    userRoleLabel = 'Customer Service';
+    roleImageUrl = csRoleImage;
   } else if (isAgency && agencyRoleImage) {
     userRoleTag = 'agency';
     userRoleLabel = 'Agency';
@@ -284,12 +285,13 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
   }
 
   if (!activeFrame && roleImageUrl) {
+    const isSvga = roleImageUrl.toLowerCase().endsWith('.svga') || roleImageUrl.includes('.svga');
     activeFrame = {
       _id: `role_tag_${userRoleTag}`,
       id: `role_tag_${userRoleTag}`,
       name: `${userRoleLabel} Role Tag`,
       type: 'frame',
-      media: { url: roleImageUrl, type: 'image' },
+      media: { url: roleImageUrl, type: isSvga ? 'svga' : 'image' },
       path: roleImageUrl,
       url: roleImageUrl,
       priceOptions: [],
@@ -305,6 +307,8 @@ export async function formatUserActiveStoreItems(user: any, includePurchasedList
     hostRoleImage,
     agencyRoleImage,
     coinTraderRoleImage,
+    csRoleImage,
+    customerServiceRoleImage: csRoleImage,
     bdRoleImage,
   };
 

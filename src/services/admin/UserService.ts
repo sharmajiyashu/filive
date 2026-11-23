@@ -235,6 +235,14 @@ export class UserService {
         query.isPremium = true;
       } else if (params.category === 'verified') {
         query.videoVerificationStatus = 'approved';
+      } else if (params.category === 'host') {
+        const agencyHostDocs = await AgencyHost.find({ status: 'ACCEPTED' }).select('userId').lean();
+        const hostUserIds = agencyHostDocs.map((h: any) => h.userId);
+        query.$or = [
+          { _id: { $in: hostUserIds } },
+          { videoVerificationStatus: 'approved' },
+          { isVerified: true },
+        ];
       } else if (params.category === 'coinseller') {
         query.isCoinseller = true;
       } else if (params.category === 'normal') {
@@ -321,10 +329,32 @@ export class UserService {
     if (params.role && params.role !== 'all') {
       if (params.role === 'coinseller') {
         query.isCoinseller = true;
+      } else if (params.role === 'host') {
+        const agencyHostDocs = await AgencyHost.find({ status: 'ACCEPTED' }).select('userId').lean();
+        const hostUserIds = agencyHostDocs.map((h: any) => h.userId);
+        query.$or = [
+          { _id: { $in: hostUserIds } },
+          { videoVerificationStatus: 'approved' },
+          { isVerified: true },
+        ];
+      } else if (params.role === 'agency') {
+        const agencyDocs = await Agency.find().select('creatorId').lean();
+        const agencyOwnerIds = agencyDocs.map((a: any) => a.creatorId);
+        query._id = { $in: agencyOwnerIds };
       } else if (params.role === 'admin') {
         query.userRole = 'admin';
       } else if (params.role === 'user') {
-        query.userRole = 'user';
+        const [agencyHostDocs, agencyDocs] = await Promise.all([
+          AgencyHost.find({ status: 'ACCEPTED' }).select('userId').lean(),
+          Agency.find().select('creatorId').lean(),
+        ]);
+        const hostIds = agencyHostDocs.map((h: any) => h.userId);
+        const agencyOwnerIds = agencyDocs.map((a: any) => a.creatorId);
+        query.userRole = { $ne: 'admin' };
+        query.isCoinseller = { $ne: true };
+        query.videoVerificationStatus = { $ne: 'approved' };
+        query.isVerified = { $ne: true };
+        query._id = { $nin: [...hostIds, ...agencyOwnerIds] };
       }
     }
 
@@ -400,6 +430,15 @@ export class UserService {
 
     const levelService = Container.get(LevelService);
 
+    const userIds = users.map((u: any) => u._id);
+    const [agencyHostLinks, ownedAgenciesList] = await Promise.all([
+      AgencyHost.find({ userId: { $in: userIds }, status: 'ACCEPTED' }).select('userId').lean(),
+      Agency.find({ creatorId: { $in: userIds } }).select('creatorId').lean(),
+    ]);
+
+    const activeHostIdsSet = new Set(agencyHostLinks.map((ah: any) => String(ah.userId)));
+    const agencyOwnerIdsSet = new Set(ownedAgenciesList.map((a: any) => String(a.creatorId)));
+
     const populatedUsers = await Promise.all(
       users.map(async (u) => {
         const userObj: any = u;
@@ -430,9 +469,24 @@ export class UserService {
           ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
           : false;
 
-        let roleBadge = 'User';
-        if (userObj.userRole === 'admin') roleBadge = 'Admin';
-        else if (userObj.isCoinseller) roleBadge = 'CoinSeller';
+        const isHost =
+          activeHostIdsSet.has(String(userObj._id)) ||
+          userObj.videoVerificationStatus === 'approved' ||
+          userObj.isVerified === true;
+        const isAgencyOwner = agencyOwnerIdsSet.has(String(userObj._id));
+        const isCoinseller = Boolean(userObj.isCoinseller);
+        const isCustomerService = Boolean(userObj.isCustomerService || userObj.isCs || (userObj as any).isBd);
+        const isAdmin = userObj.userRole === 'admin';
+
+        const roles: string[] = [];
+        if (isAdmin) roles.push('Admin');
+        if (isCoinseller) roles.push('CoinSeller');
+        if (isHost) roles.push('Host');
+        if (isAgencyOwner) roles.push('Agency');
+        if (isCustomerService) roles.push('Customer Service');
+        if (roles.length === 0) roles.push('User');
+
+        const roleBadge = roles.join(', ');
 
         const levelNum = typeof level === 'number' ? level : (typeof levelInfo?.currentLevel?.levelNumber === 'number' ? levelInfo.currentLevel.levelNumber : 0);
         const levelNameVal = levelInfo?.currentLevel?.name || levelInfo?.name;
@@ -468,6 +522,9 @@ export class UserService {
           authProvider,
           loginType,
           roleBadge,
+          roles,
+          isHost,
+          isAgencyOwner,
           userType: userObj.isPremium ? 'VIP' : 'Normal',
           status: isOnline ? 'Online' : 'Offline',
           isOnline,
@@ -712,6 +769,25 @@ export class UserService {
       user.isVerified = updateData.isVerified === true || updateData.isVerified === 'true';
     }
 
+    if (updateData.isHost !== undefined) {
+      const isH = updateData.isHost === true || updateData.isHost === 'true';
+      user.isVerified = isH;
+      if (isH) {
+        user.videoVerificationStatus = 'approved';
+      } else {
+        if (user.videoVerificationStatus === 'approved') {
+          user.videoVerificationStatus = 'none';
+        }
+      }
+    }
+
+    if (updateData.isCustomerService !== undefined || updateData.isCs !== undefined) {
+      const isCsVal = updateData.isCustomerService === true || updateData.isCustomerService === 'true' ||
+                      updateData.isCs === true || updateData.isCs === 'true';
+      (user as any).isCustomerService = isCsVal;
+      (user as any).isCs = isCsVal;
+    }
+
     if (updateData.voiceCallPrice !== undefined && !Number.isNaN(Number(updateData.voiceCallPrice))) {
       user.voiceCallPrice = Math.max(0, Number(updateData.voiceCallPrice));
     }
@@ -723,6 +799,15 @@ export class UserService {
     if (updateData.userRole !== undefined) {
       if (['user', 'admin'].includes(updateData.userRole)) {
         user.userRole = updateData.userRole;
+      } else if (updateData.userRole === 'coinseller') {
+        user.userRole = 'user';
+        user.isCoinseller = true;
+        if (!user.coinsellerJoinedAt) user.coinsellerJoinedAt = new Date();
+        user.isCoinsellerActive = true;
+      } else if (updateData.userRole === 'host') {
+        user.userRole = 'user';
+        user.isVerified = true;
+        user.videoVerificationStatus = 'approved';
       }
     }
 
@@ -794,7 +879,7 @@ export class UserService {
         UserVisitor.deleteMany({ $or: [{ userId: user._id }, { visitorId: user._id }] }),
         Block.deleteMany({ $or: [{ blockerId: user._id }, { blockedId: user._id }] }),
         FamilyMember.deleteMany({ userId: user._id }),
-      ]).catch(() => {});
+      ]).catch(() => { });
       return { success: true, message: 'User permanently deleted' };
     } else {
       user.isDeleted = true;

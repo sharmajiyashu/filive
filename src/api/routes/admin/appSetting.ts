@@ -59,6 +59,8 @@ export default (router: Router) => {
       { name: 'agency_role_image', maxCount: 1 },
       { name: 'coin_trader_role_image', maxCount: 1 },
       { name: 'bd_role_image', maxCount: 1 },
+      { name: 'cs_role_image', maxCount: 1 },
+      { name: 'customer_service_role_image', maxCount: 1 },
     ]),
     async (req: any, res: Response) => {
       try {
@@ -151,6 +153,8 @@ export default (router: Router) => {
           'agency_role_image',
           'coin_trader_role_image',
           'bd_role_image',
+          'cs_role_image',
+          'customer_service_role_image',
         ];
         for (const fieldName of roleImageFields) {
           const files = req.files?.[fieldName];
@@ -163,6 +167,18 @@ export default (router: Router) => {
               payload[fieldName] = media.url;
             }
           }
+        }
+
+        // Keep CS and legacy BD role image synchronized
+        if (payload.cs_role_image) {
+          payload.bd_role_image = payload.cs_role_image;
+          payload.customer_service_role_image = payload.cs_role_image;
+        } else if (payload.customer_service_role_image) {
+          payload.cs_role_image = payload.customer_service_role_image;
+          payload.bd_role_image = payload.customer_service_role_image;
+        } else if (payload.bd_role_image) {
+          payload.cs_role_image = payload.bd_role_image;
+          payload.customer_service_role_image = payload.bd_role_image;
         }
 
         if (payload.call_price_tiers !== undefined) {

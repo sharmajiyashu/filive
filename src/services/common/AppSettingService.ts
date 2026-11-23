@@ -57,6 +57,8 @@ export class AppSettingService {
     agency_role_image: '',
     coin_trader_role_image: '',
     bd_role_image: '',
+    cs_role_image: '',
+    customer_service_role_image: '',
     // About Us & Legal Settings
     about_us_title: 'About FiLive',
     about_us_content: 'Welcome to FiLive – your premier live streaming, voice party, and social entertainment platform. Connect with talented creators, make real-time friends, participate in thrilling live rooms, and share your memorable moments across the globe.',

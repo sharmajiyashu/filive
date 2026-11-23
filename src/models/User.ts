@@ -77,6 +77,8 @@ export interface IUser extends Document {
   activeTheme?: mongoose.Types.ObjectId;
   activeRide?: mongoose.Types.ObjectId;
   isBd: boolean;
+  isCustomerService?: boolean;
+  isCs?: boolean;
   isCoinseller: boolean;
   isCoinsellerActive: boolean;
   coinSellerCoins: number;
@@ -235,6 +237,8 @@ const UserSchema: Schema = new Schema(
     activeTheme: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     activeRide: { type: Schema.Types.ObjectId, ref: 'StoreItem' },
     isBd: { type: Boolean, default: false },
+    isCustomerService: { type: Boolean, default: false },
+    isCs: { type: Boolean, default: false },
     isCoinseller: { type: Boolean, default: false },
     isCoinsellerActive: { type: Boolean, default: true },
     coinSellerCoins: { type: Number, default: 0 },
