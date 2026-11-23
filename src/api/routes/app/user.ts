@@ -646,13 +646,14 @@ export default (router: Router) => {
   appRouter.post('/fcm-token', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
-      const { token, fcmToken, deviceType } = req.body || {};
+      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
       const targetToken = token || fcmToken;
       if (!targetToken) {
         throw new Error('FCM token is required in request body');
       }
 
-      const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+      const shouldWelcome = Boolean(sendWelcome || isLogin);
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
       return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
@@ -666,13 +667,14 @@ export default (router: Router) => {
   appRouter.put('/fcm-token', async (req: any, res: Response) => {
     try {
       const userId = req.user.id;
-      const { token, fcmToken, deviceType } = req.body || {};
+      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
       const targetToken = token || fcmToken;
       if (!targetToken) {
         throw new Error('FCM token is required in request body');
       }
 
-      const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+      const shouldWelcome = Boolean(sendWelcome || isLogin);
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
       return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

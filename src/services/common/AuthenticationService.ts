@@ -658,6 +658,21 @@ export class AuthenticationService {
             }
         }
 
+        // Send in-app welcome message to user's official chat
+        try {
+            const { ChatService } = require('../app/ChatService');
+            const chatService: any = Container.get(ChatService);
+            const displayName = user.name || 'Friend';
+            chatService.sendSystemMessage(
+                user._id.toString(),
+                `Welcome back, ${displayName}! 👋`,
+                `Glad to see you back on FiLive! Join your favorite live rooms and connect with friends.`,
+                { type: 'welcome_back' }
+            ).catch((e: any) => AppLogger.warn(`[AuthenticationService] System welcome chat skipped: ${e?.message}`));
+        } catch (e: any) {
+            AppLogger.warn(`[AuthenticationService] Could not trigger system welcome: ${e?.message}`);
+        }
+
         const token = this.generateToken(user._id.toString(), user.userRole);
 
         const followersCount = await Follow.countDocuments({ followingId: user._id, status: 'accepted' });

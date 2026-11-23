@@ -15,6 +15,7 @@ import Country from '../../models/Country';
 import mongoose from 'mongoose';
 import { ensureUserReferralCode } from '../../utils/referral';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
+import { FirebasePushService } from '../common/FirebasePushService';
 
 import { LevelService } from './LevelService';
 import { withDefaultAlbum } from './profileDefaults';
@@ -987,7 +988,8 @@ export class UserService {
   public async registerFcmToken(
     userId: string,
     token: string,
-    deviceType: 'android' | 'ios' | 'web' = 'android'
+    deviceType: 'android' | 'ios' | 'web' = 'android',
+    sendWelcome: boolean = false
   ) {
     if (!token || typeof token !== 'string' || token.trim() === '') {
       throw new Error('Valid FCM token is required');
@@ -1027,6 +1029,24 @@ export class UserService {
     }
 
     await user.save();
+
+    // Send Welcome back message/push notification if this registration is part of login
+    if (sendWelcome) {
+      try {
+        const pushService = Container.get(FirebasePushService);
+        const displayName = user.name || 'Friend';
+        await pushService.notifyUser(userId, {
+          title: `Welcome back, ${displayName}! 👋`,
+          body: `Glad to see you back on FiLive! Join your favorite live rooms and connect with friends.`,
+          data: {
+            type: 'welcome_back',
+            userId: userId,
+          },
+        });
+      } catch (pushErr: any) {
+        console.warn(`[UserService] Welcome FCM push delivery skipped/failed: ${pushErr?.message}`);
+      }
+    }
 
     return {
       success: true,

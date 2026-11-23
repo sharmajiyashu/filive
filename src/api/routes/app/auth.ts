@@ -444,13 +444,14 @@ export default (router: Router) => {
     router.post('/auth/fcm-token', appAuthMiddleware, async (req: Request, res: Response) => {
         try {
             const userId = req.user?.id;
-            const { token, fcmToken, deviceType } = req.body || {};
+            const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
             const targetToken = token || fcmToken;
             if (!targetToken) {
                 return ResponseWrapper.error(res, 'FCM token is required', 400);
             }
             const userService = Container.get(UserService);
-            const result = await userService.registerFcmToken(userId, targetToken, deviceType);
+            const shouldWelcome = Boolean(sendWelcome || isLogin);
+            const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
             return ResponseWrapper.success(res, result, result.message);
         } catch (error: any) {
             return ResponseWrapper.error(res, error);
