@@ -11,6 +11,7 @@ export interface IUser extends Document {
   mobile?: string;
   phoneExt?: string;
   whatsapp?: string;
+  whatsappCountryCode?: string;
   userRole: 'user' | 'admin';
   bio?: string;
   otp?: string;
@@ -82,6 +83,8 @@ export interface IUser extends Document {
   securityDeposit?: number;
   coinsellerJoinedAt?: Date;
   coinsellerCategory?: 'normal' | 'recharge_service' | 'both';
+  coinsellerCountries?: string[];
+  coinsellerCountryIds?: mongoose.Types.ObjectId[];
   coinsellerRankingExcluded?: boolean;
   coinsellerRankingExcludeReason?: string;
   coinsellerRankingExcludedAt?: Date;
@@ -160,6 +163,7 @@ const UserSchema: Schema = new Schema(
     mobile: { type: String, unique: true, sparse: true },
     phoneExt: { type: String },
     whatsapp: { type: String },
+    whatsappCountryCode: { type: String },
     userRole: { type: String, enum: ['user', 'admin'], default: 'user' },
     bio: { type: String },
     otp: { type: String },
@@ -237,6 +241,8 @@ const UserSchema: Schema = new Schema(
     securityDeposit: { type: Number, default: 0 },
     coinsellerJoinedAt: { type: Date },
     coinsellerCategory: { type: String, enum: ['normal', 'recharge_service', 'both'], default: 'recharge_service' },
+    coinsellerCountries: [{ type: String }],
+    coinsellerCountryIds: [{ type: Schema.Types.ObjectId, ref: 'Country' }],
     coinsellerRankingExcluded: { type: Boolean, default: false },
     coinsellerRankingExcludeReason: { type: String },
     coinsellerRankingExcludedAt: { type: Date },

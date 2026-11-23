@@ -852,8 +852,14 @@ export class CoinSellerService {
         }
 
         const rawWhatsapp = String(seller.whatsapp || '').trim();
-        const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
-        const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+        const rawCountryCode = String(seller.whatsappCountryCode || '').trim();
+        const cleanCountryCode = rawCountryCode.replace(/\D/g, '');
+        let cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+        let fullWhatsapp = cleanWhatsapp;
+        if (cleanCountryCode && cleanWhatsapp && !cleanWhatsapp.startsWith(cleanCountryCode)) {
+          fullWhatsapp = `${cleanCountryCode}${cleanWhatsapp}`;
+        }
+        const whatsappUrl = fullWhatsapp ? `https://wa.me/${fullWhatsapp}` : '';
 
         let chatId: string | null = null;
         if (params.currentUserId && params.currentUserId !== seller._id.toString()) {
@@ -873,6 +879,9 @@ export class CoinSellerService {
           activeFrame: formatStoreItem(seller.activeFrame),
           mobile: seller.mobile || '',
           whatsapp: seller.whatsapp || '',
+          whatsappCountryCode: seller.whatsappCountryCode || '',
+          coinsellerCountries: seller.coinsellerCountries || [],
+          coinsellerCountryIds: seller.coinsellerCountryIds || [],
           whatsappUrl,
           chatId,
           country: seller.country || countryObj?.name || countryObj?.code || 'IND',
@@ -958,20 +967,25 @@ export class CoinSellerService {
       const userCountryConditions: any[] = [
         { country: { $regex: new RegExp(`^${targetCountry}$`, 'i') } },
         { countryCode: { $regex: new RegExp(`^${targetCountry}$`, 'i') } },
-        { nationality: { $regex: new RegExp(`^${targetCountry}$`, 'i') } }
+        { nationality: { $regex: new RegExp(`^${targetCountry}$`, 'i') } },
+        { coinsellerCountries: { $regex: new RegExp(`^${targetCountry}$`, 'i') } }
       ];
       if (mongoose.Types.ObjectId.isValid(targetCountry)) {
         userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountry) });
+        userCountryConditions.push({ coinsellerCountryIds: new mongoose.Types.ObjectId(targetCountry) });
       }
       if (countryObjIds.length > 0) {
         userCountryConditions.push({ countryId: { $in: countryObjIds } });
+        userCountryConditions.push({ coinsellerCountryIds: { $in: countryObjIds } });
       }
       if (countryNames.length > 0) {
         userCountryConditions.push({ country: { $in: countryNames } });
         userCountryConditions.push({ nationality: { $in: countryNames } });
+        userCountryConditions.push({ coinsellerCountries: { $in: countryNames } });
       }
       if (countryCodes.length > 0) {
         userCountryConditions.push({ countryCode: { $in: countryCodes } });
+        userCountryConditions.push({ coinsellerCountries: { $in: countryCodes } });
       }
       query.$or = userCountryConditions;
     }
@@ -989,9 +1003,10 @@ export class CoinSellerService {
     }
 
     const allSellers = await User.find(query)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinSellerPaymentMethods createdAt activeFrame')
+      .select('_id userId name profileImage mobile whatsapp whatsappCountryCode country countryId coinsellerCountries coinsellerCountryIds coinSellerCoins coinSellerPaymentMethods createdAt activeFrame')
       .populate('profileImage')
       .populate('countryId')
+      .populate('coinsellerCountryIds')
       .populate('coinSellerPaymentMethods.qrCode')
       .populate({ path: 'activeFrame', populate: { path: 'media' } })
       .lean();
@@ -1057,8 +1072,14 @@ export class CoinSellerService {
         }
 
         const rawWhatsapp = String(seller.whatsapp || '').trim();
-        const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
-        const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+        const rawCountryCode = String((seller as any).whatsappCountryCode || '').trim();
+        const cleanCountryCode = rawCountryCode.replace(/\D/g, '');
+        let cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+        let fullWhatsapp = cleanWhatsapp;
+        if (cleanCountryCode && cleanWhatsapp && !cleanWhatsapp.startsWith(cleanCountryCode)) {
+          fullWhatsapp = `${cleanCountryCode}${cleanWhatsapp}`;
+        }
+        const whatsappUrl = fullWhatsapp ? `https://wa.me/${fullWhatsapp}` : '';
 
         let chatId: string | null = null;
         if (params.currentUserId && params.currentUserId !== seller._id.toString()) {
@@ -1087,6 +1108,9 @@ export class CoinSellerService {
           activeFrame: formatStoreItem(seller.activeFrame),
           mobile: seller.mobile || '',
           whatsapp: seller.whatsapp || '',
+          whatsappCountryCode: (seller as any).whatsappCountryCode || '',
+          coinsellerCountries: (seller as any).coinsellerCountries || [],
+          coinsellerCountryIds: (seller as any).coinsellerCountryIds || [],
           whatsappUrl,
           chatId,
           country: seller.country || countryObj?.name || countryObj?.code || 'IND',
@@ -1162,12 +1186,16 @@ export class CoinSellerService {
 
     const stored = prefix && !digits.startsWith(prefix) ? `+${prefix}${digits}` : (digits.startsWith('+') ? digits : `+${digits}`);
     seller.whatsapp = stored;
+    if (prefix) {
+      seller.whatsappCountryCode = `+${prefix}`;
+    }
     await seller.save();
 
     return {
       userId: seller.userId,
       name: seller.name,
       whatsapp: seller.whatsapp,
+      whatsappCountryCode: seller.whatsappCountryCode || (prefix ? `+${prefix}` : null),
       mobile: seller.mobile,
       countryCode: payload.countryCode || null,
       profileImage: seller.profileImage,
@@ -1371,10 +1399,11 @@ export class CoinSellerService {
     }
 
     const seller = await User.findOne(query)
-      .select('userId name mobile whatsapp country countryId profileImage isOnline lastActiveAt isCoinseller coinsellerCategory coinSellerCoins coinSellerPaymentMethods coinsellerJoinedAt createdAt activeFrame')
+      .select('userId name mobile whatsapp whatsappCountryCode country countryId coinsellerCountries coinsellerCountryIds profileImage isOnline lastActiveAt isCoinseller coinsellerCategory coinSellerCoins coinSellerPaymentMethods coinsellerJoinedAt createdAt activeFrame')
       .populate('profileImage')
       .populate('coinSellerPaymentMethods.qrCode')
       .populate('countryId')
+      .populate('coinsellerCountryIds')
       .populate({ path: 'activeFrame', populate: { path: 'media' } });
 
     if (!seller) throw new Error('Seller not found');
@@ -1458,8 +1487,14 @@ export class CoinSellerService {
 
     // 4. WhatsApp link
     const rawWhatsapp = String(seller.whatsapp || '').trim();
-    const cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
-    const whatsappUrl = cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : '';
+    const rawCountryCode = String((seller as any).whatsappCountryCode || '').trim();
+    const cleanCountryCode = rawCountryCode.replace(/\D/g, '');
+    let cleanWhatsapp = rawWhatsapp.replace(/\D/g, '');
+    let fullWhatsapp = cleanWhatsapp;
+    if (cleanCountryCode && cleanWhatsapp && !cleanWhatsapp.startsWith(cleanCountryCode)) {
+      fullWhatsapp = `${cleanCountryCode}${cleanWhatsapp}`;
+    }
+    const whatsappUrl = fullWhatsapp ? `https://wa.me/${fullWhatsapp}` : '';
 
     // 5. Rank and Badge in Category & Country
     let sellerRank = 1;
@@ -1495,6 +1530,9 @@ export class CoinSellerService {
       activeFrame: formatStoreItem(seller.activeFrame),
       mobile: seller.mobile || '',
       whatsapp: seller.whatsapp || '',
+      whatsappCountryCode: (seller as any).whatsappCountryCode || '',
+      coinsellerCountries: (seller as any).coinsellerCountries || [],
+      coinsellerCountryIds: (seller as any).coinsellerCountryIds || [],
       whatsappUrl,
       country: countryObj || countryCode,
       countryObject: countryObj || null,

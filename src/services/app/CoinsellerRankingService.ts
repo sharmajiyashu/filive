@@ -391,21 +391,26 @@ export class CoinsellerRankingService {
         { country: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
         { countryCode: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
         { nationality: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
+        { coinsellerCountries: { $regex: new RegExp(`^${targetCountryCode}$`, 'i') } },
       ];
 
       if (mongoose.Types.ObjectId.isValid(targetCountryCode)) {
         userCountryConditions.push({ countryId: new mongoose.Types.ObjectId(targetCountryCode) });
+        userCountryConditions.push({ coinsellerCountryIds: new mongoose.Types.ObjectId(targetCountryCode) });
       }
       if (countryObjIds.length > 0) {
         userCountryConditions.push({ countryId: { $in: countryObjIds } });
+        userCountryConditions.push({ coinsellerCountryIds: { $in: countryObjIds } });
       }
       if (countryNames.length > 0) {
         userCountryConditions.push({ country: { $in: countryNames } });
         userCountryConditions.push({ nationality: { $in: countryNames } });
+        userCountryConditions.push({ coinsellerCountries: { $in: countryNames } });
       }
       if (countryCodes.length > 0) {
         userCountryConditions.push({ country: { $in: countryCodes } });
         userCountryConditions.push({ countryCode: { $in: countryCodes } });
+        userCountryConditions.push({ coinsellerCountries: { $in: countryCodes } });
       }
 
       baseQuery.$and = baseQuery.$and || [];
@@ -432,9 +437,10 @@ export class CoinsellerRankingService {
 
     // 2. Fetch Sellers
     const sellers = await User.find(baseQuery)
-      .select('_id userId name profileImage mobile whatsapp country countryId coinSellerCoins coinsellerCategory coinsellerJoinedAt coinsellerRankingExcluded coinsellerRankingExcludeReason isOnline createdAt activeFrame')
+      .select('_id userId name profileImage mobile whatsapp whatsappCountryCode country countryId coinsellerCountries coinsellerCountryIds coinSellerCoins coinsellerCategory coinsellerJoinedAt coinsellerRankingExcluded coinsellerRankingExcludeReason isOnline createdAt activeFrame')
       .populate('profileImage')
       .populate('countryId')
+      .populate('coinsellerCountryIds')
       .populate({ path: 'activeFrame', populate: { path: 'media' } })
       .lean();
 

@@ -598,6 +598,33 @@ export class UserService {
       }
     }
 
+    if (updateData.whatsappCountryCode !== undefined) {
+      const cleanWaCode = typeof updateData.whatsappCountryCode === 'string' ? updateData.whatsappCountryCode.trim() : '';
+      if (!cleanWaCode) {
+        user.set('whatsappCountryCode', undefined);
+      } else {
+        user.whatsappCountryCode = cleanWaCode.startsWith('+') ? cleanWaCode : `+${cleanWaCode}`;
+      }
+    }
+
+    if (updateData.coinsellerCountries !== undefined) {
+      if (Array.isArray(updateData.coinsellerCountries)) {
+        user.coinsellerCountries = updateData.coinsellerCountries.filter((c: any) => Boolean(c && String(c).trim())).map((c: any) => String(c).trim());
+      } else if (!updateData.coinsellerCountries) {
+        user.coinsellerCountries = [];
+      }
+    }
+
+    if (updateData.coinsellerCountryIds !== undefined) {
+      if (Array.isArray(updateData.coinsellerCountryIds)) {
+        user.coinsellerCountryIds = updateData.coinsellerCountryIds
+          .filter((id: any) => mongoose.Types.ObjectId.isValid(id))
+          .map((id: any) => new mongoose.Types.ObjectId(id));
+      } else if (!updateData.coinsellerCountryIds) {
+        user.coinsellerCountryIds = [];
+      }
+    }
+
     if (updateData.gender !== undefined) {
       const raw = String(updateData.gender).trim();
       const genderMap: Record<string, 'Male' | 'Female' | 'Other'> = {
@@ -728,7 +755,8 @@ export class UserService {
 
     const updatedUser = await User.findById(userId)
       .populate('profileImage', 'url')
-      .populate('countryId', 'name code flag image');
+      .populate('countryId', 'name code flag image')
+      .populate('coinsellerCountryIds', 'name code flag image');
 
     return updatedUser || user;
   }
@@ -1084,9 +1112,12 @@ export class UserService {
     isCoinseller: boolean = true,
     extras?: {
       whatsapp?: string;
+      whatsappCountryCode?: string;
       initialCoins?: number;
       countryId?: string;
       countryCode?: string;
+      countries?: string[];
+      countryIds?: string[];
       securityDeposit?: number;
     }
   ) {
@@ -1104,7 +1135,57 @@ export class UserService {
       user.whatsapp = whatsapp;
     }
 
-    if (extras?.countryId || extras?.countryCode) {
+    const waCode = extras?.whatsappCountryCode?.trim();
+    if (waCode) {
+      user.whatsappCountryCode = waCode.startsWith('+') ? waCode : `+${waCode}`;
+    }
+
+    // Multi-country support
+    let assignedCountryIds: mongoose.Types.ObjectId[] = [];
+    let assignedCountries: string[] = [];
+
+    if (Array.isArray(extras?.countryIds) && extras.countryIds.length > 0) {
+      for (const cId of extras.countryIds) {
+        if (mongoose.Types.ObjectId.isValid(cId)) {
+          const objId = new mongoose.Types.ObjectId(cId);
+          if (!assignedCountryIds.some((id) => id.equals(objId))) {
+            assignedCountryIds.push(objId);
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(extras?.countries) && extras.countries.length > 0) {
+      assignedCountries = extras.countries.filter((c) => Boolean(c && String(c).trim())).map((c) => String(c).trim());
+    }
+
+    // If primary countryId or countryCode given, ensure it's in the arrays
+    if (extras?.countryId && mongoose.Types.ObjectId.isValid(extras.countryId)) {
+      const objId = new mongoose.Types.ObjectId(extras.countryId);
+      if (!assignedCountryIds.some((id) => id.equals(objId))) {
+        assignedCountryIds.unshift(objId);
+      }
+    }
+    if (extras?.countryCode && !assignedCountries.includes(extras.countryCode)) {
+      assignedCountries.unshift(extras.countryCode);
+    }
+
+    if (assignedCountryIds.length > 0) {
+      user.coinsellerCountryIds = assignedCountryIds;
+      // Set primary countryId to the first country
+      user.countryId = assignedCountryIds[0];
+      const primaryCountry = await Country.findById(assignedCountryIds[0]);
+      if (primaryCountry) {
+        user.country = primaryCountry.name;
+        user.countryCode = primaryCountry.code;
+        if (!assignedCountries.includes(primaryCountry.code)) {
+          assignedCountries.push(primaryCountry.code);
+        }
+        if (!assignedCountries.includes(primaryCountry.name)) {
+          assignedCountries.push(primaryCountry.name);
+        }
+      }
+    } else if (extras?.countryId || extras?.countryCode) {
       const country = extras.countryId
         ? await Country.findById(extras.countryId)
         : await Country.findOne({
@@ -1118,6 +1199,18 @@ export class UserService {
       }
       user.countryId = country._id;
       user.country = country.name;
+      user.countryCode = country.code;
+      user.coinsellerCountryIds = [country._id as any];
+      if (!assignedCountries.includes(country.code)) {
+        assignedCountries.push(country.code);
+      }
+      if (!assignedCountries.includes(country.name)) {
+        assignedCountries.push(country.name);
+      }
+    }
+
+    if (assignedCountries.length > 0) {
+      user.coinsellerCountries = assignedCountries;
     }
 
     const initialCoins = Number(extras?.initialCoins) || 0;
@@ -1314,6 +1407,7 @@ export class UserService {
     const traders = await User.find(query)
       .populate('profileImage')
       .populate('countryId')
+      .populate('coinsellerCountryIds')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -1394,7 +1488,8 @@ export class UserService {
 
     const user = await User.findOne(query)
       .populate('profileImage')
-      .populate('countryId');
+      .populate('countryId')
+      .populate('coinsellerCountryIds');
 
     if (!user) {
       throw new Error('Coin Trader user not found');

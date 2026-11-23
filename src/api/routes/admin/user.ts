@@ -702,7 +702,17 @@ export default (router: Router) => {
    */
   userRouter.post('/coinsellers/add', async (req: any, res: Response) => {
     try {
-      const { identifier, whatsapp, initialCoins, countryId, countryCode, securityDeposit } = req.body;
+      const {
+        identifier,
+        whatsapp,
+        whatsappCountryCode,
+        initialCoins,
+        countryId,
+        countryCode,
+        countries,
+        countryIds,
+        securityDeposit,
+      } = req.body;
       if (!identifier || String(identifier).trim() === '') {
         throw new Error('User identifier is required');
       }
@@ -712,7 +722,7 @@ export default (router: Router) => {
         throw new Error('WhatsApp number is required');
       }
 
-      if (!countryId && !countryCode) {
+      if (!countryId && !countryCode && (!countries || !countries.length) && (!countryIds || !countryIds.length)) {
         throw new Error('Country is required');
       }
 
@@ -740,10 +750,13 @@ export default (router: Router) => {
 
       const result = await userService.setCoinsellerAndRemoveFromAgencies(user._id.toString(), true, {
         whatsapp: trimmedWhatsapp,
+        whatsappCountryCode: typeof whatsappCountryCode === 'string' ? whatsappCountryCode.trim() : undefined,
         initialCoins: Number.isNaN(coins) ? 0 : coins,
         securityDeposit: securityDeposit !== undefined && securityDeposit !== null && securityDeposit !== '' ? Number(securityDeposit) : undefined,
         countryId,
         countryCode,
+        countries: Array.isArray(countries) ? countries : undefined,
+        countryIds: Array.isArray(countryIds) ? countryIds : undefined,
       });
       return ResponseWrapper.success(res, result, 'User added as Coin Trader successfully');
     } catch (error: any) {
@@ -775,14 +788,28 @@ export default (router: Router) => {
         throw new Error('Coin Trader not found');
       }
 
-      const { whatsapp, mobile, name, countryId, countryCode, country, securityDeposit } = req.body;
+      const {
+        whatsapp,
+        whatsappCountryCode,
+        mobile,
+        name,
+        countryId,
+        countryCode,
+        country,
+        countries,
+        countryIds,
+        securityDeposit,
+      } = req.body;
       const updateData: any = {};
       if (whatsapp !== undefined) updateData.whatsapp = typeof whatsapp === 'string' ? whatsapp.trim() : whatsapp;
+      if (whatsappCountryCode !== undefined) updateData.whatsappCountryCode = typeof whatsappCountryCode === 'string' ? whatsappCountryCode.trim() : whatsappCountryCode;
       if (mobile !== undefined) updateData.mobile = typeof mobile === 'string' ? mobile.trim() : mobile;
       if (name !== undefined) updateData.name = typeof name === 'string' ? name.trim() : name;
       if (countryId !== undefined) updateData.countryId = countryId;
       if (countryCode !== undefined) updateData.countryCode = countryCode;
       if (country !== undefined) updateData.country = country;
+      if (countries !== undefined) updateData.coinsellerCountries = Array.isArray(countries) ? countries : [];
+      if (countryIds !== undefined) updateData.coinsellerCountryIds = Array.isArray(countryIds) ? countryIds : [];
       if (securityDeposit !== undefined && securityDeposit !== null && securityDeposit !== '') {
         const depNum = Number(securityDeposit);
         if (!isNaN(depNum) && depNum >= 0) {
