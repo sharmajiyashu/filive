@@ -289,6 +289,8 @@ export default (router: Router) => {
     }
   };
 
+  roleRouter.delete('/delete/:id', deleteRoleHandler);
   roleRouter.delete('/delete', deleteRoleHandler);
   roleRouter.delete('/:id', deleteRoleHandler);
+  roleRouter.delete('/', deleteRoleHandler);
 };

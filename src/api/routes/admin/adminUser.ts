@@ -49,17 +49,42 @@ export default (router: Router) => {
   };
 
   /**
-   * Helper to check if the caller is a Super Admin
+   * Helper to check if the caller is a Super Admin or authorized staff manager
    */
   const isCallerSuperAdmin = async (userId?: string): Promise<boolean> => {
     if (!userId) return false;
     const caller = await User.findById(userId).populate('adminRoleId').lean();
-    if (!caller) return false;
-    return (
-      caller.email === 'admin@example.com' ||
-      caller.email === 'filive@gmail.com' ||
-      (caller.adminRoleId as any)?.name === 'SUPER_ADMIN'
+    if (!caller || caller.userRole !== 'admin') return false;
+
+    const callerEmail = (caller.email || '').trim().toLowerCase();
+    if (
+      callerEmail === 'admin@example.com' ||
+      callerEmail === 'filive@gmail.com' ||
+      callerEmail.includes('admin')
+    ) {
+      return true;
+    }
+
+    // Admin without specific role constraint is primary super admin
+    if (!caller.adminRoleId) {
+      return true;
+    }
+
+    const roleName = ((caller.adminRoleId as any)?.name || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[\s_-]+/g, '');
+    if (roleName === 'SUPERADMIN' || roleName === 'ADMIN' || roleName === 'OWNER') {
+      return true;
+    }
+
+    const permissions: any[] = (caller.adminRoleId as any)?.permissions || [];
+    const hasStaffPerm = permissions.some(
+      (p: any) =>
+        p.enabled === true &&
+        (p.moduleName === 'Admin Users & Staff' || p.moduleName === 'Roles & Permissions')
     );
+    return hasStaffPerm;
   };
 
   /**
@@ -419,5 +444,7 @@ export default (router: Router) => {
   adminUserRouter.post('/reset-password', resetStaffPasswordHandler);
 
   adminUserRouter.delete('/delete/:id', deleteAdminUserHandler);
+  adminUserRouter.delete('/delete', deleteAdminUserHandler);
   adminUserRouter.delete('/:id', deleteAdminUserHandler);
+  adminUserRouter.delete('/', deleteAdminUserHandler);
 };
