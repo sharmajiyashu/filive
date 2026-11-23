@@ -136,8 +136,21 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Viewer ${userId} joined channel ${channelName}`);
 
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('viewer_joined', payload);
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('room_viewer_joined', payload);
+      const cleanJoinChan = channelName.replace(/^(live_|room_)+/, '');
+      const joinTargets = new Set<string>([
+        channelName,
+        `live_${channelName}`,
+        `room_${channelName}`,
+        cleanJoinChan,
+        `live_${cleanJoinChan}`,
+        `room_${cleanJoinChan}`,
+      ]);
+      for (const target of joinTargets) {
+        if (target) {
+          io.to(target).emit('viewer_joined', payload);
+          io.to(target).emit('room_viewer_joined', payload);
+        }
+      }
 
       if (typeof callback === 'function') {
         callback({
@@ -321,11 +334,25 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         message,
         createdAt: new Date()
       };
-      AppLogger.info(`[Socket Event: comment] Broadcasting to live_${channelName} and room_${channelName}. payload=${JSON.stringify(payload)}`);
+      AppLogger.info(`[Socket Event: comment] Broadcasting comment payload=${JSON.stringify(payload)}`);
 
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_live_comment', payload);
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_comment', payload);
-      io.to(`live_${channelName}`).to(`room_${channelName}`).emit('new_room_message', payload);
+      const cleanChan = channelName.replace(/^(live_|room_)+/, '');
+      const broadcastTargets = new Set<string>([
+        channelName,
+        `live_${channelName}`,
+        `room_${channelName}`,
+        cleanChan,
+        `live_${cleanChan}`,
+        `room_${cleanChan}`,
+      ]);
+
+      for (const target of broadcastTargets) {
+        if (target) {
+          io.to(target).emit('new_live_comment', payload);
+          io.to(target).emit('new_room_comment', payload);
+          io.to(target).emit('new_room_message', payload);
+        }
+      }
 
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'room_comment', data: payload });
