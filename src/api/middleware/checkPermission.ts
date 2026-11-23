@@ -76,7 +76,6 @@ const ROUTE_MODULE_PREFIXES: Array<{ prefix: string; moduleName: string }> = [
   { prefix: '/paymentmethod', moduleName: 'App Settings & Gateways' },
   { prefix: '/payment-method', moduleName: 'App Settings & Gateways' },
   { prefix: '/country', moduleName: 'App Settings & Gateways' },
-  { prefix: '/notification', moduleName: 'App Settings & Gateways' },
   { prefix: '/sociallink', moduleName: 'App Settings & Gateways' },
   { prefix: '/social-link', moduleName: 'App Settings & Gateways' },
 
@@ -84,7 +83,7 @@ const ROUTE_MODULE_PREFIXES: Array<{ prefix: string; moduleName: string }> = [
   { prefix: '/dashboard', moduleName: 'Dashboard' },
 ];
 
-const UNRESTRICTED_ADMIN_PATHS = ['/login', '/logout', '/me', '/auth/me', '/health'];
+const UNRESTRICTED_ADMIN_PATHS = ['/login', '/logout', '/me', '/auth/me', '/health', '/notifications', '/notification'];
 
 export async function adminPermissionMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {

@@ -253,7 +253,7 @@ export default (router: Router) => {
    */
   const deleteRoleHandler = async (req: Request, res: Response) => {
     try {
-      const roleId = req.params.id || req.body.adminRoleId || req.body.id || req.query.adminRoleId || req.query.id;
+      const roleId = req.params.id || req.body.adminRoleId || req.body.id || (req.body as any)._id || req.query.adminRoleId || req.query.id;
 
       if (!roleId) {
         return ResponseWrapper.error(res, new Error('Role ID is required'), 400);
@@ -264,26 +264,18 @@ export default (router: Router) => {
         return ResponseWrapper.error(res, new Error('Role not found'), 404);
       }
 
-      if (role.name === 'SUPER_ADMIN') {
+      if (role.name === 'SUPER_ADMIN' || (role.name && role.name.toUpperCase() === 'SUPER_ADMIN')) {
         return ResponseWrapper.error(res, new Error('The SUPER_ADMIN role cannot be deleted'), 403);
       }
 
-      // Check if any admin users are assigned to this role
-      const assignedUsersCount = await User.countDocuments({
-        userRole: 'admin',
-        adminRoleId: role._id,
-      });
-
-      if (assignedUsersCount > 0) {
-        return ResponseWrapper.error(
-          res,
-          new Error(`Cannot delete role because it is currently assigned to ${assignedUsersCount} admin user(s). Reassign them first.`),
-          400
-        );
-      }
+      // Unassign any admin users currently assigned to this role
+      await User.updateMany(
+        { adminRoleId: role._id },
+        { $unset: { adminRoleId: 1 } }
+      );
 
       await AdminRole.findByIdAndDelete(roleId);
-      return ResponseWrapper.success(res, null, 'Role deleted successfully');
+      return ResponseWrapper.success(res, { id: roleId }, 'Role deleted successfully');
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
