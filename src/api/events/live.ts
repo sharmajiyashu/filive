@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { LiveStreamService } from '../../services/app/LiveStreamService';
 import { GiftService } from '../../services/app/GiftService';
+import { PartyRoomRankingService } from '../../services/app/PartyRoomRankingService';
 import Room from '../../models/Room';
 import mongoose from 'mongoose';
 import User from '../../models/User';
@@ -30,6 +31,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
   const liveStreamService = Container.get(LiveStreamService);
   const giftService = Container.get(GiftService);
   const callService = Container.get(CallService);
+  const partyRoomRankingService = Container.get(PartyRoomRankingService);
 
   if (!socket.user) {
     return;
@@ -61,6 +63,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       AppLogger.info(`[Socket Event: join_room/join_live] Calling liveStreamService.joinLiveStream for userId=${userId}, channelName=${channelName}`);
       const liveStream = await liveStreamService.joinLiveStream(userId, channelName);
+      partyRoomRankingService.recordJoin(channelName, userId);
       AppLogger.info(`[Socket Event: join_room/join_live] liveStreamService.joinLiveStream returned successfully. viewerCount=${liveStream.viewerCount}`);
 
       AppLogger.info(`[Socket Event: join_room/join_live] Fetching User details for presence broadcast. userId=${userId}`);
@@ -277,6 +280,7 @@ export default (socket: AuthenticatedSocket, io: Server) => {
       if (liveStream) {
         await Room.updateOne({ _id: liveStream._id }, { $inc: { commentCount: 1 } });
       }
+      partyRoomRankingService.recordComment(channelName, userId);
 
       AppLogger.info(`[Socket Event: comment] Fetching user details for comment. userId=${userId}`);
       const userObj = await User.findById(userId)
@@ -567,6 +571,11 @@ export default (socket: AuthenticatedSocket, io: Server) => {
           };
 
           sentPayloads.push(payload);
+
+          // Record in Party Room Ranking Service (rolling 10-minute window)
+          if (channelName && result.gift?.price) {
+            partyRoomRankingService.recordGift(channelName, userId, (result.gift.price || 0) * (result.quantity || 1));
+          }
 
           // Emit sockets
           io.to(`live_${channelName}`).to(`room_${channelName}`).emit('gift_sent', payload);

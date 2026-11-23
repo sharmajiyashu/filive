@@ -12,6 +12,8 @@ export interface ICoinsHistoryQuery {
   search?: string;
   userId?: string;
   type?: string;
+  status?: string;
+  paymentGateway?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -161,6 +163,16 @@ export class CoinsManagementService {
       }
     }
 
+    // Filter by Status (completed, pending, failed, cancelled)
+    if (params.status && params.status !== 'all') {
+      query.status = params.status;
+    }
+
+    // Filter by Gateway
+    if (params.paymentGateway && params.paymentGateway !== 'all') {
+      query.paymentGateway = new RegExp(params.paymentGateway, 'i');
+    }
+
     // Filter by Date Range
     if (params.startDate || params.endDate) {
       query.createdAt = {};
@@ -212,6 +224,10 @@ export class CoinsManagementService {
           path: 'giftId',
           populate: { path: 'media', select: 'url' },
         })
+        .populate({
+          path: 'packageId',
+          select: 'name coins price currency targetAudience',
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -231,6 +247,7 @@ export class CoinsManagementService {
     return {
       history: history.map((item: any) => ({
         ...item,
+        status: item.status || 'completed',
         wallet: item.wallet || 'coins',
       })),
       summary: {

@@ -171,10 +171,11 @@ export class VipService {
     try {
       await CoinHistory.create({
         userId: new mongoose.Types.ObjectId(userId),
-        amount: plan.coinPrice,
-        type: 'other',
+        amount: -plan.coinPrice,
+        type: 'vip_purchase',
         wallet: 'coins',
-        description: `Purchased ${plan.name} for ${plan.coinPrice} coins`,
+        status: 'completed',
+        description: `Purchased ${plan.name} (${plan.durationDays} days) for ${plan.coinPrice} coins`,
       });
     } catch (historyErr) {
       console.warn('Failed to record CoinHistory for VIP purchase:', historyErr);

@@ -14,6 +14,7 @@ import { formatStoreItem } from '../../utils/activeStorePopulate';
 import Country from '../../models/Country';
 import { CoinsellerRankingService } from './CoinsellerRankingService';
 import { CoinService } from './CoinService';
+import { runInTransaction } from '../../utils/transaction';
 
 @Service()
 export class CoinSellerService {
@@ -69,18 +70,17 @@ export class CoinSellerService {
 
     const isCoinsellerTransfer = salesMethod === 'coinseller' && isTargetCoinseller && !isSelf;
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     let updatedSender: any;
     let updatedTarget: any;
 
-    try {
+    await runInTransaction(async (session) => {
+      const sessionOpt = session ? { session } : {};
+
       // 1. Deduct from sender's coinSellerCoins
       updatedSender = await User.findByIdAndUpdate(
         senderId,
         { $inc: { coinSellerCoins: -amount } },
-        { session, new: true }
+        { ...sessionOpt, new: true }
       );
 
       // 2. Credit to recipient
@@ -89,7 +89,7 @@ export class CoinSellerService {
         updatedSender = await User.findByIdAndUpdate(
           senderId,
           { $inc: { coins: amount, wealthCoins: amount } },
-          { session, new: true }
+          { ...sessionOpt, new: true }
         );
         updatedTarget = updatedSender;
       } else if (isCoinsellerTransfer) {
@@ -97,14 +97,14 @@ export class CoinSellerService {
         updatedTarget = await User.findByIdAndUpdate(
           target._id,
           { $inc: { coinSellerCoins: amount } },
-          { session, new: true }
+          { ...sessionOpt, new: true }
         );
       } else {
         // Coin Seller to User transfer: Credit target's personal coins and wealthCoins
         updatedTarget = await User.findByIdAndUpdate(
           target._id,
           { $inc: { coins: amount, wealthCoins: amount } },
-          { session, new: true }
+          { ...sessionOpt, new: true }
         );
       }
 
@@ -119,7 +119,7 @@ export class CoinSellerService {
           transferTarget: 'self',
           paymentGateway: 'CoinSeller',
           description: `Transferred ${amount} coins to own personal wallet`
-        }], { session });
+        }], sessionOpt);
 
         // Personal wallet credit
         await CoinHistory.create([{
@@ -130,7 +130,7 @@ export class CoinSellerService {
           transferTarget: 'self',
           paymentGateway: 'CoinSeller',
           description: `Recharged ${amount} coins from own Coin Seller balance`
-        }], { session });
+        }], sessionOpt);
       } else {
         // Sender deduction
         await CoinHistory.create([{
@@ -142,7 +142,7 @@ export class CoinSellerService {
           transferTarget: isCoinsellerTransfer ? 'coinseller' : 'user',
           paymentGateway: 'CoinSeller',
           description: `Transferred to ${isCoinsellerTransfer ? 'Coin Seller ' : 'User '}${target.name || 'User'} (ID: ${target.userId})`
-        }], { session });
+        }], sessionOpt);
 
         // Target credit
         await CoinHistory.create([{
@@ -156,16 +156,9 @@ export class CoinSellerService {
           description: isCoinsellerTransfer
             ? `Received ${amount} coins from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
             : `Received ${amount} coins recharge from Coin Seller ${sender.name || 'User'} (ID: ${sender.userId})`
-        }], { session });
+        }], sessionOpt);
       }
-
-      await session.commitTransaction();
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
 
     // Determine message & send system messages
     let returnMessage = '';
@@ -596,14 +589,15 @@ export class CoinSellerService {
       throw new Error('Converted coins value is too low');
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const targetIsCoinseller = isTransfer ? Boolean(recipient.isCoinseller) : Boolean(sender.isCoinseller);
 
-    try {
+    return await runInTransaction(async (session) => {
+      const sessionOpt = session ? { session } : {};
+
       // 1. Deduct beans from sender
       await User.findByIdAndUpdate(sender._id, {
         $inc: { beans: -beansAmount }
-      }, { session });
+      }, sessionOpt);
 
       // 2. Create history record for sender's beans deduction
       await CoinHistory.create([{
@@ -617,18 +611,16 @@ export class CoinSellerService {
         description: isTransfer
           ? `Converted ${beansAmount} beans to ${coinsToCredit} ${recipient.isCoinseller ? 'seller coins' : 'coins'} and transferred to ${recipient.name || 'User'} (ID: ${recipient.userId})`
           : `Exchanged ${beansAmount} beans to ${coinsToCredit} ${sender.isCoinseller ? 'seller coins' : 'coins'}`
-      }], { session });
+      }], sessionOpt);
 
       // 3. Credit coins based on whether recipient (or sender for self) is a Coin Seller
       // RULE: If coinseller -> credit coinSellerCoins ONLY (not normal coins).
       //       If not coinseller -> credit normal coins and wealthCoins.
-      const targetIsCoinseller = isTransfer ? Boolean(recipient.isCoinseller) : Boolean(sender.isCoinseller);
-
       if (isTransfer) {
         if (targetIsCoinseller) {
           await User.findByIdAndUpdate(recipient._id, {
             $inc: { coinSellerCoins: coinsToCredit }
-          }, { session });
+          }, sessionOpt);
 
           await CoinHistory.create([{
             userId: recipient._id,
@@ -639,11 +631,11 @@ export class CoinSellerService {
             transferTarget: 'coinseller',
             paymentGateway: 'CoinSeller',
             description: `Received ${coinsToCredit} seller coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
-          }], { session });
+          }], sessionOpt);
         } else {
           await User.findByIdAndUpdate(recipient._id, {
             $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
-          }, { session });
+          }, sessionOpt);
 
           await CoinHistory.create([{
             userId: recipient._id,
@@ -654,14 +646,14 @@ export class CoinSellerService {
             transferTarget: 'user',
             paymentGateway: 'CoinSeller',
             description: `Received ${coinsToCredit} coins converted from beans by ${sender.name || 'User'} (ID: ${sender.userId})`
-          }], { session });
+          }], sessionOpt);
         }
       } else {
         if (targetIsCoinseller) {
           // Self-exchange by Coin Seller -> goes directly into coinSellerCoins wallet
           await User.findByIdAndUpdate(sender._id, {
             $inc: { coinSellerCoins: coinsToCredit }
-          }, { session });
+          }, sessionOpt);
 
           await CoinHistory.create([{
             userId: sender._id,
@@ -671,12 +663,12 @@ export class CoinSellerService {
             transferTarget: 'self',
             paymentGateway: 'CoinSeller',
             description: `Exchanged ${beansAmount} beans to ${coinsToCredit} seller coins`
-          }], { session });
+          }], sessionOpt);
         } else {
           // Self-exchange by Normal User -> goes to personal coins wallet
           await User.findByIdAndUpdate(sender._id, {
             $inc: { coins: coinsToCredit, wealthCoins: coinsToCredit }
-          }, { session });
+          }, sessionOpt);
 
           await CoinHistory.create([{
             userId: sender._id,
@@ -686,11 +678,9 @@ export class CoinSellerService {
             transferTarget: 'self',
             paymentGateway: 'CoinSeller',
             description: `Converted ${beansAmount} beans to ${coinsToCredit} coins`
-          }], { session });
+          }], sessionOpt);
         }
       }
-
-      await session.commitTransaction();
 
       // Send system message notifications
       try {
@@ -752,12 +742,7 @@ export class CoinSellerService {
           name: recipient.name
         }
       };
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   async convertCoinsToBeans(userId: string, coinsAmount: number) {
@@ -776,14 +761,13 @@ export class CoinSellerService {
 
     const beansToCredit = coinsAmount * coinToBeanRate;
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    return await runInTransaction(async (session) => {
+      const sessionOpt = session ? { session } : {};
 
-    try {
       // Deduct coins and add beans
       await User.findByIdAndUpdate(userId, {
         $inc: { coins: -coinsAmount, beans: beansToCredit }
-      }, { session });
+      }, sessionOpt);
 
       // Create history record
       await CoinHistory.create([{
@@ -791,21 +775,15 @@ export class CoinSellerService {
         amount: -coinsAmount,
         type: 'coins_to_beans',
         description: `Converted ${coinsAmount} coins to ${beansToCredit} beans`
-      }], { session });
+      }], sessionOpt);
 
-      await session.commitTransaction();
       return {
         success: true,
         message: 'Coins converted to beans successfully',
         coinsDeducted: coinsAmount,
         beansCredited: beansToCredit
       };
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   async checkUser(userId: number) {

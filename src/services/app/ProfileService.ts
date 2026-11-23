@@ -249,18 +249,42 @@ export class ProfileService {
       data.$push = { album: { $each: mediaIds } };
     }
 
+    // Strip empty string values on unique/sparse fields to prevent E11000 duplicate key errors
+    for (const uniqueKey of ['email', 'mobile', 'whatsapp', 'hostVerificationCode', 'referralCode', 'referCode']) {
+      if (uniqueKey in data) {
+        if (typeof data[uniqueKey] === 'string') {
+          const trimmed = data[uniqueKey].trim();
+          if (!trimmed) {
+            delete data[uniqueKey];
+          } else {
+            data[uniqueKey] = uniqueKey === 'email' ? trimmed.toLowerCase() : trimmed;
+          }
+        } else if (data[uniqueKey] === null || data[uniqueKey] === undefined) {
+          delete data[uniqueKey];
+        }
+      }
+    }
+
     if (data.dob) {
-      const birthDate = new Date(data.dob);
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
+      if (typeof data.dob === 'string' && data.dob.trim() === '') {
+        delete data.dob;
+      } else {
+        const birthDate = new Date(data.dob);
+        if (!isNaN(birthDate.getTime())) {
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          if (age < 18) {
+            throw new Error('Users under 18 years of age are not allowed to register or use this platform.');
+          }
+          data.dob = birthDate;
+        } else {
+          delete data.dob;
+        }
       }
-      if (age < 18) {
-        throw new Error('Users under 18 years of age are not allowed to register or use this platform.');
-      }
-      data.dob = birthDate;
     }
 
     // Parse JSON strings for multipart/form-data
@@ -268,7 +292,7 @@ export class ProfileService {
       try { data.hobbies = JSON.parse(data.hobbies); } catch (e) { data.hobbies = data.hobbies.split(',').map((s: string) => s.trim()); }
     }
     if (Array.isArray(data.hobbies)) {
-      data.hobbies = data.hobbies.filter((id: string) => id && mongoose.Types.ObjectId.isValid(id));
+      data.hobbies = Array.from(new Set(data.hobbies.filter((id: string) => id && mongoose.Types.ObjectId.isValid(id))));
     }
 
     if (typeof data.location === 'string') {
@@ -336,7 +360,19 @@ export class ProfileService {
       delete data.career;
     }
 
-    if (data.countryId || data.countryCode || data.country) {
+    // Strict Nationality / Country Lock: Once country/nationality is set, user cannot change it.
+    const isCountryLocked = Boolean(
+      existingUser.countryId ||
+      (existingUser.country && String(existingUser.country).trim() !== '') ||
+      (existingUser.nationality && String(existingUser.nationality).trim() !== '')
+    );
+
+    if (isCountryLocked) {
+      delete data.countryId;
+      delete data.countryCode;
+      delete data.country;
+      delete data.nationality;
+    } else if (data.countryId || data.countryCode || data.country || data.nationality) {
       const resolved = await resolveCountryFromSignals({
         countryId: data.countryId,
         countryCode: data.countryCode || data.country,
@@ -345,9 +381,11 @@ export class ProfileService {
         data.countryId = resolved.countryId;
         data.country = resolved.country;
         data.countryCode = resolved.country;
+        data.nationality = resolved.country;
       } else {
         if (data.countryCode) data.countryCode = String(data.countryCode).trim().toUpperCase();
         if (data.country) data.country = String(data.country).trim();
+        if (data.nationality) data.nationality = String(data.nationality).trim();
       }
     }
 
@@ -657,6 +695,14 @@ export class ProfileService {
 
     if (!videoFile) {
       throw new Error('Please record and upload your 10-second face verification video');
+    }
+
+    const existingUser = await User.findById(userId);
+    if (!existingUser) {
+      throw new Error('User not found');
+    }
+    if (existingUser.videoVerificationStatus === 'approved') {
+      throw new Error('Your face verification is already approved and verified.');
     }
 
     const updateData: any = {

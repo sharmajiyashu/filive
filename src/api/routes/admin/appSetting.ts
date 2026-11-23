@@ -174,13 +174,24 @@ export default (router: Router) => {
             }
           }
           if (Array.isArray(payload.call_price_tiers)) {
-            payload.call_price_tiers = payload.call_price_tiers.map((tier: any) => ({
-              minLevel: Number(tier.minLevel || 1),
-              maxLevel: Number(tier.maxLevel || 1),
-              audioPrice: Number(tier.audioPrice || 0),
-              videoPrice: Number(tier.videoPrice || 0),
-              label: String(tier.label || `Level ${tier.minLevel}–${tier.maxLevel}`)
-            }));
+            payload.call_price_tiers = payload.call_price_tiers.map((tier: any) => {
+              const minLevel = tier.minLevel !== undefined && tier.minLevel !== null && !isNaN(Number(tier.minLevel))
+                ? Math.max(0, Number(tier.minLevel))
+                : 0;
+              const maxLevel = tier.maxLevel !== undefined && tier.maxLevel !== null && !isNaN(Number(tier.maxLevel))
+                ? Math.max(minLevel, Number(tier.maxLevel))
+                : minLevel;
+              const audioPrice = Math.max(0, Number(tier.audioPrice || 0));
+              const videoPrice = Math.max(0, Number(tier.videoPrice || 0));
+              const label = tier.label ? String(tier.label).trim() : `Level ${minLevel}–${maxLevel}`;
+              return {
+                minLevel,
+                maxLevel,
+                audioPrice,
+                videoPrice,
+                label,
+              };
+            });
           }
         }
 

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import Container from 'typedi';
 import { CoinsManagementService } from '../../../services/admin/CoinsManagementService';
+import { CoinService } from '../../../services/app/CoinService';
 import { ResponseWrapper } from '../../responseWrapper';
 import { adminAuthMiddleware } from '../../middleware/adminAuthMiddleware';
 
@@ -43,6 +44,8 @@ export default (router: Router) => {
       const search = req.query.search?.toString();
       const userId = req.query.userId?.toString();
       const type = req.query.type?.toString();
+      const status = req.query.status?.toString();
+      const paymentGateway = req.query.paymentGateway?.toString();
       const startDate = req.query.startDate?.toString();
       const endDate = req.query.endDate?.toString();
 
@@ -52,6 +55,8 @@ export default (router: Router) => {
         search,
         userId,
         type,
+        status,
+        paymentGateway,
         startDate,
         endDate,
       });
@@ -129,6 +134,24 @@ export default (router: Router) => {
         action,
         description,
       });
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /admin/coins/razorpay/sync/{orderId}:
+   *   post:
+   *     summary: Check live Razorpay status for an order and settle/sync coins
+   *     tags: [Admin - Coins Management]
+   */
+  coinsRouter.post('/razorpay/sync/:orderId', async (req: any, res: Response) => {
+    try {
+      const { orderId } = req.params;
+      const appCoinService = Container.get(CoinService);
+      const result = await appCoinService.syncRazorpayOrder(orderId);
       return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);

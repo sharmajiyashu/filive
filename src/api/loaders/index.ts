@@ -71,6 +71,14 @@ export default async (expressApp: Express): Promise<void> => {
         if (userResult.modifiedCount > 0) {
             AppLogger.info(`🧹 Startup migration: Migrated ${userResult.modifiedCount} users from activeEntity to activeEntry.`);
         }
+
+        // Clean any empty strings on unique/sparse indexes to prevent E11000 duplicate key errors
+        await User.collection.updateMany({ email: '' } as any, { $unset: { email: 1 } });
+        await User.collection.updateMany({ mobile: '' } as any, { $unset: { mobile: 1 } });
+        await User.collection.updateMany({ whatsapp: '' } as any, { $unset: { whatsapp: 1 } });
+        await User.collection.updateMany({ hostVerificationCode: '' } as any, { $unset: { hostVerificationCode: 1 } });
+        await User.collection.updateMany({ referralCode: '' } as any, { $unset: { referralCode: 1 } });
+        await User.collection.updateMany({ referCode: '' } as any, { $unset: { referCode: 1 } });
     } catch (err: any) {
         AppLogger.error('❌ Failed to run entity->entry store migration:', err);
     }

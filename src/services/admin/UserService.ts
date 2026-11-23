@@ -7,6 +7,9 @@ import Agency from '../../models/Agency';
 import CoinHistory from '../../models/CoinHistory';
 import Country from '../../models/Country';
 import Follow from '../../models/Follow';
+import UserVisitor from '../../models/UserVisitor';
+import Block from '../../models/Block';
+import FamilyMember from '../../models/FamilyMember';
 import FriendRequest from '../../models/FriendRequest';
 import Story from '../../models/Story';
 import { LevelService } from '../app/LevelService';
@@ -728,6 +731,51 @@ export class UserService {
       .populate('countryId', 'name code flag image');
 
     return updatedUser || user;
+  }
+
+  public async deleteUserProfileImage(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    user.set('profileImage', undefined);
+    await user.save();
+    return { success: true, message: 'Profile image removed successfully' };
+  }
+
+  public async deleteUserAlbumPhoto(userId: string, photoId: string) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+    if (!mongoose.Types.ObjectId.isValid(photoId)) {
+      throw new Error('Invalid photo ID');
+    }
+    const targetObjId = new mongoose.Types.ObjectId(photoId);
+    user.album = (user.album || []).filter(
+      (id: any) => id.toString() !== photoId && (!id.equals || !id.equals(targetObjId))
+    );
+    await user.save();
+    return { success: true, message: 'Album photo removed successfully' };
+  }
+
+  public async deleteUser(userId: string, permanent: boolean = false) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('USER_NOT_FOUND');
+
+    if (permanent) {
+      await User.findByIdAndDelete(userId);
+      Promise.allSettled([
+        Follow.deleteMany({ $or: [{ followerId: user._id }, { followingId: user._id }] }),
+        UserVisitor.deleteMany({ $or: [{ userId: user._id }, { visitorId: user._id }] }),
+        Block.deleteMany({ $or: [{ blockerId: user._id }, { blockedId: user._id }] }),
+        FamilyMember.deleteMany({ userId: user._id }),
+      ]).catch(() => {});
+      return { success: true, message: 'User permanently deleted' };
+    } else {
+      user.isDeleted = true;
+      user.deletedAt = new Date();
+      user.isBlocked = true;
+      user.blockReason = 'Account deactivated / deleted by Admin';
+      await user.save();
+      return { success: true, message: 'User soft deleted successfully' };
+    }
   }
 
   public async blockUserWithDuration(

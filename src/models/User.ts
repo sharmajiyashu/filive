@@ -316,6 +316,28 @@ UserSchema.index({ beans: -1 });
 UserSchema.index({ callRankingScore: -1 });
 UserSchema.index({ newHostEligibleAt: -1 });
 
+UserSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'] as any, function (this: any, next: any) {
+  const update = this.getUpdate() as any;
+  if (!update) return next();
+
+  const sanitizeFields = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return;
+    for (const key of ['email', 'mobile', 'whatsapp', 'hostVerificationCode', 'referralCode', 'referCode']) {
+      if (key in obj) {
+        if (typeof obj[key] === 'string' && obj[key].trim() === '') {
+          delete obj[key];
+        } else if (obj[key] === null || obj[key] === undefined) {
+          delete obj[key];
+        }
+      }
+    }
+  };
+
+  sanitizeFields(update);
+  if (update['$set']) sanitizeFields(update['$set']);
+  next();
+});
+
 UserSchema.pre('save', async function (next) {
   const user = this as any;
 
@@ -343,6 +365,15 @@ UserSchema.pre('save', async function (next) {
     } else {
       user.whatsapp = trimmedWhatsapp;
     }
+  }
+  if (typeof user.hostVerificationCode === 'string' && !user.hostVerificationCode.trim()) {
+    user.hostVerificationCode = undefined;
+  }
+  if (typeof user.referralCode === 'string' && !user.referralCode.trim()) {
+    user.referralCode = undefined;
+  }
+  if (typeof user.referCode === 'string' && !user.referCode.trim()) {
+    user.referCode = undefined;
   }
 
   if (!user.userId) {

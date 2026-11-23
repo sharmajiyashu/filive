@@ -395,6 +395,36 @@ export default (router: Router) => {
 
   /**
    * @swagger
+   * /app/coins/razorpay/record-failure:
+   *   post:
+   *     summary: Record Razorpay payment failure or cancellation
+   *     tags: [Coins]
+   *     security:
+   *       - bearerAuth: []
+   */
+  coinRouter.post('/razorpay/record-failure', appAuthMiddleware, async (req: any, res: Response) => {
+    try {
+      const razorpayOrderId = req.body.razorpayOrderId || req.body.orderId;
+      const razorpayPaymentId = req.body.razorpayPaymentId || req.body.paymentId;
+      const failureReason = req.body.failureReason || req.body.reason || req.body.error || 'Payment cancelled by user';
+
+      if (!razorpayOrderId) {
+        return ResponseWrapper.error(res, new Error('razorpayOrderId is required'), 400);
+      }
+      const result = await coinService.recordRazorpayFailure(
+        req.user.id,
+        razorpayOrderId,
+        failureReason,
+        razorpayPaymentId
+      );
+      return ResponseWrapper.success(res, result, 'Payment failure recorded');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * @swagger
    * /app/coins/googleplay/verify:
    *   post:
    *     summary: Verify Google Play In-App Purchase and add coins

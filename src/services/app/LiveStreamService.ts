@@ -13,6 +13,7 @@ import AppLogger from '../../api/loaders/logger';
 import { LevelService } from './LevelService';
 import { attachUserCountryAndAge } from '../../utils/userLookup';
 import { ACTIVE_STORE_POPULATE, formatUserActiveStoreItems } from '../../utils/activeStorePopulate';
+import { PartyRoomRankingService } from './PartyRoomRankingService';
 
 const HOST_SAFE_SELECT = '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins';
 
@@ -1669,6 +1670,123 @@ export class LiveStreamService {
       } else if (!query.hostId) {
         query.hostId = { $in: activeHostIds };
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // PARTY ROOM DEDICATED 100-POINT RANKING ALGORITHM
+    // ─────────────────────────────────────────────────────────────
+    if (roomType === 'party_room') {
+      const partyRankingService = Container.get(PartyRoomRankingService);
+      const io = this.getSocketIo();
+
+      // Resolve followed hosts and country for personalization
+      let followedHostIds = new Set<string>();
+      let requestingUserCountry: string | undefined;
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        try {
+          const [followedDocs, reqUser] = await Promise.all([
+            Follow.find({ followerId: new mongoose.Types.ObjectId(userId), status: 'accepted' }).select('followingId').lean(),
+            User.findById(userId).select('country countryId').lean()
+          ]);
+          followedHostIds = new Set(followedDocs.map((f: any) => f.followingId.toString()));
+          requestingUserCountry = reqUser?.country;
+        } catch (_) {}
+      }
+
+      // Query all candidate active party rooms matching the filter
+      const candidateRooms = await Room.find(query)
+        .populate({
+          path: 'hostId',
+          select: '-password -fcmTokens -otp -mobile -email -whatsapp -hostVerificationCode -coinSellerCoins',
+          populate: [
+            { path: 'profileImage' },
+            { path: 'countryId' },
+            ...ACTIVE_STORE_POPULATE
+          ]
+        })
+        .populate(this.seatPopulate())
+        .populate('roomPhoto')
+        .lean();
+
+      // Filter visible rooms (Item 10: Show/Hide rules)
+      const visibleRooms = candidateRooms.filter((r: any) =>
+        partyRankingService.shouldShowRoom(r, r.hostId, io)
+      );
+
+      // Score each room using the 100-Point Ranking Algorithm
+      const scoredRooms = await Promise.all(
+        visibleRooms.map(async (stream: any) => {
+          const hostObj = stream.hostId;
+          const hostIdStr = hostObj?._id?.toString() || hostObj?.toString() || '';
+          const isMine = userId && hostIdStr ? hostIdStr === userId.toString() : false;
+          const isFollowingRoom = Boolean(userId && followedHostIds.has(hostIdStr));
+
+          const { score, breakdown } = await partyRankingService.calculateRoomScore(
+            stream,
+            hostObj,
+            io,
+            userId,
+            followedHostIds,
+            requestingUserCountry
+          );
+
+          return {
+            stream,
+            isMine,
+            isFollowingRoom,
+            score,
+            breakdown
+          };
+        })
+      );
+
+      // Sort by ranking: isMine (if requested) -> score DESC -> viewerCount DESC -> createdAt DESC
+      scoredRooms.sort((a, b) => {
+        if (filters?.isMine) {
+          if (a.isMine && !b.isMine) return -1;
+          if (!a.isMine && b.isMine) return 1;
+        }
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+        const bViewers = b.stream.viewerCount || 0;
+        const aViewers = a.stream.viewerCount || 0;
+        if (bViewers !== aViewers) {
+          return bViewers - aViewers;
+        }
+        const bCreated = b.stream.createdAt ? new Date(b.stream.createdAt).getTime() : 0;
+        const aCreated = a.stream.createdAt ? new Date(a.stream.createdAt).getTime() : 0;
+        return bCreated - aCreated;
+      });
+
+      const total = scoredRooms.length;
+      const skip = (page - 1) * limit;
+      const pagedScored = scoredRooms.slice(skip, skip + limit);
+
+      const mappedStreams = await Promise.all(
+        pagedScored.map(async (item) => {
+          const streamObj = await this.populateRoomWithDailyRank(item.stream, userId, true);
+          return {
+            ...streamObj,
+            isMine: item.isMine,
+            isFollowingRoom: item.isFollowingRoom,
+            rankingScore: item.score,
+            rankingBreakdown: item.breakdown
+          };
+        })
+      );
+
+      AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Party Room Ranking applied. Total=${total}, Returned=${mappedStreams.length}, TopScore=${mappedStreams[0]?.rankingScore || 0}`);
+
+      return {
+        streams: mappedStreams,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit) || 1
+        }
+      };
     }
 
     AppLogger.info(`[LiveStreamService: getActiveLiveStreams] Querying active streams with query=${JSON.stringify(query)}...`);

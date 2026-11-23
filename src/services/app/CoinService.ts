@@ -1,3 +1,4 @@
+import { runInTransaction } from '../../utils/transaction';
 import { Service, Inject, Container } from 'typedi';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -485,10 +486,14 @@ export class CoinService {
     userId: string,
     pkg: ICoinPackage,
     audience: RechargeAudience,
-    session: mongoose.ClientSession
+    session?: mongoose.ClientSession | null
   ) {
-    const user = await User.findById(userId).session(session);
+    const userQuery = User.findById(userId);
+    if (session) userQuery.session(session);
+    const user = await userQuery;
     if (!user) throw new Error('User not found');
+
+    const sessionOpt = session ? { session } : {};
 
     if (audience === 'seller') {
       await User.findByIdAndUpdate(
@@ -497,7 +502,7 @@ export class CoinService {
           $inc: { coinSellerCoins: pkg.coins },
           $set: { isCoinseller: true, isCoinsellerActive: true }
         },
-        { session }
+        sessionOpt
       );
       return { wallet: 'coinSellerCoins' as const };
     }
@@ -506,7 +511,7 @@ export class CoinService {
     await User.findByIdAndUpdate(
       userId,
       { $inc: { coins: totalCoins, wealthCoins: totalCoins } },
-      { session }
+      sessionOpt
     );
     return { wallet: 'coins' as const };
   }
@@ -780,6 +785,30 @@ export class CoinService {
       throw new Error(`Razorpay Error: ${errMsg}`);
     }
 
+    // Save pending recharge transaction to CoinHistory so Admin & User can track the status
+    try {
+      await CoinHistory.create({
+        userId,
+        packageId: pkg._id,
+        amount: pkg.coins,
+        type: 'recharge',
+        wallet: audience === 'seller' ? 'coinSellerCoins' : 'coins',
+        status: 'pending',
+        paymentGateway: 'Razorpay',
+        transactionId: order.id,
+        razorpayOrderId: order.id,
+        description: `Recharge initiated for ${pkg.name} (${pkg.coins} coins) via Razorpay`,
+        originalUsdPrice: usdPrice,
+        localCurrency: userCountry.currencyCode,
+        localAmount: localConverted.localPrice,
+        exchangeRate: localConverted.exchangeRate,
+        chargedCurrency: 'INR',
+        chargedAmount: inrAmount,
+      });
+    } catch (histErr: any) {
+      AppLogger.warn(`[CoinService:createRazorpayOrder] Failed to create pending CoinHistory: ${histErr?.message}`);
+    }
+
     return {
       orderId: order.id,
       amount: order.amount,
@@ -830,10 +859,24 @@ export class CoinService {
       .digest('hex');
 
     if (generatedSignature !== razorpaySignature) {
+      await CoinHistory.findOneAndUpdate(
+        { $or: [{ razorpayOrderId }, { transactionId: razorpayOrderId }] },
+        {
+          $set: {
+            status: 'failed',
+            razorpayPaymentId,
+            razorpaySignature,
+            failureReason: 'Invalid Razorpay signature. Payment verification failed.',
+          },
+        }
+      ).catch(() => {});
       throw new Error('Invalid Razorpay signature. Payment verification failed.');
     }
 
-    const existing = await CoinHistory.findOne({ transactionId: razorpayPaymentId });
+    const existing = await CoinHistory.findOne({
+      transactionId: razorpayPaymentId,
+      status: 'completed',
+    });
     if (existing) {
       throw new Error('This payment has already been processed');
     }
@@ -866,84 +909,275 @@ export class CoinService {
       audience
     );
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    let creditResult: any;
+    let updatedHistoryRecord: any;
 
     try {
-      const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
+      await runInTransaction(async (session) => {
+        creditResult = await this.creditRechargeCoins(userId, pkg, audience, session);
 
-      const originalUsd = Number(orderNotes?.originalUsdPrice || orderNotes?.usdPrice || pkg.price);
-      const localCurr = orderNotes?.localCurrency || 'INR';
-      const localAmt = Number(orderNotes?.localAmount) || undefined;
-      const rate = Number(orderNotes?.exchangeRate) || undefined;
-      const chargedCurr = orderNotes?.chargedCurrency || 'INR';
-      const chargedAmt = Number(orderNotes?.chargedAmount) || (orderFetched?.amount ? orderFetched.amount / 100 : undefined);
+        const originalUsd = Number(orderNotes?.originalUsdPrice || orderNotes?.usdPrice || pkg.price);
+        const localCurr = orderNotes?.localCurrency || 'INR';
+        const localAmt = Number(orderNotes?.localAmount) || undefined;
+        const rate = Number(orderNotes?.exchangeRate) || undefined;
+        const chargedCurr = orderNotes?.chargedCurrency || 'INR';
+        const chargedAmt = Number(orderNotes?.chargedAmount) || (orderFetched?.amount ? orderFetched.amount / 100 : undefined);
 
-      const historyRecord = await CoinHistory.create(
-        [
-          {
-            userId,
-            packageId: pkg._id,
-            amount: pkg.coins,
-            type: 'recharge',
-            wallet: credit.wallet,
-            paymentGateway: 'Razorpay',
-            description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`,
-            transactionId: razorpayPaymentId,
-            originalUsdPrice: originalUsd,
-            localCurrency: localCurr,
-            localAmount: localAmt,
-            exchangeRate: rate,
-            chargedCurrency: chargedCurr,
-            chargedAmount: chargedAmt,
+        const pendingDoc = await CoinHistory.findOne({
+          $or: [{ razorpayOrderId }, { transactionId: razorpayOrderId }],
+        }).session(session);
+
+        if (pendingDoc) {
+          pendingDoc.status = 'completed';
+          pendingDoc.transactionId = razorpayPaymentId;
+          pendingDoc.razorpayOrderId = razorpayOrderId;
+          pendingDoc.razorpayPaymentId = razorpayPaymentId;
+          pendingDoc.razorpaySignature = razorpaySignature;
+          pendingDoc.wallet = creditResult.wallet;
+          pendingDoc.description = `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`;
+          pendingDoc.originalUsdPrice = originalUsd;
+          pendingDoc.localCurrency = localCurr;
+          pendingDoc.localAmount = localAmt;
+          pendingDoc.exchangeRate = rate;
+          pendingDoc.chargedCurrency = chargedCurr;
+          pendingDoc.chargedAmount = chargedAmt;
+          pendingDoc.failureReason = undefined;
+          await pendingDoc.save({ session });
+          updatedHistoryRecord = pendingDoc;
+        } else {
+          const created = await CoinHistory.create(
+            [
+              {
+                userId,
+                packageId: pkg._id,
+                amount: pkg.coins,
+                type: 'recharge',
+                wallet: creditResult.wallet,
+                status: 'completed',
+                paymentGateway: 'Razorpay',
+                description: `Recharged with ${pkg.name} ($${pkg.price} USD) via Razorpay (${audience})`,
+                transactionId: razorpayPaymentId,
+                razorpayOrderId,
+                razorpayPaymentId,
+                razorpaySignature,
+                originalUsdPrice: originalUsd,
+                localCurrency: localCurr,
+                localAmount: localAmt,
+                exchangeRate: rate,
+                chargedCurrency: chargedCurr,
+                chargedAmount: chargedAmt,
+              },
+            ],
+            { session }
+          );
+          updatedHistoryRecord = created[0];
+        }
+      });
+    } catch (txError: any) {
+      await CoinHistory.findOneAndUpdate(
+        { $or: [{ razorpayOrderId }, { transactionId: razorpayOrderId }] },
+        {
+          $set: {
+            status: 'failed',
+            razorpayPaymentId,
+            razorpaySignature,
+            failureReason: txError?.message || 'Transaction credit failed',
           },
-        ],
-        { session }
+        }
+      ).catch(() => {});
+      throw txError;
+    }
+
+    const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
+    const newBal = creditResult.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
+    try {
+      const { ChatService } = require('./ChatService');
+      const chatService: any = Container.get(ChatService);
+      await chatService.sendSystemMessage(
+        userId,
+        'Recharge Successful',
+        `🎉 Recharge Successful! You have recharged ${pkg.coins} coins via Razorpay. Updated Balance: ${newBal} Coins.`,
+        {
+          isRecharge: true,
+          amount: pkg.coins,
+          fromUserId: 0,
+          fromUserName: 'Razorpay',
+          newBalance: newBal,
+          wallet: creditResult.wallet,
+          isCoinseller: creditResult.wallet === 'coinSellerCoins',
+        }
       );
+    } catch (err: any) {
+      AppLogger.warn(`[CoinService: verifyRazorpayPayment] Failed to send system message: ${err?.message}`);
+    }
 
-      await session.commitTransaction();
+    return {
+      success: true,
+      message: 'Payment verified and coins added successfully',
+      transactionId: razorpayPaymentId,
+      orderId: razorpayOrderId,
+      addedCoins: pkg.coins,
+      audience,
+      wallet: creditResult.wallet,
+      currentCoins: updatedUser?.coins || 0,
+      currentCoinSellerCoins: updatedUser?.coinSellerCoins || 0,
+      history: updatedHistoryRecord,
+    };
+  }
 
-      const updatedUser = await User.findById(userId).select('coins beans coinSellerCoins');
-      const newBal = credit.wallet === 'coinSellerCoins' ? (updatedUser?.coinSellerCoins || 0) : (updatedUser?.coins || 0);
-      try {
-        const { ChatService } = require('./ChatService');
-        const chatService: any = Container.get(ChatService);
-        await chatService.sendSystemMessage(
-          userId,
-          'Recharge Successful',
-          `🎉 Recharge Successful! You have recharged ${pkg.coins} coins via Razorpay. Updated Balance: ${newBal} Coins.`,
-          {
-            isRecharge: true,
-            amount: pkg.coins,
-            fromUserId: 0,
-            fromUserName: 'Razorpay',
-            newBalance: newBal,
-            wallet: credit.wallet,
-            isCoinseller: credit.wallet === 'coinSellerCoins',
-          }
-        );
-      } catch (err: any) {
-        AppLogger.warn(`[CoinService: verifyRazorpayPayment] Failed to send system message: ${err?.message}`);
+  /**
+   * Sync and verify order directly from Razorpay API
+   */
+  async syncRazorpayOrder(orderId: string) {
+    const { keyId, keySecret, mode } = await this.getRazorpayConfig();
+    if (!keyId || !keySecret) {
+      throw new Error(`Razorpay keys not configured for ${mode} mode`);
+    }
+
+    const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    let order: any;
+    try {
+      order = await razorpay.orders.fetch(orderId);
+    } catch (err: any) {
+      throw new Error(`Failed to fetch order from Razorpay: ${err?.message || err}`);
+    }
+
+    let payments: any;
+    try {
+      payments = await (razorpay.orders as any).fetchPayments(orderId);
+    } catch (err: any) {
+      AppLogger.warn(`Could not fetch payments for order ${orderId}: ${err?.message}`);
+    }
+
+    const paymentList = payments?.items || [];
+    const capturedPayment = paymentList.find((p: any) => p.status === 'captured');
+    const authorizedPayment = paymentList.find((p: any) => p.status === 'authorized');
+    const failedPayment = paymentList.find((p: any) => p.status === 'failed');
+
+    let historyRecord = await CoinHistory.findOne({
+      $or: [{ razorpayOrderId: orderId }, { transactionId: orderId }],
+    });
+
+    const isPaid = order.status === 'paid' || !!capturedPayment;
+
+    if (isPaid) {
+      const paymentId = capturedPayment?.id || authorizedPayment?.id || order.id;
+      if (historyRecord && historyRecord.status === 'completed') {
+        return {
+          orderId,
+          orderStatus: order.status,
+          paymentStatus: 'completed',
+          alreadyCompleted: true,
+          paymentId: historyRecord.razorpayPaymentId || historyRecord.transactionId,
+          coins: historyRecord.amount,
+          message: 'This order was already completed and coins were credited.',
+          order,
+          payments: paymentList,
+        };
+      }
+
+      const userId = historyRecord?.userId?.toString() || order.notes?.userId;
+      const packageId = historyRecord?.packageId?.toString() || order.notes?.packageId;
+      const audience = order.notes?.rechargeAudience || 'user';
+
+      if (!userId || !packageId) {
+        throw new Error('Order notes or history missing userId/packageId to fulfill recharge');
+      }
+
+      const pkg = await CoinPackage.findById(packageId);
+      if (!pkg) throw new Error('Package not found for this order');
+
+      await runInTransaction(async (session) => {
+        const credit = await this.creditRechargeCoins(userId, pkg, audience, session);
+        if (historyRecord) {
+          historyRecord.status = 'completed';
+          historyRecord.transactionId = paymentId;
+          historyRecord.razorpayPaymentId = paymentId;
+          historyRecord.wallet = credit.wallet;
+          historyRecord.description = `Recharged with ${pkg.name} via Razorpay (Synced by Admin)`;
+          historyRecord.failureReason = undefined;
+          await historyRecord.save({ session });
+        } else {
+          await CoinHistory.create(
+            [
+              {
+                userId,
+                packageId: pkg._id,
+                amount: pkg.coins,
+                type: 'recharge',
+                wallet: credit.wallet,
+                status: 'completed',
+                paymentGateway: 'Razorpay',
+                transactionId: paymentId,
+                razorpayOrderId: orderId,
+                razorpayPaymentId: paymentId,
+                description: `Recharged with ${pkg.name} via Razorpay (Synced by Admin)`,
+              },
+            ],
+            { session }
+          );
+        }
+      });
+
+      return {
+        orderId,
+        orderStatus: order.status,
+        paymentStatus: 'completed',
+        justCredited: true,
+        paymentId,
+        coins: pkg.coins,
+        message: `Order verified with Razorpay! Successfully credited ${pkg.coins} coins to user.`,
+        order,
+        payments: paymentList,
+      };
+    } else {
+      const reason =
+        failedPayment?.error_description ||
+        failedPayment?.error_reason ||
+        `Razorpay order status is '${order.status}' (${order.attempts} attempts)`;
+
+      if (historyRecord && historyRecord.status !== 'completed') {
+        historyRecord.status = order.status === 'attempted' && failedPayment ? 'failed' : historyRecord.status;
+        historyRecord.failureReason = reason;
+        if (failedPayment?.id) historyRecord.razorpayPaymentId = failedPayment.id;
+        await historyRecord.save();
       }
 
       return {
-        success: true,
-        message: 'Payment verified and coins added successfully',
-        transactionId: razorpayPaymentId,
-        orderId: razorpayOrderId,
-        addedCoins: pkg.coins,
-        audience,
-        wallet: credit.wallet,
-        currentCoins: updatedUser?.coins || 0,
-        currentCoinSellerCoins: updatedUser?.coinSellerCoins || 0,
-        history: historyRecord[0],
+        orderId,
+        orderStatus: order.status,
+        paymentStatus: historyRecord?.status || (failedPayment ? 'failed' : 'pending'),
+        failureReason: reason,
+        message: `Order status on Razorpay is '${order.status}'. Payment not completed.`,
+        order,
+        payments: paymentList,
       };
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
     }
+  }
+
+  /**
+   * Client-side failure/cancellation reporter
+   */
+  async recordRazorpayFailure(
+    userId: string,
+    razorpayOrderId: string,
+    failureReason: string,
+    razorpayPaymentId?: string
+  ) {
+    const history = await CoinHistory.findOne({
+      userId,
+      $or: [{ razorpayOrderId }, { transactionId: razorpayOrderId }],
+    });
+    if (history) {
+      if (history.status !== 'completed') {
+        history.status = 'failed';
+        history.failureReason = failureReason || 'Payment failed or cancelled';
+        if (razorpayPaymentId) history.razorpayPaymentId = razorpayPaymentId;
+        await history.save();
+      }
+      return history;
+    }
+    return null;
   }
 
   /**
@@ -1161,12 +1395,14 @@ export class CoinService {
       throw new Error('Insufficient beans balance for cash out');
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
+    return await runInTransaction(async (session) => {
+      const sessionOpt = session ? { session } : {};
       user.beans = (user.beans || 0) - amountBeans;
-      await user.save({ session });
+      if (session) {
+        await user.save({ session });
+      } else {
+        await user.save();
+      }
 
       const record = await CoinHistory.create([
         {
@@ -1175,21 +1411,15 @@ export class CoinService {
           type: 'cash_out',
           description: `Cash out request of ${amountBeans} beans (${paymentMethodDetails})`,
         }
-      ], { session });
+      ], sessionOpt);
 
-      await session.commitTransaction();
       return {
         success: true,
         message: 'Cash out request submitted successfully',
         remainingBeans: user.beans,
         transaction: record[0],
       };
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   async processReferralReward(referrerUserId: string, referredUserId: string) {
@@ -1199,10 +1429,9 @@ export class CoinService {
 
     if (rewardAmount <= 0) return null;
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
-      await User.findByIdAndUpdate(referrerUserId, { $inc: { coins: rewardAmount } }, { session });
+    return await runInTransaction(async (session) => {
+      const sessionOpt = session ? { session } : {};
+      await User.findByIdAndUpdate(referrerUserId, { $inc: { coins: rewardAmount } }, sessionOpt);
       const record = await CoinHistory.create([
         {
           userId: referrerUserId,
@@ -1211,17 +1440,12 @@ export class CoinService {
           type: 'referral_reward',
           description: `Invite reward for referring user ${referredUserId}`,
         }
-      ], { session });
-
-      await session.commitTransaction();
+      ], sessionOpt);
       return record[0];
-    } catch (error) {
-      await session.abortTransaction();
+    }).catch(error => {
       console.error('Failed to process referral reward:', error);
       return null;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   private generatePandaPayMd5Sign(data: Record<string, any>, key: string): string {

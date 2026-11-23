@@ -2,6 +2,7 @@ import { Service } from 'typedi';
 import StoreItem, { IStoreItemPrice } from '../../models/StoreItem';
 import UserStoreItem from '../../models/UserStoreItem';
 import User from '../../models/User';
+import CoinHistory from '../../models/CoinHistory';
 import mongoose from 'mongoose';
 import { addDays, addMonths, addYears } from 'date-fns';
 import { clearExpiredActiveStoreItems, formatStoreItem, ACTIVE_STORE_FIELD_BY_TYPE, normalizeStoreTypeQuery } from '../../utils/activeStorePopulate';
@@ -111,6 +112,26 @@ export class StoreService {
 
     user.coins -= totalCoins;
     await user.save();
+
+    // Record Coin History for Store Purchase
+    try {
+      const typeLabel = item.type ? item.type.replace('_', ' ') : 'store item';
+      const durationLabel = `${priceOption.validity} ${priceOption.validityType}${priceOption.validity > 1 ? 's' : ''}`;
+      const qtySuffix = purchaseQuantity > 1 ? ` (x${purchaseQuantity})` : '';
+      const desc = `Purchased ${typeLabel}: ${item.name} (${durationLabel})${qtySuffix}`;
+
+      await CoinHistory.create({
+        userId: new mongoose.Types.ObjectId(userId),
+        amount: -totalCoins,
+        type: 'store_purchase',
+        wallet: 'coins',
+        status: 'completed',
+        quantity: purchaseQuantity,
+        description: desc,
+      });
+    } catch (historyErr) {
+      console.warn('Failed to record CoinHistory for store purchase:', historyErr);
+    }
 
     const now = new Date();
     const stackedItem = await this.extendOrCreatePurchase(

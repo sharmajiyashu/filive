@@ -223,8 +223,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#7C6FCD',
     secondaryColor: '#534292',
     rangeText: '30-39',
-    iconFilename: 'level_30_to_39_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal4.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 40,
@@ -235,8 +235,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#E040FB',
     secondaryColor: '#AA00FF',
     rangeText: '40-49',
-    iconFilename: 'level_40_to_49_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal5.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 50,
@@ -247,8 +247,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#FF5722',
     secondaryColor: '#E64A19',
     rangeText: '50-59',
-    iconFilename: 'level_50_to_59_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal6.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 60,
@@ -259,8 +259,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#00E676',
     secondaryColor: '#00C853',
     rangeText: '60-69',
-    iconFilename: 'level_60_to_69_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal7.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 70,
@@ -271,8 +271,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#00B0FF',
     secondaryColor: '#0091EA',
     rangeText: '70-79',
-    iconFilename: 'level_70_to_79_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal8.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 80,
@@ -283,8 +283,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#651FFF',
     secondaryColor: '#6200EA',
     rangeText: '80-89',
-    iconFilename: 'level_80_to_89_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal9.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 90,
@@ -295,8 +295,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#FF1744',
     secondaryColor: '#D50000',
     rangeText: '90-99',
-    iconFilename: 'level_90_to_99_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medal_pink.png',
+    badgeType: 'image',
   },
   {
     levelNumber: 100,
@@ -307,8 +307,8 @@ export const DEFAULT_LEVEL_DEFINITIONS: LevelSeedDef[] = [
     color: '#FFD700',
     secondaryColor: '#FFA000',
     rangeText: '100',
-    iconFilename: 'level_100_bg.svga',
-    badgeType: 'svga',
+    iconFilename: 'medals.png',
+    badgeType: 'image',
   },
 ];
 

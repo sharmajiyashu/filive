@@ -85,6 +85,43 @@ export default (router: Router) => {
     }
   });
 
+  /**
+   * Delete / Remove User Profile Image
+   */
+  userRouter.delete('/:id/profile-image', async (req: any, res: Response) => {
+    try {
+      const result = await userService.deleteUserProfileImage(req.params.id);
+      return ResponseWrapper.success(res, result, 'Profile image removed successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Delete / Remove Album Photo
+   */
+  userRouter.delete('/:id/album/:photoId', async (req: any, res: Response) => {
+    try {
+      const result = await userService.deleteUserAlbumPhoto(req.params.id, req.params.photoId);
+      return ResponseWrapper.success(res, result, 'Album photo deleted successfully');
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  /**
+   * Delete User (Soft Delete or Permanent)
+   */
+  userRouter.delete('/:id', async (req: any, res: Response) => {
+    try {
+      const permanent = req.query.permanent === 'true' || req.body?.permanent === true;
+      const result = await userService.deleteUser(req.params.id, permanent);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   userRouter.put('/:id/block-duration', async (req: any, res: Response) => {
     try {
       const userId = req.params.id;
@@ -418,7 +455,9 @@ export default (router: Router) => {
           { type: 'recharge' },
           { paymentGateway: 'Admin', wallet: 'coins' },
         ],
-      }).sort({ createdAt: -1 });
+      })
+        .populate('packageId', 'name coins price currency')
+        .sort({ createdAt: -1 });
 
       const levelService = Container.get(LevelService);
       const richCoins = user.wealthCoins !== undefined ? user.wealthCoins : (user.coins || 0);

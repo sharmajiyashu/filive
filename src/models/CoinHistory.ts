@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export type TransferTarget = 'self' | 'user' | 'coinseller';
 export type CoinHistoryWallet = 'coins' | 'beans' | 'coinSellerCoins';
 export type CoinHistoryContextType = 'live_stream' | 'party_room' | 'audio_call' | 'video_call';
+export type CoinHistoryStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
 export type CoinHistoryType =
   | 'recharge'
   | 'family_creation'
@@ -18,6 +19,8 @@ export type CoinHistoryType =
   | 'call_spent'
   | 'cash_out'
   | 'exchange'
+  | 'store_purchase'
+  | 'vip_purchase'
   | 'other';
 
 export interface ICoinHistory extends Document {
@@ -26,11 +29,16 @@ export interface ICoinHistory extends Document {
   amount: number; // Positive for credit, negative for debit
   type: CoinHistoryType;
   wallet?: CoinHistoryWallet;
+  status?: CoinHistoryStatus;
   callId?: mongoose.Types.ObjectId;
   description?: string;
   transactionId?: string; // For payment gateways
   packageId?: mongoose.Types.ObjectId; // For tracking recharge coin package
   paymentGateway?: string; // e.g. 'PandaPay', 'Razorpay', 'CoinSeller', 'Admin'
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  failureReason?: string;
   channelName?: string;
   contextType?: CoinHistoryContextType;
   giftId?: mongoose.Types.ObjectId;
@@ -54,14 +62,42 @@ const CoinHistorySchema: Schema = new Schema(
     amount: { type: Number, required: true },
     type: {
       type: String,
-      enum: ['recharge', 'family_creation', 'transfer', 'charm_received', 'beans_to_coins', 'coins_to_beans', 'agency_commission', 'referral_reward', 'gift_received', 'gift_sent', 'call_income', 'call_spent', 'cash_out', 'exchange', 'other'],
+      enum: [
+        'recharge',
+        'family_creation',
+        'transfer',
+        'charm_received',
+        'beans_to_coins',
+        'coins_to_beans',
+        'agency_commission',
+        'referral_reward',
+        'gift_received',
+        'gift_sent',
+        'call_income',
+        'call_spent',
+        'cash_out',
+        'exchange',
+        'store_purchase',
+        'vip_purchase',
+        'other'
+      ],
       required: true
     },
     wallet: { type: String, enum: ['coins', 'beans', 'coinSellerCoins'] },
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'failed', 'cancelled'],
+      default: 'completed',
+      index: true,
+    },
     callId: { type: Schema.Types.ObjectId, ref: 'Call' },
     description: { type: String },
     transactionId: { type: String },
     paymentGateway: { type: String },
+    razorpayOrderId: { type: String, index: true },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
+    failureReason: { type: String },
     channelName: { type: String },
     contextType: { type: String, enum: ['live_stream', 'party_room', 'audio_call', 'video_call'] },
     giftId: { type: Schema.Types.ObjectId, ref: 'Gift' },
