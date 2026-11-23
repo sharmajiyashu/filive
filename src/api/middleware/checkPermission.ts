@@ -83,11 +83,14 @@ const ROUTE_MODULE_PREFIXES: Array<{ prefix: string; moduleName: string }> = [
   { prefix: '/dashboard', moduleName: 'Dashboard' },
 ];
 
-const UNRESTRICTED_ADMIN_PATHS = ['/login', '/logout', '/me', '/auth/me', '/health', '/notifications', '/notification'];
+const UNRESTRICTED_ADMIN_PATHS = ['/login', '/logout', '/me', '/auth/me', '/health', '/notifications', '/notification', '/country'];
 
 export async function adminPermissionMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
     const rawPath = (req.path || '').toLowerCase();
+    const originalUrl = (req.originalUrl || '').toLowerCase();
+    const checkPath = `${rawPath} ${originalUrl}`;
+
     if (UNRESTRICTED_ADMIN_PATHS.some((p) => rawPath === p || rawPath.startsWith(p + '/'))) {
       return next();
     }
@@ -131,21 +134,45 @@ export async function adminPermissionMiddleware(req: Request, _res: Response, ne
       return next(new ForbiddenError(new Error('No active administrative role assigned to this staff account')));
     }
 
-    // Match route to required module
-    const matched = ROUTE_MODULE_PREFIXES.find((item) => rawPath.startsWith(item.prefix.toLowerCase()));
-    if (!matched) {
+    // Match route to required module with specific contextual overrides
+    let requiredModule: string | null = null;
+
+    if (
+      checkPath.includes('coinseller') ||
+      checkPath.includes('coin-trader') ||
+      checkPath.includes('coin-seller')
+    ) {
+      requiredModule = 'Coin Trader';
+    } else if (checkPath.includes('video-verification')) {
+      requiredModule = 'Video Verifications';
+    } else if (
+      checkPath.includes('verified-user') ||
+      checkPath.includes('/users/verified') ||
+      checkPath.includes('/user/verified')
+    ) {
+      requiredModule = 'Verified Users';
+    } else {
+      // Find matching prefix with longest prefix first
+      const sortedPrefixes = [...ROUTE_MODULE_PREFIXES].sort((a, b) => b.prefix.length - a.prefix.length);
+      const matched = sortedPrefixes.find((item) => rawPath.startsWith(item.prefix.toLowerCase()));
+      if (matched) {
+        requiredModule = matched.moduleName;
+      }
+    }
+
+    if (!requiredModule) {
       // If not specifically mapped to a restricted module, allow
       return next();
     }
 
     const permissions: any[] = role.permissions || [];
     const modulePerm = permissions.find(
-      (m: any) => (m.moduleName || '').trim().toLowerCase() === matched.moduleName.toLowerCase()
+      (m: any) => (m.moduleName || '').trim().toLowerCase() === requiredModule.toLowerCase()
     );
 
     if (!modulePerm || modulePerm.enabled === false) {
       return next(
-        new ForbiddenError(new Error(`Access denied: You do not have permission for module "${matched.moduleName}"`))
+        new ForbiddenError(new Error(`Access denied: You do not have permission for module "${requiredModule}"`))
       );
     }
 
