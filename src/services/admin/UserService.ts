@@ -469,22 +469,29 @@ export class UserService {
           ? new Date(userObj.lastLoginAt).getTime() > Date.now() - 15 * 60 * 1000
           : false;
 
+        const isAgencyHost = Boolean(userObj.isAgencyHost || userObj.agency);
         const isHost =
           activeHostIdsSet.has(String(userObj._id)) ||
           userObj.videoVerificationStatus === 'approved' ||
-          userObj.isVerified === true;
-        const isAgencyOwner = agencyOwnerIdsSet.has(String(userObj._id));
+          userObj.isVerified === true ||
+          userObj.isBecomeHost === true ||
+          isAgencyHost;
+        const isAgencyOwner = agencyOwnerIdsSet.has(String(userObj._id)) || Boolean((userObj as any).ownedAgency);
         const isCoinseller = Boolean(userObj.isCoinseller);
         const isCustomerService = Boolean(userObj.isCustomerService || userObj.isCs || (userObj as any).isBd);
         const isAdmin = userObj.userRole === 'admin';
 
         const roles: string[] = [];
         if (isAdmin) roles.push('Admin');
+        roles.push('User');
         if (isCoinseller) roles.push('CoinSeller');
-        if (isHost) roles.push('Host');
+        if (isAgencyHost) {
+          roles.push('Agency Host');
+        } else if (isHost) {
+          roles.push('Host');
+        }
         if (isAgencyOwner) roles.push('Agency');
         if (isCustomerService) roles.push('Customer Service');
-        if (roles.length === 0) roles.push('User');
 
         const roleBadge = roles.join(', ');
 
