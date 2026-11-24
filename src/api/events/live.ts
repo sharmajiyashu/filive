@@ -346,13 +346,15 @@ export default (socket: AuthenticatedSocket, io: Server) => {
         `room_${cleanChan}`,
       ]);
 
+      // Chain all room targets so Socket.io delivers to each socket exactly ONCE
+      let roomEmitter: any = io;
       for (const target of broadcastTargets) {
         if (target) {
-          io.to(target).emit('new_live_comment', payload);
-          io.to(target).emit('new_room_comment', payload);
-          io.to(target).emit('new_room_message', payload);
+          roomEmitter = roomEmitter.to(target);
         }
       }
+      // Broadcast single primary event to all room variants without duplicate packets
+      roomEmitter.emit('new_live_comment', payload);
 
       if (typeof callback === 'function') {
         callback({ success: true, type: 'SUCCESS', event: 'room_comment', data: payload });
