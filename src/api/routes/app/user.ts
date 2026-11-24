@@ -657,7 +657,7 @@ export default (router: Router) => {
       return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
-    } 
+    }
   });
 
   /**
