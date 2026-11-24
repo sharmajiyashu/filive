@@ -222,15 +222,11 @@ export class AuthenticationService {
         user.lastLoginAt = new Date();
         await user.save();
 
+        const cleanedUserEmail = (user.email || '').trim().toLowerCase();
         const roleName = ((user.adminRoleId as any)?.name || '').trim().toUpperCase().replace(/[\s_-]+/g, '');
-        const isSuperAdmin =
-            user.email === 'admin@example.com' ||
-            user.email === 'filive@gmail.com' ||
-            user.email?.toLowerCase().includes('admin') ||
-            (!user.adminRoleId && user.userRole === 'admin') ||
-            roleName === 'SUPERADMIN' ||
-            roleName === 'ADMIN' ||
-            roleName === 'OWNER';
+        const isRoleSuperAdmin = (user.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN';
+        const isMasterSuperAdmin = cleanedUserEmail === 'admin@example.com' || cleanedUserEmail === 'filive@gmail.com';
+        const isSuperAdmin = isMasterSuperAdmin || isRoleSuperAdmin;
 
         const roleObj = user.adminRoleId && typeof user.adminRoleId === 'object' ? user.adminRoleId : null;
 

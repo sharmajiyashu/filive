@@ -116,14 +116,9 @@ export async function adminPermissionMiddleware(req: Request, _res: Response, ne
     // Master Super Admins always bypass checks
     const callerEmail = (user.email || '').trim().toLowerCase();
     const roleName = ((user.adminRoleId as any)?.name || '').trim().toUpperCase().replace(/[\s_-]+/g, '');
-    const isSuperAdmin =
-      callerEmail === 'admin@example.com' ||
-      callerEmail === 'filive@gmail.com' ||
-      callerEmail.includes('admin') ||
-      !user.adminRoleId ||
-      roleName === 'SUPERADMIN' ||
-      roleName === 'ADMIN' ||
-      roleName === 'OWNER';
+    const isRoleSuperAdmin = (user.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN';
+    const isMasterSuperAdmin = callerEmail === 'admin@example.com' || callerEmail === 'filive@gmail.com';
+    const isSuperAdmin = isMasterSuperAdmin || isRoleSuperAdmin;
 
     if (isSuperAdmin) {
       return next();

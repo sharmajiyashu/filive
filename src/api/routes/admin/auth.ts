@@ -75,14 +75,9 @@ export default (router: Router) => {
 
             const callerEmail = (user.email || '').trim().toLowerCase();
             const roleName = ((user.adminRoleId as any)?.name || '').trim().toUpperCase().replace(/[\s_-]+/g, '');
-            const isSuperAdmin =
-                callerEmail === 'admin@example.com' ||
-                callerEmail === 'filive@gmail.com' ||
-                callerEmail.includes('admin') ||
-                !user.adminRoleId ||
-                roleName === 'SUPERADMIN' ||
-                roleName === 'ADMIN' ||
-                roleName === 'OWNER';
+            const isRoleSuperAdmin = (user.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN';
+            const isMasterSuperAdmin = callerEmail === 'admin@example.com' || callerEmail === 'filive@gmail.com';
+            const isSuperAdmin = isMasterSuperAdmin || isRoleSuperAdmin;
 
             const roleObj = user.adminRoleId && typeof user.adminRoleId === 'object' ? user.adminRoleId : null;
 

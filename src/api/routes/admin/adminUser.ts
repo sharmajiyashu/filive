@@ -57,16 +57,7 @@ export default (router: Router) => {
     if (!caller || caller.userRole !== 'admin') return false;
 
     const callerEmail = (caller.email || '').trim().toLowerCase();
-    if (
-      callerEmail === 'admin@example.com' ||
-      callerEmail === 'filive@gmail.com' ||
-      callerEmail.includes('admin')
-    ) {
-      return true;
-    }
-
-    // Admin without specific role constraint is primary super admin
-    if (!caller.adminRoleId) {
+    if (callerEmail === 'admin@example.com' || callerEmail === 'filive@gmail.com') {
       return true;
     }
 
@@ -74,7 +65,7 @@ export default (router: Router) => {
       .trim()
       .toUpperCase()
       .replace(/[\s_-]+/g, '');
-    if (roleName === 'SUPERADMIN' || roleName === 'ADMIN' || roleName === 'OWNER') {
+    if ((caller.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN') {
       return true;
     }
 
