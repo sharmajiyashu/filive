@@ -698,6 +698,51 @@ export default (router: Router) => {
     }
   });
 
+  // Direct alias on router for /v1/api/app/fcm-token
+  router.post('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
+      const targetToken = token || fcmToken;
+      if (!targetToken) {
+        throw new Error('FCM token is required in request body');
+      }
+      const shouldWelcome = Boolean(sendWelcome || isLogin);
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  router.put('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
+      const targetToken = token || fcmToken;
+      if (!targetToken) {
+        throw new Error('FCM token is required in request body');
+      }
+      const shouldWelcome = Boolean(sendWelcome || isLogin);
+      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
+  router.delete('/fcm-token', async (req: any, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { token, fcmToken } = req.body || {};
+      const targetToken = token || fcmToken || req.query.token;
+      const result = await userService.removeFcmToken(userId, targetToken);
+      return ResponseWrapper.success(res, result, result.message);
+    } catch (error: any) {
+      return ResponseWrapper.error(res, error);
+    }
+  });
+
   /**
    * @swagger
    * /app/users/{id}:
