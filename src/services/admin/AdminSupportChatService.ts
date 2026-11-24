@@ -480,10 +480,12 @@ export class AdminSupportChatService {
 
       // Room of the chat
       io.to(`chat_${chatId}`).emit('new_message', socketPayload);
+      io.to(`chat_${chatId}`).emit('chat_message_received', socketPayload);
 
       // Customer personal room
       if (customerUserIdStr) {
         io.to(`user_${customerUserIdStr}`).emit('new_message', socketPayload);
+        io.to(`user_${customerUserIdStr}`).emit('chat_message_received', socketPayload);
         io.to(`user_${customerUserIdStr}`).emit('support_message_received', socketPayload);
       }
 

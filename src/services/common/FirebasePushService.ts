@@ -25,7 +25,16 @@ export class FirebasePushService {
                     tokens: chunk,
                     notification: { title: payload.title, body: payload.body },
                     data: payload.data,
-                    android: { priority: 'high' },
+                    android: {
+                        priority: 'high',
+                        notification: {
+                            channelId: 'high_importance_channel',
+                            sound: 'default',
+                            priority: 'high',
+                            defaultSound: true,
+                            defaultVibrateTimings: true,
+                        },
+                    },
                     apns: {
                         payload: {
                             aps: {
