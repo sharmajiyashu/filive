@@ -3,14 +3,12 @@
  * 
  * Usage:
  *   node test_send_fcm.js [mobileNumber]
- * 
- * Example:
- *   node test_send_fcm.js 9079758684
  */
 
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 
@@ -25,13 +23,53 @@ const log = {
   section: (title) => console.log(`\n\x1b[1m\x1b[35m=== ${title} ===\x1b[0m`),
 };
 
+// Check server clock against Google's live server clock
+function checkServerTimeSkew() {
+  return new Promise((resolve) => {
+    const req = https.request('https://www.google.com', { method: 'HEAD', timeout: 5000 }, (res) => {
+      const serverDateStr = res.headers['date'];
+      if (serverDateStr) {
+        const googleTime = new Date(serverDateStr).getTime();
+        const localTime = Date.now();
+        const diffSeconds = Math.round((localTime - googleTime) / 1000);
+        resolve({ googleTime: new Date(googleTime), localTime: new Date(localTime), diffSeconds });
+      } else {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
 (async () => {
   console.log('\n=============================================================');
   console.log(`  FiLive Push Notification Test Tool for: \x1b[33m${targetMobile}\x1b[0m`);
   console.log('=============================================================');
 
-  // 1. Check & Load Firebase Service Account
-  log.section('1. Checking Firebase Configuration');
+  // 1. Check Server Time
+  log.section('1. Server Clock Verification (Critical for Google Auth)');
+  const timeCheck = await checkServerTimeSkew();
+  if (timeCheck) {
+    console.log(` - Server Local Time:  ${timeCheck.localTime.toISOString()}`);
+    console.log(` - Google Server Time: ${timeCheck.googleTime.toISOString()}`);
+    console.log(` - Time Drift:         ${timeCheck.diffSeconds} seconds`);
+    if (Math.abs(timeCheck.diffSeconds) > 60) {
+      log.error(`SERVER CLOCK IS OUT OF SYNC by ${Math.abs(timeCheck.diffSeconds)} seconds!`);
+      log.warn('>> Google will REJECT JWT signatures if time is skewed!');
+      log.warn('>> Fix immediately on server by running:');
+      console.log('   sudo timedatectl set-ntp true');
+      console.log('   sudo systemctl restart systemd-timesyncd   # (or chrony)\n');
+    } else {
+      log.success('Server clock is synchronized with Google.');
+    }
+  } else {
+    log.info(`Server time: ${new Date().toISOString()}`);
+  }
+
+  // 2. Check & Load Firebase Service Account
+  log.section('2. Checking Firebase Service Account');
   let serviceAccount = null;
   const saPathCandidates = [
     process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
@@ -40,15 +78,18 @@ const log = {
     './firebase-service-account.json'
   ].filter(Boolean);
 
+  let saFilePath = '';
   for (const candidate of saPathCandidates) {
     const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
     if (fs.existsSync(resolved)) {
       try {
         const raw = fs.readFileSync(resolved, 'utf8');
         serviceAccount = JSON.parse(raw);
+        saFilePath = resolved;
         log.success(`Loaded Firebase service account from: ${resolved}`);
-        log.info(`Firebase Project ID: \x1b[32m${serviceAccount.project_id || serviceAccount.projectId}\x1b[0m`);
-        log.info(`Client Email: ${serviceAccount.client_email}`);
+        log.info(`Project ID:      \x1b[32m${serviceAccount.project_id}\x1b[0m`);
+        log.info(`Client Email:    ${serviceAccount.client_email}`);
+        log.info(`Private Key ID:  ${serviceAccount.private_key_id}`);
         break;
       } catch (err) {
         log.error(`Failed parsing ${resolved}: ${err.message}`);
@@ -56,18 +97,14 @@ const log = {
     }
   }
 
-  if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    try {
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-      log.success('Loaded Firebase service account from FIREBASE_SERVICE_ACCOUNT_JSON env var');
-    } catch (err) {
-      log.error(`Failed parsing FIREBASE_SERVICE_ACCOUNT_JSON: ${err.message}`);
-    }
-  }
-
   if (!serviceAccount) {
     log.error('Firebase Service Account file NOT found!');
-    log.warn('Please make sure "firebase-service-account.json" exists in this directory or FIREBASE_SERVICE_ACCOUNT_PATH is set in .env');
+    process.exit(1);
+  }
+
+  // Check private key formatting
+  if (!serviceAccount.private_key || !serviceAccount.private_key.includes('BEGIN PRIVATE KEY')) {
+    log.error('The "private_key" in firebase-service-account.json is malformed or missing!');
     process.exit(1);
   }
 
@@ -87,96 +124,43 @@ const log = {
     process.exit(1);
   }
 
-  // 2. Connect to MongoDB
-  log.section('2. Connecting to MongoDB');
+  // 3. Connect to MongoDB
+  log.section('3. Connecting to MongoDB');
   const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/filive';
-  log.info(`Connecting to: ${mongoUri.replace(/:([^:@]{3,})@/, ':***@')}`);
-
   try {
     await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 8000 });
-    log.success(`Connected to DB: \x1b[32m${mongoose.connection.name}\x1b[0m on host: ${mongoose.connection.host}`);
+    log.success(`Connected to DB: \x1b[32m${mongoose.connection.name}\x1b[0m`);
   } catch (err) {
     log.error(`MongoDB connection failed: ${err.message}`);
     process.exit(1);
   }
 
-  // 3. Find User
-  log.section(`3. Searching User with Mobile: ${targetMobile}`);
-  const userQuery = {
+  // 4. Find User & Tokens
+  log.section(`4. Searching User with Mobile: ${targetMobile}`);
+  const user = await mongoose.connection.collection('users').findOne({
     $or: [
       { mobileNumber: new RegExp(cleanDigits) },
       { mobile: new RegExp(cleanDigits) },
       { phone: new RegExp(cleanDigits) }
     ]
-  };
-
-  const user = await mongoose.connection.collection('users').findOne(userQuery);
+  });
 
   if (!user) {
-    log.error(`User with mobile number matching "${cleanDigits}" was NOT found in collection "users"!`);
-    
-    // Check total users
-    const totalUsers = await mongoose.connection.collection('users').countDocuments({});
-    log.info(`Total users in database: ${totalUsers}`);
-    
-    // Show sample users
-    const sample = await mongoose.connection.collection('users').find({}).limit(5).toArray();
-    console.log('\nSample users in DB:');
-    sample.forEach(u => console.log(` - ID: ${u._id} | Name: ${u.fullName || u.name || 'N/A'} | Mobile: ${u.mobileNumber || u.mobile || 'None'}`));
-    
+    log.error(`User with mobile ${targetMobile} not found in DB!`);
     await mongoose.disconnect();
     process.exit(1);
   }
 
-  log.success(`Found User!`);
-  console.log(` - User ID: \x1b[33m${user._id}\x1b[0m`);
-  console.log(` - Name: ${user.fullName || user.name || 'N/A'}`);
-  console.log(` - Mobile: ${user.mobileNumber || user.mobile || 'N/A'}`);
-  console.log(` - Role: ${user.userRole || user.role || 'user'}`);
-  console.log(` - Device Type: ${user.deviceType || 'unknown'}`);
-  console.log(` - Last Login: ${user.lastLoginAt || user.updatedAt || 'N/A'}`);
+  log.success(`Found User: ${user.fullName || user.name || 'User'} (${user._id})`);
 
-  // 4. Extract FCM Tokens
-  log.section('4. Checking User FCM Tokens');
   let tokens = [];
-
   if (Array.isArray(user.fcmTokens) && user.fcmTokens.length > 0) {
     tokens = user.fcmTokens
       .map(t => (typeof t === 'string' ? t : t?.token))
       .filter(Boolean);
   }
-
   if (tokens.length === 0 && user.fcmToken) {
     tokens.push(user.fcmToken);
-  }
-
-  if (tokens.length === 0) {
-    log.error(`NO FCM tokens found for user ${user._id} (${user.mobileNumber})!`);
-    log.warn('Why this happened:');
-    console.log(' 1. The mobile app has not yet launched on this device with the updated NotificationService.');
-    console.log(' 2. Or the user has not logged in yet from the app.');
-    console.log(' 3. Or the POST /app/users/fcm-token API was not reachable from the app.');
-    console.log('\n\x1b[1mAction needed:\x1b[0m Run "flutter run", log in with ' + cleanDigits + ', and verify that the app prints:');
-    console.log(' "Registering FCM token with backend: <TOKEN>"');
-
-    // Check if any other user has token in DB
-    const usersWithTokens = await mongoose.connection.collection('users').find({
-      $or: [
-        { fcmTokens: { $exists: true, $ne: [] } },
-        { fcmToken: { $exists: true, $ne: null } }
-      ]
-    }).limit(3).toArray();
-
-    if (usersWithTokens.length > 0) {
-      console.log('\nUsers who DO have registered tokens:');
-      usersWithTokens.forEach(u => {
-        const tCount = Array.isArray(u.fcmTokens) ? u.fcmTokens.length : 1;
-        console.log(` - Mobile: ${u.mobileNumber || u.phone} | Tokens: ${tCount}`);
-      });
-    }
-
-    await mongoose.disconnect();
-    process.exit(1);
   }
 
   log.success(`Found ${tokens.length} registered FCM token(s):`);
@@ -235,14 +219,6 @@ const log = {
       } else {
         log.error(`Error Code:    ${resp.error?.code}`);
         log.error(`Error Message: ${resp.error?.message}`);
-
-        if (resp.error?.code === 'messaging/registration-token-not-registered') {
-          log.warn('>> This token is EXPIRED or the app was uninstalled/reinstalled. Device must open app to get a new token.');
-        } else if (resp.error?.code === 'messaging/invalid-registration-token') {
-          log.warn('>> The token format is invalid.');
-        } else if (resp.error?.code === 'messaging/mismatched-credential') {
-          log.warn('>> The service account project does not match the app google-services.json project!');
-        }
       }
     });
 
@@ -254,8 +230,13 @@ const log = {
     } else {
       console.log('\n\x1b[31m=============================================================');
       console.log('  ✖ NOTIFICATION FAILED TO REACH DEVICE');
-      console.log('  See error code details above.');
       console.log('=============================================================\x1b[0m\n');
+      console.log('HOW TO FIX THIS ERROR:');
+      console.log('1. If the error is "Invalid JWT Signature":');
+      console.log('   - Check server clock: run "timedatectl set-ntp true" on server.');
+      console.log('   - Or generate a fresh key in Firebase Console:');
+      console.log('     Project Settings -> Service accounts -> "Generate new private key".');
+      console.log('     Replace the contents of /var/www/filive/filive-backend/firebase-service-account.json with the new downloaded file.');
     }
   } catch (err) {
     log.error(`Firebase messaging error: ${err.message}`);

@@ -643,13 +643,29 @@ export default (router: Router) => {
    *       200:
    *         description: Token registered successfully
    */
-  appRouter.post('/fcm-token', async (req: any, res: Response) => {
+  const handleRegisterFcmToken = async (req: any, res: Response) => {
     try {
-      const userId = req.user.id;
-      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
+      let userId = req.user?.id || req.body?.userId;
+      const { token, fcmToken, deviceType, sendWelcome, isLogin, mobileNumber } = req.body || {};
       const targetToken = token || fcmToken;
       if (!targetToken) {
         throw new Error('FCM token is required in request body');
+      }
+
+      if (!userId && mobileNumber) {
+        const cleanMobile = String(mobileNumber).replace(/\D/g, '');
+        const found = await User.findOne({
+          $or: [
+            { mobileNumber: new RegExp(cleanMobile) },
+            { mobile: new RegExp(cleanMobile) },
+            { phone: new RegExp(cleanMobile) }
+          ]
+        });
+        if (found) userId = found._id.toString();
+      }
+
+      if (!userId) {
+        throw new Error('User not identified for FCM registration');
       }
 
       const shouldWelcome = Boolean(sendWelcome || isLogin);
@@ -658,90 +674,69 @@ export default (router: Router) => {
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
-  });
+  };
 
-  /**
-   * PUT /app/users/fcm-token
-   * Alias to register/update device FCM token
-   */
-  appRouter.put('/fcm-token', async (req: any, res: Response) => {
+  const handleRemoveFcmToken = async (req: any, res: Response) => {
     try {
-      const userId = req.user.id;
-      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
-      const targetToken = token || fcmToken;
-      if (!targetToken) {
-        throw new Error('FCM token is required in request body');
-      }
-
-      const shouldWelcome = Boolean(sendWelcome || isLogin);
-      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
-      return ResponseWrapper.success(res, result, result.message);
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
-
-  /**
-   * DELETE /app/users/fcm-token
-   * Unregister device FCM token
-   */
-  appRouter.delete('/fcm-token', async (req: any, res: Response) => {
-    try {
-      const userId = req.user.id;
-      const { token, fcmToken } = req.body || {};
+      let userId = req.user?.id || req.body?.userId;
+      const { token, fcmToken, mobileNumber } = req.body || {};
       const targetToken = token || fcmToken || req.query.token;
+
+      if (!userId && mobileNumber) {
+        const cleanMobile = String(mobileNumber).replace(/\D/g, '');
+        const found = await User.findOne({
+          $or: [
+            { mobileNumber: new RegExp(cleanMobile) },
+            { mobile: new RegExp(cleanMobile) },
+            { phone: new RegExp(cleanMobile) }
+          ]
+        });
+        if (found) userId = found._id.toString();
+      }
+
+      if (!userId) {
+        throw new Error('User not identified for FCM unregistration');
+      }
 
       const result = await userService.removeFcmToken(userId, targetToken);
       return ResponseWrapper.success(res, result, result.message);
     } catch (error: any) {
       return ResponseWrapper.error(res, error);
     }
-  });
+  };
 
-  // Direct alias on router for /v1/api/app/fcm-token
-  router.post('/fcm-token', async (req: any, res: Response) => {
-    try {
-      const userId = req.user.id;
-      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
-      const targetToken = token || fcmToken;
-      if (!targetToken) {
-        throw new Error('FCM token is required in request body');
-      }
-      const shouldWelcome = Boolean(sendWelcome || isLogin);
-      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
-      return ResponseWrapper.success(res, result, result.message);
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
+  /**
+   * @swagger
+   * /app/users/fcm-token:
+   *   post:
+   *     summary: Register or update device FCM token
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               token:
+   *                 type: string
+   *               deviceType:
+   *                 type: string
+   *                 enum: [android, ios, web]
+   *     responses:
+   *       200:
+   *         description: Token registered successfully
+   */
+  appRouter.post('/fcm-token', handleRegisterFcmToken);
+  appRouter.put('/fcm-token', handleRegisterFcmToken);
+  appRouter.delete('/fcm-token', handleRemoveFcmToken);
 
-  router.put('/fcm-token', async (req: any, res: Response) => {
-    try {
-      const userId = req.user.id;
-      const { token, fcmToken, deviceType, sendWelcome, isLogin } = req.body || {};
-      const targetToken = token || fcmToken;
-      if (!targetToken) {
-        throw new Error('FCM token is required in request body');
-      }
-      const shouldWelcome = Boolean(sendWelcome || isLogin);
-      const result = await userService.registerFcmToken(userId, targetToken, deviceType, shouldWelcome);
-      return ResponseWrapper.success(res, result, result.message);
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
-
-  router.delete('/fcm-token', async (req: any, res: Response) => {
-    try {
-      const userId = req.user.id;
-      const { token, fcmToken } = req.body || {};
-      const targetToken = token || fcmToken || req.query.token;
-      const result = await userService.removeFcmToken(userId, targetToken);
-      return ResponseWrapper.success(res, result, result.message);
-    } catch (error: any) {
-      return ResponseWrapper.error(res, error);
-    }
-  });
+  // Direct aliases on router for /v1/api/app/fcm-token
+  router.post('/fcm-token', handleRegisterFcmToken);
+  router.put('/fcm-token', handleRegisterFcmToken);
+  router.delete('/fcm-token', handleRemoveFcmToken);
 
   /**
    * @swagger

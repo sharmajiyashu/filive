@@ -23,4 +23,7 @@ export const appWhitelistRoutes = [
     '/coins/packages',
     '/help-feedback',
     '/hashtags',
+    '/users/fcm-token',
+    '/fcm-token',
+    '/auth/fcm-token',
 ]
