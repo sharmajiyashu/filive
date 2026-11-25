@@ -3,7 +3,11 @@ import { AuthenticatedSocket } from '../middleware/socketAuthMiddleware';
 import { CallService } from '../../services/app/CallService';
 import { GiftService } from '../../services/app/GiftService';
 import { RandomMatchService } from '../../services/app/RandomMatchService';
+import { FirebasePushService } from '../../services/common/FirebasePushService';
+import { ChatService } from '../../services/app/ChatService';
+import { ChatMessageService } from '../../services/app/ChatMessageService';
 import Call from '../../models/Call';
+import User from '../../models/User';
 import Container from 'typedi';
 import AppLogger from '../loaders/logger';
 import { emitSocketError } from '../../utils/socketResponse';
@@ -58,6 +62,26 @@ export default (socket: AuthenticatedSocket, io: Server) => {
 
       socket.emit('call_initiated', callerPayload);
       io.to(`user_${receiverId}`).emit('incoming_call', hostPayload);
+
+      // Send push notification if receiver device is backgrounded
+      try {
+        const pushService = Container.get(FirebasePushService);
+        const callerName = callerPayload?.caller?.name || 'Someone';
+        pushService.notifyUser(receiverId.toString(), {
+          title: `Incoming ${callType === 'video' ? 'Video' : 'Audio'} Call`,
+          body: `${callerName} is calling you...`,
+          data: {
+            type: 'incoming_call',
+            callId: call._id.toString(),
+            roomId: call.roomId || `call_${call._id.toString()}`,
+            callType,
+            callerId: userId,
+            callerName,
+            callerImage: callerPayload?.caller?.profileImageUrl || '',
+            payload: JSON.stringify(hostPayload)
+          }
+        }).catch(() => {});
+      } catch (_) {}
 
       // Start a 60-second auto-cut timeout for the call (matches 60s UI countdown)
       const callIdStr = call._id.toString().trim();
@@ -311,6 +335,67 @@ export default (socket: AuthenticatedSocket, io: Server) => {
     } catch (error: any) {
       AppLogger.error(`[Socket Event: send_gift_in_call] Error for user ${userId}: ${error.message}`);
       emitSocketError(socket, 'send_gift_in_call', error, 'Failed to send gift in call', undefined, callback);
+    }
+  });
+
+  // 6. Send In-Call Chat Message
+  socket.on('send_call_message', async (data: { callId: string; message: string; receiverId?: string }, callback?: any) => {
+    try {
+      AppLogger.info(`[Socket Event: send_call_message] Entered. userId=${userId}`);
+      const { callId, message } = data || {};
+      if (!callId || !message || !message.trim()) {
+        emitSocketError(socket, 'send_call_message', 'callId and message are required', 'Validation failed', 'VALIDATION_FAILED', callback);
+        return;
+      }
+
+      const call = await callService.getCallDetails(userId, callId);
+      const callerId = (call.callerId?._id || call.callerId).toString();
+      const receiverId = (call.receiverId?._id || call.receiverId).toString();
+      const targetUserId = callerId === userId ? receiverId : callerId;
+
+      // Persist in 1-on-1 chat history
+      let savedMsg: any = null;
+      try {
+        const chatService = Container.get(ChatService);
+        const chatMessageService = Container.get(ChatMessageService);
+        const chat = await chatService.getOrCreateSingleChat(userId, targetUserId);
+        if (chat) {
+          savedMsg = await chatMessageService.createMessage(userId, {
+            chatId: chat._id.toString(),
+            message: message.trim()
+          });
+        }
+      } catch (err: any) {
+        AppLogger.warn(`[send_call_message] Chat persist warning: ${err.message}`);
+      }
+
+      const senderUser = await User.findById(userId).select('name profileImage');
+      const senderImage = senderUser?.profileImage
+        ? (typeof senderUser.profileImage === 'string' ? senderUser.profileImage : (senderUser.profileImage as any)?.url)
+        : null;
+
+      const payload = {
+        success: true,
+        type: 'call_message',
+        callId,
+        senderId: userId,
+        senderName: senderUser?.name || 'Caller',
+        senderImage,
+        message: message.trim(),
+        createdAt: new Date(),
+        messageId: savedMsg?._id?.toString() || Date.now().toString()
+      };
+
+      io.to(`user_${callerId}`).emit('call_message_received', payload);
+      io.to(`user_${receiverId}`).emit('call_message_received', payload);
+
+      if (typeof callback === 'function') {
+        callback({ success: true, type: 'SUCCESS', event: 'send_call_message', data: payload });
+      }
+      AppLogger.info(`[Socket Event: send_call_message] Sent in callId=${callId}`);
+    } catch (error: any) {
+      AppLogger.error(`[Socket Event: send_call_message] Error: ${error.message}`);
+      emitSocketError(socket, 'send_call_message', error, 'Failed to send message in call', undefined, callback);
     }
   });
 

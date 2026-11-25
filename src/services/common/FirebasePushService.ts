@@ -29,7 +29,7 @@ export class FirebasePushService {
                         priority: 'high',
                         notification: {
                             channelId: 'high_importance_channel',
-                            icon: 'ic_launcher',
+                            icon: 'ic_notification',
                             color: '#EF0083',
                             sound: 'default',
                             priority: 'high',

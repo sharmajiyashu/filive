@@ -2,6 +2,7 @@ import Container from 'typedi';
 import { Server } from 'socket.io';
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
+import mongoose from 'mongoose';
 import User from '../../../models/User';
 import AdminRole from '../../../models/AdminRole';
 import { ResponseWrapper } from '../../responseWrapper';
@@ -61,11 +62,16 @@ export default (router: Router) => {
       return true;
     }
 
+    // Root admin accounts with userRole 'admin' and no restricted role are Super Admins
+    if (!caller.adminRoleId) {
+      return true;
+    }
+
     const roleName = ((caller.adminRoleId as any)?.name || '')
       .trim()
       .toUpperCase()
       .replace(/[\s_-]+/g, '');
-    if ((caller.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN') {
+    if ((caller.adminRoleId as any)?.isSuperAdmin === true || roleName === 'SUPERADMIN' || roleName.includes('ADMIN')) {
       return true;
     }
 
@@ -273,22 +279,24 @@ export default (router: Router) => {
       const targetRoleId = roleId !== undefined ? roleId : adminRoleId;
       if (targetRoleId !== undefined) {
         const currentRoleStr = user.adminRoleId ? String(user.adminRoleId) : '';
-        const targetRoleStr = targetRoleId ? String(targetRoleId) : '';
+        const targetRoleStr =
+          targetRoleId && typeof targetRoleId === 'string' && targetRoleId !== '[object Object]'
+            ? String(targetRoleId)
+            : (typeof targetRoleId === 'object' && targetRoleId ? String((targetRoleId as any)._id || (targetRoleId as any).id || '') : '');
 
-        if (currentRoleStr !== targetRoleStr) {
+        if (targetRoleStr && currentRoleStr !== targetRoleStr) {
           const callerSuperAdmin = await isCallerSuperAdmin(req.user?.id);
           if (!callerSuperAdmin) {
             return ResponseWrapper.error(res, new Error('Only Super Admin can assign or change staff roles'), 403);
           }
         }
 
-        if (targetRoleId && targetRoleId !== '') {
-          const role = await AdminRole.findById(targetRoleId);
-          if (!role) {
-            return ResponseWrapper.error(res, new Error('Specified admin role was not found'), 404);
+        if (targetRoleStr && mongoose.Types.ObjectId.isValid(targetRoleStr)) {
+          const role = await AdminRole.findById(targetRoleStr);
+          if (role) {
+            updateData.adminRoleId = role._id;
           }
-          updateData.adminRoleId = targetRoleId;
-        } else {
+        } else if (targetRoleStr === '' || targetRoleId === null) {
           updateData.adminRoleId = null;
         }
       }
@@ -408,13 +416,12 @@ export default (router: Router) => {
       }
 
       const callerSuperAdmin = await isCallerSuperAdmin(req.user?.id);
-      const isTargetSuperAdmin =
+      const isTargetPrimaryAdmin =
         targetUser.email === 'admin@example.com' ||
-        targetUser.email === 'filive@gmail.com' ||
-        (targetUser.adminRoleId as any)?.name === 'SUPER_ADMIN';
+        targetUser.email === 'filive@gmail.com';
 
-      if (isTargetSuperAdmin && !callerSuperAdmin) {
-        return ResponseWrapper.error(res, new Error('Only Super Admin can reset Super Admin passwords'), 403);
+      if (isTargetPrimaryAdmin && !callerSuperAdmin) {
+        return ResponseWrapper.error(res, new Error('Only Super Admin can reset Primary Administrator passwords'), 403);
       }
 
       targetUser.password = await bcrypt.hash(passToSet, 10);
@@ -431,8 +438,11 @@ export default (router: Router) => {
   };
 
   adminUserRouter.put('/password', resetStaffPasswordHandler);
+  adminUserRouter.post('/password', resetStaffPasswordHandler);
   adminUserRouter.put('/:id/password', resetStaffPasswordHandler);
+  adminUserRouter.post('/:id/password', resetStaffPasswordHandler);
   adminUserRouter.post('/reset-password', resetStaffPasswordHandler);
+  adminUserRouter.put('/reset-password', resetStaffPasswordHandler);
 
   adminUserRouter.delete('/delete/:id', deleteAdminUserHandler);
   adminUserRouter.delete('/delete', deleteAdminUserHandler);

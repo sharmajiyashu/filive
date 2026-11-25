@@ -278,27 +278,36 @@ export class CallService {
     if (!receiver) throw new Error('Receiver profile not found');
 
     // 2. Validate availability and call price
-    const receiverGender = (receiver.gender || '').toLowerCase();
-    if (receiverGender !== 'female') {
-      throw new Error('Calling is available for Female hosts only.');
-    }
+    const voiceRate = Number(receiver.voiceCallPrice || receiver.audioCallChargePerMinute || 0);
+    const videoRate = Number(receiver.videoCallPrice || receiver.videoCallChargePerMinute || 0);
+    const rate = callType === 'voice' ? voiceRate : videoRate;
 
-    if (receiver.videoVerificationStatus !== 'approved') {
-      throw new Error('Host has not completed video verification');
-    }
-
-    let rate = callType === 'voice' ? receiver.voiceCallPrice || 0 : receiver.videoCallPrice || 0;
-    const isCallEnabled = callType === 'voice' ? receiver.enableVoiceCall : receiver.enableVideoCall;
-
-    if (!isCallEnabled) {
+    // Call enabled check: only reject if explicitly disabled (false)
+    const isExplicitlyDisabled = callType === 'voice' ? receiver.enableVoiceCall === false : receiver.enableVideoCall === false;
+    if (isExplicitlyDisabled && rate > 0) {
       throw new Error(`Receiver does not have ${callType} calling enabled`);
     }
 
-    if (caller.coins < rate) {
+    const callerCoins = Number(caller.coins || 0);
+    if (rate > 0 && callerCoins < rate) {
       throw new Error(`Insufficient coins to start call. You need at least ${rate} coins.`);
     }
 
-    // 3. Check if caller or receiver is already in a call (busy status)
+    // Auto-clear any previous initiated calls between caller and receiver to prevent self-busy locking
+    try {
+      await Call.updateMany(
+        {
+          $or: [
+            { callerId: callerId, receiverId: receiverId },
+            { callerId: receiverId, receiverId: callerId }
+          ],
+          status: 'initiated'
+        },
+        { $set: { status: 'missed', endedAt: new Date() } }
+      );
+    } catch (_) {}
+
+    // 3. Check if caller or receiver is already in an active accepted call (busy status)
     if (await this.isUserBusy(callerId)) {
       AppLogger.info(`[CallService: initiateCall] Caller ${callerId} had an unfinished active call. Auto-ending it.`);
       await this.endUserActiveCalls(callerId, 'new_call_initiated');
@@ -342,7 +351,7 @@ export class CallService {
    * Returns true if the user is in an initiated or accepted call.
    */
   public async isUserBusy(userId: string): Promise<boolean> {
-    const ringTimeoutCutoff = new Date(Date.now() - 30 * 1000);
+    const ringTimeoutCutoff = new Date(Date.now() - 15 * 1000);
     const staleAcceptedCutoff = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes
     try {
       await Call.updateMany(
